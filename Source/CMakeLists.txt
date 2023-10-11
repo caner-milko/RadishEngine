@@ -1,0 +1,16 @@
+macro(add_all_subdirs)
+	file(GLOB sources_list LIST_DIRECTORIES true ${CMAKE_CURRENT_SOURCE_DIR}/*)
+	foreach(dir ${sources_list})
+		IF(IS_DIRECTORY ${dir})
+			add_subdirectory(${dir})
+		ELSE()
+			CONTINUE()
+		ENDIF()
+	endforeach()
+endmacro()
+
+set(CMAKE_CXX_STANDARD 20)
+
+#add_all_subdirs()
+add_subdirectory(DeferredRenderer)
+add_subdirectory(DX12Lib)

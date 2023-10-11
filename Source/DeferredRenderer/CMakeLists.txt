@@ -1,0 +1,39 @@
+set(CMAKE_CXX_STANDARD 20)
+
+project(DeferredRenderer)
+
+set(INCLUDE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Include")
+set(SOURCE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Source")
+set(SHADER_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Shaders")
+
+file(GLOB_RECURSE SHADER_FILES "${SHADER_DIRECTORY}/*")
+file(GLOB_RECURSE VERTEX_SHADER_FILES "${SHADER_DIRECTORY}/Vertex/*")
+file(GLOB_RECURSE PIXEL_SHADER_FILES "${SHADER_DIRECTORY}/Pixel/*")
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "${SOURCE_DIRECTORY}/*")
+file(GLOB_RECURSE INCLUDE_FILES CONFIGURE_DEPENDS "${INCLUDE_DIRECTORY}/*")
+
+add_executable(${PROJECT_NAME} WIN32 ${INCLUDE_FILES} ${SRC_FILES} ${SHADER_FILES})
+
+set_source_files_properties( "${VERTEX_SHADER_FILES}" PROPERTIES 
+    VS_SHADER_TYPE Vertex
+    VS_SHADER_MODEL 5.1
+)
+
+set_source_files_properties( "${PIXEL_SHADER_FILES}" PROPERTIES 
+    VS_SHADER_TYPE Pixel
+    VS_SHADER_MODEL 5.1
+)
+
+#target_compile_definitions(${PROJECT_NAME} PRIVATE "-D${PROJECT_NAME}_EXPORTS")
+
+source_group_files("${SHADER_FILES}" "Shaders")
+source_group_files("${INCLUDE_FILES}" "Include")
+source_group_files("${SRC_FILES}" "Source")
+
+target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+    DX12Lib
+    D3DCompiler.lib
+    Shlwapi.lib
+)
