@@ -325,7 +325,7 @@ Microsoft::WRL::ComPtr<IDXGISwapChain4> Window::CreateSwapChain()
 // Update the render target views for the swapchain back buffers.
 void Window::UpdateRenderTargetViews()
 {
-    auto device = GDxDev->DXDevice;
+    auto device = GDxDev->DxDevice;
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(D3D12RTVDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 

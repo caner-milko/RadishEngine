@@ -27,14 +27,14 @@ ComPtr<ID3D12DescriptorHeap> Device::CreateDescriptorHeap(UINT numDescriptors, D
     desc.NodeMask = 0;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap;
-    ThrowIfFailed(GDxDev->DXDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptorHeap)));
+    ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptorHeap)));
 
     return descriptorHeap;
 }
 
 UINT Device::GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE type) const
 {
-    return GDxDev->DXDevice->GetDescriptorHandleIncrementSize(type);
+    return GDxDev->DxDevice->GetDescriptorHandleIncrementSize(type);
 }
 
 bool Device::InitDX(DeviceCreateInfo createInfo)
@@ -45,13 +45,13 @@ bool Device::InitDX(DeviceCreateInfo createInfo)
 }
 bool Device::Init(DeviceCreateInfo createInfo)
 {
-    ThrowIfFailed(D3D12CreateDevice(createInfo.DXGIAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&DXDevice)));
+    ThrowIfFailed(D3D12CreateDevice(createInfo.DXGIAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&DxDevice)));
     //    NAME_D3D12_OBJECT(d3d12Device2);
 
         // Enable debug messages in debug mode.
 #if defined(_DEBUG)
     ComPtr<ID3D12InfoQueue> pInfoQueue;
-    if (SUCCEEDED(DXDevice.As(&pInfoQueue)))
+    if (SUCCEEDED(DxDevice.As(&pInfoQueue)))
     {
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);

@@ -5,6 +5,7 @@
 
 #include <DirectXMath.h>
 #include "Common.h"
+#include "D3D12/D3D12Common.h"
 
 namespace dfr
 {
@@ -105,7 +106,7 @@ private:
     void CreateGBufferHeaps();
     void CreateGBufferTextures(DirectX::XMINT2 size);
     void CreateCamLightBuffers();
-    void LoadMeshes(ComPtr<ID3D12GraphicsCommandList2> cmdList);
+    void LoadMeshes(d3d12::CommandList* cmdList);
     void CreateRootSignatures();
     void CreatePSOs();
 

@@ -76,7 +76,7 @@ void DeferredRenderer::UpdateBufferResource(
     size_t numElements, size_t elementSize, const void* bufferData,
     D3D12_RESOURCE_FLAGS flags)
 {
-    auto device = GDxDev->DXDevice;
+    auto device = GDxDev->DxDevice;
 
     size_t bufferSize = numElements * elementSize;
 
@@ -134,7 +134,7 @@ void DeferredRenderer::ResizeDepthBuffer(int width, int height)
 
 bool DeferredRenderer::LoadContent()
 {
-    auto device = GDxDev->DXDevice;
+    auto device = GDxDev->DxDevice;
     auto* commandQueue = GDxDev->GetImmediateCommandQueue();
     auto* cmdList = commandQueue->BeginCommandList();
     // Load default render shaders
@@ -146,7 +146,7 @@ bool DeferredRenderer::LoadContent()
     // Create buffer for lights
     CreateCamLightBuffers();
     // Load vertex and index buffers of meshes
-    LoadMeshes(cmdList->DxCommandList);
+    LoadMeshes(cmdList);
     // Create root signatures for gbuffer and shading passes
     CreateRootSignatures();
     // Create PSO for gbuffer pass and shading pass
@@ -247,7 +247,7 @@ void DeferredRenderer::CreateGBufferHeaps()
         dsvHeapDesc.NumDescriptors = 1;
         dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        ThrowIfFailed(GDxDev->DXDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&GBuffers.DepthHeap)));
+        ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&GBuffers.DepthHeap)));
     }
     {
 
@@ -256,7 +256,7 @@ void DeferredRenderer::CreateGBufferHeaps()
         albedoHeapDesc.NumDescriptors = 1;
         albedoHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         albedoHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAGS::D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        ThrowIfFailed(GDxDev->DXDevice->CreateDescriptorHeap(&albedoHeapDesc, IID_PPV_ARGS(&GBuffers.AlbedoHeap)));
+        ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&albedoHeapDesc, IID_PPV_ARGS(&GBuffers.AlbedoHeap)));
     }
     {
         // Create the descriptor heap for the depth-stencil view.
@@ -264,7 +264,7 @@ void DeferredRenderer::CreateGBufferHeaps()
         normalHeapDesc.NumDescriptors = 1;
         normalHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         normalHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAGS::D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        ThrowIfFailed(GDxDev->DXDevice->CreateDescriptorHeap(&normalHeapDesc, IID_PPV_ARGS(&GBuffers.NormalHeap)));
+        ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&normalHeapDesc, IID_PPV_ARGS(&GBuffers.NormalHeap)));
     }
 
 }
@@ -272,7 +272,7 @@ void DeferredRenderer::CreateGBufferHeaps()
 
 void DeferredRenderer::CreateGBufferTextures(XMINT2 size)
 {
-    auto device = GDxDev->DXDevice;        
+    auto device = GDxDev->DxDevice;        
     GDxDev->GetImmediateCommandQueue()->Flush();
 
     CD3DX12_HEAP_PROPERTIES heapProperties(D3D12_HEAP_TYPE_DEFAULT);
@@ -365,14 +365,14 @@ void DeferredRenderer::CreateCamLightBuffers()
 {
 }
 
-void DeferredRenderer::LoadMeshes(ComPtr<ID3D12GraphicsCommandList2> cmdList)
+void DeferredRenderer::LoadMeshes(d3d12::CommandList* cmdList)
 {
     // Upload vertex buffer data.
     ComPtr<ID3D12Resource> intermediateVertexBuffer;
-    UpdateBufferResource(cmdList,
+    UpdateBufferResource(cmdList->DxCommandList,
         &m_VertexBuffer, &intermediateVertexBuffer,
         _countof(g_Vertices), sizeof(VertexPosColor), g_Vertices);
-
+    cmdList->AddDependency(intermediateVertexBuffer);
     // Create the vertex buffer view.
     m_VertexBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress();
     m_VertexBufferView.SizeInBytes = sizeof(g_Vertices);
@@ -380,9 +380,11 @@ void DeferredRenderer::LoadMeshes(ComPtr<ID3D12GraphicsCommandList2> cmdList)
 
     // Upload index buffer data.
     ComPtr<ID3D12Resource> intermediateIndexBuffer;
-    UpdateBufferResource(cmdList,
+    UpdateBufferResource(cmdList->DxCommandList,
         &m_IndexBuffer, &intermediateIndexBuffer,
         _countof(g_Indicies), sizeof(WORD), g_Indicies);
+
+    cmdList->AddDependency(intermediateIndexBuffer);
 
     // Create index buffer view.
     m_IndexBufferView.BufferLocation = m_IndexBuffer->GetGPUVirtualAddress();
