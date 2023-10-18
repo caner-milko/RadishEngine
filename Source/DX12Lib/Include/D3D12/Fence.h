@@ -16,9 +16,10 @@ struct Fence : DeviceChild
 	void Init(FenceCreateInfo createInfo);
 	void Wait(uint64_t waitValue);
 	void Signal(uint64_t signalValue);
-	void SignalNext()
+	uint64_t SignalNext()
 	{
 		Signal(++LastSignal);
+		return LastSignal;
 	}
 	void WaitForLastSignal();
 	bool Signalled();

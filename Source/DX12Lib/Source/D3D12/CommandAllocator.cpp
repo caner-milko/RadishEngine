@@ -11,8 +11,4 @@ void CommandAllocator::Reset()
 {
 	ThrowIfFailed(DxCommandAllocator->Reset());
 }
-void CommandAllocator::Release()
-{
-	ThrowIfFailed(DxCommandAllocator->Release());
-}
 }

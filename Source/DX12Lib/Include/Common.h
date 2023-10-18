@@ -30,10 +30,10 @@ using Clock = std::chrono::high_resolution_clock;
 
 inline void ThrowIfFailed(long hr)
 {
-    if (hr < 0)
-    {
-        throw std::exception();
-    }
+	if (hr < 0)
+	{
+		throw std::exception();
+	}
 }
 
 #define STR1(x) #x

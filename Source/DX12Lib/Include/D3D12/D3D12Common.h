@@ -14,8 +14,6 @@ struct Device;
 struct CommandQueue;
 struct CommandList;
 
-#define NAME_D3D12_OBJECT(x) x->SetName( WSTR(__FILE__ "(" STR(__LINE__) "): " L#x) )
-
 struct DeviceChild
 {
 	DeviceChild(Device* dev) : Dev(dev) {}

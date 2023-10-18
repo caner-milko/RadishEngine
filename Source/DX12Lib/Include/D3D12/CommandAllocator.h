@@ -13,7 +13,6 @@ struct CommandAllocator : public DeviceChild
 
 	void Init(CommandAllocatorCreateInfo createInfo);
 	void Reset();
-	void Release();
 
 	ComPtr<struct ID3D12CommandAllocator> DxCommandAllocator;
 };
