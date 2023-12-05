@@ -72,7 +72,7 @@ private:
 		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE );
 
 	// Resize the depth buffer to match the size of the client area.
-	void ResizeDepthBuffer(int width, int height);
+	void ResizeBuffers(int width, int height);
 	
 
 	uint64_t m_FenceValues[Window::BufferCount] = {};

@@ -4,3 +4,6 @@
 [submodule "External/D3D12MemoryAllocator"]
 	path = External/D3D12MemoryAllocator
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git
+[submodule "External/fastgltf"]
+	path = External/fastgltf
+	url = https://github.com/spnda/fastgltf.git

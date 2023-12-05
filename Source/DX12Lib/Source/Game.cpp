@@ -37,7 +37,16 @@ bool Game::Initialize()
 
 void Game::Destroy()
 {
-	Application::Get().DestroyWindow(Window);
+	for (int i = 0; i < Window->BufferCount; i++)
+	{
+		if (Window->BackBuffers[i].LastCmdList)
+		{
+			Window->BackBuffers[i].LastCmdList->Wait();
+		}
+		Window->BackBuffers[i].DxResource.Reset();
+		Window->BackBuffers[i].DxResource = nullptr;
+	}
+	Window->Destroy();
 	Window.reset();
 }
 

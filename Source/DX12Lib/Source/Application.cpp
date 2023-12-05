@@ -16,8 +16,6 @@ using WindowMap = std::unordered_map< HWND, WindowPtr >;
 using WindowNameMap = std::unordered_map< std::wstring, WindowPtr >;
 
 static Application* gs_pSingelton = nullptr;
-static WindowMap gs_Windows;
-static WindowNameMap gs_WindowByName;
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -92,7 +90,7 @@ void Application::Destroy()
 {
 	if (gs_pSingelton)
 	{
-		assert( gs_Windows.empty() && gs_WindowByName.empty() && 
+		assert(!Application::Get().TheWindow && 
 			"All windows should be destroyed before destroying the application instance.");
 
 		delete gs_pSingelton;
@@ -103,6 +101,7 @@ void Application::Destroy()
 Application::~Application()
 {
 	GDxDev->GetImmediateCommandQueue()->Flush();
+	GDxDev = nullptr;
 }
 
 ComPtr<IDXGIAdapter4> Application::GetAdapter(bool bUseWarp)
@@ -177,12 +176,7 @@ bool Application::IsTearingSupported() const
 
 std::shared_ptr<Window> Application::CreateRenderWindow(const std::wstring& windowName, int clientWidth, int clientHeight, bool vSync )
 {
-	// First check if a window with the given name already exists.
-	WindowNameMap::iterator windowIter = gs_WindowByName.find(windowName);
-	if (windowIter != gs_WindowByName.end())
-	{
-		return windowIter->second;
-	}
+	assert(!TheWindow);
 
 	RECT windowRect = { 0, 0, clientWidth, clientHeight };
 	AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
@@ -199,79 +193,44 @@ std::shared_ptr<Window> Application::CreateRenderWindow(const std::wstring& wind
 	}
 
 	WindowPtr pWindow = std::make_shared<MakeWindow>(hWnd, windowName, clientWidth, clientHeight, vSync);
-
-	gs_Windows.insert(WindowMap::value_type(hWnd, pWindow));
-	gs_WindowByName.insert(WindowNameMap::value_type(windowName, pWindow));
-
+	TheWindow = pWindow.get();
 	return pWindow;
 }
-
-void Application::DestroyWindow(std::shared_ptr<Window> window)
-{
-	if (window) window->Destroy();
-}
-
-void Application::DestroyWindow(const std::wstring& windowName)
-{
-	WindowPtr pWindow = GetWindowByName(windowName);
-	if ( pWindow )
-	{
-		DestroyWindow(pWindow);
-	}
-}
-
-std::shared_ptr<Window> Application::GetWindowByName(const std::wstring& windowName)
-{
-	std::shared_ptr<Window> window;
-	WindowNameMap::iterator iter = gs_WindowByName.find(windowName);
-	if (iter != gs_WindowByName.end())
-	{
-		window = iter->second;
-	}
-
-	return window;
-}
-
 
 int Application::Run(std::shared_ptr<Game> pGame)
 {
 	if (!pGame->Initialize()) return 1;
 	if (!pGame->LoadContent()) return 2;
-
+	
 	MSG msg = { 0 };
 	while (msg.message != WM_QUIT)
 	{
+		auto* window = Application::Get().TheWindow;
 		if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
+		if (msg.message == WM_QUIT)
+			break;
+		// Delta time will be filled in by the Window.
+		UpdateEventArgs updateEventArgs(0.0f, 0.0f);
+		window->OnUpdate(updateEventArgs);
+		RenderEventArgs renderEventArgs(0.0f, 0.0f);
+		// Delta time will be filled in by the Window.
+		window->OnRender(renderEventArgs);
 	}
 
 	// Flush any commands in the commands queues before quiting.
 	GDxDev->GetImmediateCommandQueue()->Flush();
-
 	pGame->UnloadContent();
 	pGame->Destroy();
-
 	return static_cast<int>(msg.wParam);
 }
 
 void Application::Quit(int exitCode)
 {
 	PostQuitMessage(exitCode);
-}
-
-// Remove a window from our window lists.
-static void RemoveWindow(HWND hWnd)
-{
-	WindowMap::iterator windowIter = gs_Windows.find(hWnd);
-	if (windowIter != gs_Windows.end())
-	{
-		WindowPtr pWindow = windowIter->second;
-		gs_WindowByName.erase(pWindow->GetWindowName());
-		gs_Windows.erase(windowIter);
-	}
 }
 
 // Convert the message ID into a MouseButton ID
@@ -308,29 +267,11 @@ MouseButtonEventArgs::MouseButton DecodeMouseButton(UINT messageID)
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	WindowPtr pWindow;
-	{
-		WindowMap::iterator iter = gs_Windows.find(hwnd);
-		if (iter != gs_Windows.end())
-		{
-			pWindow = iter->second;
-		}
-	}
-
-	if ( pWindow )
+	Window* window = Application::Get().TheWindow;
+	if (window && hwnd == Application::Get().TheWindow->hWnd)
 	{
 		switch (message)
 		{
-		case WM_PAINT:
-		{
-			// Delta time will be filled in by the Window.
-			UpdateEventArgs updateEventArgs(0.0f, 0.0f);
-			pWindow->OnUpdate(updateEventArgs);
-			RenderEventArgs renderEventArgs(0.0f, 0.0f);
-			// Delta time will be filled in by the Window.
-			pWindow->OnRender(renderEventArgs);
-		}
-		break;
 		case WM_SYSKEYDOWN:
 		case WM_KEYDOWN:
 		{
@@ -351,7 +292,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			KeyCode::Key key = (KeyCode::Key)wParam;
 			unsigned int scanCode = (lParam & 0x00FF0000) >> 16;
 			KeyEventArgs keyEventArgs(key, c, KeyEventArgs::Pressed, shift, control, alt);
-			pWindow->OnKeyPressed(keyEventArgs);
+			window->OnKeyPressed(keyEventArgs);
 		}
 		break;
 		case WM_SYSKEYUP:
@@ -376,7 +317,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			}
 
 			KeyEventArgs keyEventArgs(key, c, KeyEventArgs::Released, shift, control, alt);
-			pWindow->OnKeyReleased(keyEventArgs);
+			window->OnKeyReleased(keyEventArgs);
 		}
 		break;
 		// The default window procedure will play a system notification sound 
@@ -396,7 +337,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			int y = ((int)(short)HIWORD(lParam));
 
 			MouseMotionEventArgs mouseMotionEventArgs(lButton, mButton, rButton, control, shift, x, y);
-			pWindow->OnMouseMoved(mouseMotionEventArgs);
+			window->OnMouseMoved(mouseMotionEventArgs);
 		}
 		break;
 		case WM_LBUTTONDOWN:
@@ -413,7 +354,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			int y = ((int)(short)HIWORD(lParam));
 
 			MouseButtonEventArgs mouseButtonEventArgs(DecodeMouseButton(message), MouseButtonEventArgs::Pressed, lButton, mButton, rButton, control, shift, x, y);
-			pWindow->OnMouseButtonPressed(mouseButtonEventArgs);
+			window->OnMouseButtonPressed(mouseButtonEventArgs);
 		}
 		break;
 		case WM_LBUTTONUP:
@@ -430,7 +371,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			int y = ((int)(short)HIWORD(lParam));
 
 			MouseButtonEventArgs mouseButtonEventArgs(DecodeMouseButton(message), MouseButtonEventArgs::Released, lButton, mButton, rButton, control, shift, x, y);
-			pWindow->OnMouseButtonReleased(mouseButtonEventArgs);
+			window->OnMouseButtonReleased(mouseButtonEventArgs);
 		}
 		break;
 		case WM_MOUSEWHEEL:
@@ -457,7 +398,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			ScreenToClient(hwnd, &clientToScreenPoint);
 
 			MouseWheelEventArgs mouseWheelEventArgs(zDelta, lButton, mButton, rButton, control, shift, (int)clientToScreenPoint.x, (int)clientToScreenPoint.y);
-			pWindow->OnMouseWheel(mouseWheelEventArgs);
+			window->OnMouseWheel(mouseWheelEventArgs);
 		}
 		break;
 		case WM_SIZE:
@@ -466,20 +407,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			int height = ((int)(short)HIWORD(lParam));
 
 			ResizeEventArgs resizeEventArgs(width, height);
-			pWindow->OnResize(resizeEventArgs);
+			window->OnResize(resizeEventArgs);
+			return DefWindowProcW(hwnd, message, wParam, lParam);
 		}
 		break;
 		case WM_DESTROY:
 		{
-			// If a window is being destroyed, remove it from the 
-			// window maps.
-			RemoveWindow(hwnd);
-
-			if (gs_Windows.empty())
-			{
-				// If there are no more windows, quit the application.
-				PostQuitMessage(0);
-			}
+			Application::Get().TheWindow = nullptr;
+			PostQuitMessage(0);
 		}
 		break;
 		default:

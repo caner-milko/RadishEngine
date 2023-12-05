@@ -251,18 +251,17 @@ void Window::OnResize(ResizeEventArgs& e)
 		ClientWidth = max(1, e.Width);
 		ClientHeight = max(1, e.Height);
 
-		GDxDev->GetImmediateCommandQueue()->Flush();
-
 		for (int i = 0; i < BufferCount; ++i)
 		{
 			BackBuffers[i].DxResource.Reset();
 		}
-
+		GDxDev->GetImmediateCommandQueue()->Flush();
 		DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
 		ThrowIfFailed(DXGISwapChain->GetDesc(&swapChainDesc));
 		ThrowIfFailed(DXGISwapChain->ResizeBuffers(BufferCount, ClientWidth,
 			ClientHeight, swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
 
+		ThrowIfFailed(DXGISwapChain->GetDesc(&swapChainDesc));
 		CurrentBackBufferIndex = DXGISwapChain->GetCurrentBackBufferIndex();
 
 		UpdateRenderTargetViews();
@@ -333,9 +332,9 @@ void Window::UpdateRenderTargetViews()
 	{
 		ComPtr<ID3D12Resource> backBuffer;
 		ThrowIfFailed(DXGISwapChain->GetBuffer(i, IID_PPV_ARGS(&backBuffer)));
-
+		auto desc = backBuffer->GetDesc();
 		device->CreateRenderTargetView(backBuffer.Get(), nullptr, rtvHandle);
-
+		backBuffer->SetName((L"BackBuffer" + std::to_wstring(i)).c_str());
 		BackBuffers[i].DxResource = backBuffer;
 
 		rtvHandle.Offset(RTVDescriptorSize);

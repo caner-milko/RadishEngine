@@ -4,6 +4,9 @@
 
 namespace dfr::d3d12
 {
+CommandQueue::CommandQueue(Device* dev) : DeviceChild(dev), QueueFence(dev)
+{
+}
 bool CommandQueue::Init(CommandQueueCreateInfo createInfo)
 {
 	ThrowIfFailed(Dev->DxDevice->CreateCommandQueue(&createInfo.Desc, IID_PPV_ARGS(&DxCommandQueue)));
@@ -14,6 +17,7 @@ bool CommandQueue::Init(CommandQueueCreateInfo createInfo)
 		auto& cmdList = CommandLists.emplace_back(std::make_unique<CommandList>(this));
 		cmdList->Init(cmdListCreateInfo);
 	}
+	QueueFence.Init({ .InitialValue = 0 });
 	return true;
 }
 void CommandQueue::Flush()
@@ -22,6 +26,16 @@ void CommandQueue::Flush()
 	{
 		cmdList->Wait();
 	}
+	for (auto& cmdList : CommandLists)
+	{
+		assert(cmdList->CmdFence.Signalled());
+	}
+
+	DxCommandQueue->Signal(QueueFence.DxFence.Get(), 1);
+
+	QueueFence.Wait(1);
+
+	QueueFence.DxFence->Signal(0);
 }
 
 CommandList* CommandQueue::BeginCommandList()
@@ -47,7 +61,7 @@ CommandList* CommandQueue::BeginCommandList()
 			}
 		}
 	}
-	selected->Reset();
+	selected->Begin();
 	return selected;
 }
 void CommandQueue::ExecuteCommandList(CommandList& cmdList)
@@ -57,5 +71,8 @@ void CommandQueue::ExecuteCommandList(CommandList& cmdList)
 	};
 
 	DxCommandQueue->ExecuteCommandLists(1, ppCommandLists);
+	
+	DxCommandQueue->Signal(cmdList.CmdFence.DxFence.Get(), cmdList.CmdFence.SignalNext());
+
 }
 }

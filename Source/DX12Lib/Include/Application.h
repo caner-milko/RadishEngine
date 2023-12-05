@@ -51,21 +51,6 @@ public:
 	std::shared_ptr<Window> CreateRenderWindow(const std::wstring& windowName, int clientWidth, int clientHeight, bool vSync = true);
 
 	/**
-	* Destroy a window given the window name.
-	*/
-	void DestroyWindow(const std::wstring& windowName);
-
-	/**
-	* Destroy a window given the window reference.
-	*/
-	void DestroyWindow(std::shared_ptr<Window> window);
-
-	/**
-	* Find a window by the window name.
-	*/
-	std::shared_ptr<Window> GetWindowByName(const std::wstring& windowName);
-
-	/**
 	* Run the application loop and message pump.
 	* @return The error code if an error occurred.
 	*/
@@ -78,6 +63,8 @@ public:
 	void Quit(int exitCode = 0);
 
 	rc<d3d12::CommandQueue> GetCommandQueue() const;
+
+	Window* TheWindow{};
 
 protected:
 
@@ -99,6 +86,7 @@ private:
 	ComPtr<IDXGIAdapter4> DXGIAdapter;
 
 	bool TearingSupported;
+
 
 };
 };

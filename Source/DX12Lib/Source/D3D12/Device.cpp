@@ -14,6 +14,7 @@ CommandQueue* Device::GetImmediateCommandQueue()
 	{
 		ImmediateCommandQueue = std::make_unique<CommandQueue>(this);
 		ImmediateCommandQueue->Init({});
+		ImmediateCommandQueue->DxCommandQueue->SetName(L"Immediate Command Queue");
 	}
 	return ImmediateCommandQueue.get();
 }

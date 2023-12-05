@@ -51,13 +51,20 @@ static VertexPosColor g_Vertices[8] = {
 
 static WORD g_Indicies[36] =
 {
-	0, 1, 2, 0, 2, 3,
-	4, 6, 5, 4, 7, 6,
-	4, 5, 1, 4, 1, 0,
-	3, 2, 6, 3, 6, 7,
-	1, 5, 6, 1, 6, 2,
-	4, 0, 3, 4, 3, 7
+	0, 1, 2,
+	0, 2, 3,
+	4, 6, 5,
+	4, 7, 6,
+	4, 5, 1,
+	4, 1, 0,
+	3, 2, 6,
+	3, 6, 7,
+	1, 5, 6,
+	1, 6, 2,
+	4, 0, 3,
+	4, 3, 7
 };
+
 namespace dfr 
 {
 DeferredRenderer::DeferredRenderer(const std::wstring& name, int width, int height, bool vSync)
@@ -117,7 +124,7 @@ void DeferredRenderer::UpdateBufferResource(
 
 
 
-void DeferredRenderer::ResizeDepthBuffer(int width, int height)
+void DeferredRenderer::ResizeBuffers(int width, int height)
 {
 	if (m_ContentLoaded)
 	{
@@ -151,72 +158,6 @@ bool DeferredRenderer::LoadContent()
 	CreateRootSignatures();
 	// Create PSO for gbuffer pass and shading pass
 	CreatePSOs();
-
-	// Create the vertex input layout
-	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	};
-
-	// Create a root signature.
-	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
-	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
-	{
-		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-	}
-
-	// Allow input layout and deny unnecessary access to certain pipeline stages.
-	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
-
-	// A single 32-bit constant root parameter that is used by the vertex shader.
-	CD3DX12_ROOT_PARAMETER1 rootParameters[1];
-	rootParameters[0].InitAsConstants(sizeof(XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-
-	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-	rootSignatureDescription.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, rootSignatureFlags);
-
-	// Serialize the root signature.
-	ComPtr<ID3DBlob> rootSignatureBlob;
-	ComPtr<ID3DBlob> errorBlob;
-	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDescription,
-		featureData.HighestVersion, &rootSignatureBlob, &errorBlob));
-	// Create the root signature.
-	ThrowIfFailed(device->CreateRootSignature(0, rootSignatureBlob->GetBufferPointer(),
-		rootSignatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature)));
-
-	struct PipelineStateStream
-	{
-		CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
-		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
-		CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
-		CD3DX12_PIPELINE_STATE_STREAM_VS VS;
-		CD3DX12_PIPELINE_STATE_STREAM_PS PS;
-		CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
-		CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
-	} pipelineStateStream;
-
-	D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-	rtvFormats.NumRenderTargets = 1;
-	rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-	pipelineStateStream.pRootSignature = m_RootSignature.Get();
-	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
-	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(Shaders.MeshVertexShader.Get());
-	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(Shaders.MeshFragmentShader.Get());
-	pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-	pipelineStateStream.RTVFormats = rtvFormats;
-
-	D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc = {
-		sizeof(PipelineStateStream), &pipelineStateStream
-	};
-	ThrowIfFailed(device->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&m_PipelineState)));
 
 	cmdList->Execute().Wait();
 
@@ -314,12 +255,12 @@ void DeferredRenderer::CreateGBufferTextures(XMINT2 size)
 		optimizedClearValue.Color[2] = 0.f;
 		optimizedClearValue.Color[3] = 0.f;
 		auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D(albedoFormat, size.x, size.y,
-			1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+			1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 		ThrowIfFailed(device->CreateCommittedResource(
 			&heapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&texDesc,
-			D3D12_RESOURCE_STATE_RENDER_TARGET,
+			D3D12_RESOURCE_STATE_COMMON,
 			&optimizedClearValue,
 			IID_PPV_ARGS(&GBuffers.Albedo)
 		));
@@ -393,10 +334,77 @@ void DeferredRenderer::LoadMeshes(d3d12::CommandList* cmdList)
 
 void DeferredRenderer::CreateRootSignatures()
 {
+	auto device = GDxDev->DxDevice;
+
+	// Create a root signature.
+	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
+	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+	{
+		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+	}
+
+	// Allow input layout and deny unnecessary access to certain pipeline stages.
+	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+
+	// A single 32-bit constant root parameter that is used by the vertex shader.
+	CD3DX12_ROOT_PARAMETER1 rootParameters[1];
+	rootParameters[0].InitAsConstants(sizeof(XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
+	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+	rootSignatureDescription.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, rootSignatureFlags);
+
+	// Serialize the root signature.
+	ComPtr<ID3DBlob> rootSignatureBlob;
+	ComPtr<ID3DBlob> errorBlob;
+	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDescription,
+		featureData.HighestVersion, &rootSignatureBlob, &errorBlob));
+	// Create the root signature.
+	ThrowIfFailed(device->CreateRootSignature(0, rootSignatureBlob->GetBufferPointer(),
+		rootSignatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature)));
 }
 
 void DeferredRenderer::CreatePSOs()
 {
+	auto device = GDxDev->DxDevice;
+	// Create the vertex input layout
+	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+
+	struct PipelineStateStream
+	{
+		CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+		CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+		CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+		CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+		CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+		CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+	} pipelineStateStream;
+
+	D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+	rtvFormats.NumRenderTargets = 1;
+	rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+	pipelineStateStream.pRootSignature = m_RootSignature.Get();
+	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(Shaders.MeshVertexShader.Get());
+	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(Shaders.MeshFragmentShader.Get());
+	pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+	pipelineStateStream.RTVFormats = rtvFormats;
+
+	D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc = {
+		sizeof(PipelineStateStream), &pipelineStateStream
+	};
+	ThrowIfFailed(device->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&m_PipelineState)));
 }
 
 void DeferredRenderer::OnResize(ResizeEventArgs& e)
@@ -408,7 +416,7 @@ void DeferredRenderer::OnResize(ResizeEventArgs& e)
 		m_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f,
 			static_cast<float>(e.Width), static_cast<float>(e.Height));
 
-		ResizeDepthBuffer(e.Width, e.Height);
+		ResizeBuffers(e.Width, e.Height);
 	}
 }
 
@@ -489,19 +497,15 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 	auto commandList = dfrCommandList->DxCommandList;
 
 	UINT currentBackBufferIndex = Window->GetCurrentBackBufferIndex();
-	auto& backBuffer = Window->GetCurrentBackBuffer();
-	backBuffer.LastCmdList = dfrCommandList;
 	commandList->SetName((std::wstring(L"Present Cmd ") + std::to_wstring(currentBackBufferIndex)).c_str());
-	auto rtv = Window->GetCurrentRenderTargetView();
 	auto dsv = GBuffers.DepthHeap->GetCPUDescriptorHandleForHeapStart();
-
+	auto rtv = GBuffers.AlbedoHeap->GetCPUDescriptorHandleForHeapStart();
+	auto rtResource = GBuffers.Albedo;
 	// Clear the render targets.
 	{
-		TransitionResource(commandList, backBuffer.DxResource,
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
+		TransitionResource(commandList, rtResource,
+			D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		FLOAT clearColor[] = { 0.4f, 0.6f, 0.9f, 1.0f };
-
 		ClearRTV(commandList, rtv, clearColor);
 		ClearDepth(commandList, dsv);
 	}
@@ -527,12 +531,21 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 
 	// Present
 	{
+		TransitionResource(commandList, rtResource,
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		auto& backBuffer = Window->GetCurrentBackBuffer();
+		backBuffer.LastCmdList = dfrCommandList;
+		auto backBufferView = Window->GetCurrentRenderTargetView();
+
 		TransitionResource(commandList, backBuffer.DxResource,
-			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+
+		commandList->CopyResource(backBuffer.DxResource.Get(), rtResource.Get());
+
+		TransitionResource(commandList, backBuffer.DxResource,
+			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
 
 		dfrCommandList->Execute();
-
-		//m_FenceValues[currentBackBufferIndex] = commandQueue->ExecuteCommandList(commandList);
 
 		currentBackBufferIndex = Window->Present();
 
