@@ -20,4 +20,6 @@ target_include_directories(imgui PUBLIC ${IMGUI_INCLUDE_DIR} ${GLFW_INCLUDE_DIRS
 
 add_subdirectory(D3D12MemoryAllocator)
 
+add_subdirectory(tinyobjloader)
+
 set_folder_all_targets(${CMAKE_CURRENT_SOURCE_DIR} "External")
