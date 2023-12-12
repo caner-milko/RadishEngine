@@ -88,10 +88,4 @@ bool CommandList::CheckIfReady()
 	return false;
 }
 
-void CommandList::AddDependency(ComPtr<ID3D12Object> resource)
-{
-	assert(CmdState & CommandListState::Recording);
-	Dependencies.push_back(resource);
-}
-
 }

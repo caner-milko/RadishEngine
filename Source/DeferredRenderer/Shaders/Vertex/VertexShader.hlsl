@@ -1,28 +1,39 @@
 struct ModelViewProjection
 {
-    matrix MVP;
+	matrix MVP;
+};
+
+struct VertexIndices
+{
+	uint PositionIndex;
+	uint NormalIndex;
+	uint TexCoordsIndex;
 };
 
 ConstantBuffer<ModelViewProjection> ModelViewProjectionCB : register(b0);
 
-struct VertexPosColor
-{
-    float3 Position : POSITION;
-    float3 Color    : COLOR;
-};
+Buffer<VertexIndices> Indices : register(t0);
+Buffer<float3> Positions : register(t1);
+Buffer<float3> Normals : register(t2);
+//Buffer<float2> TexCoords : register(t3);
 
 struct VertexShaderOutput
 {
-	float4 Color    : COLOR;
-    float4 Position : SV_Position;
+	float4 Position : SV_Position;
+	float2 TexCoord : TEXCOORD;
+	float3 Normal   : NORMAL;
 };
 
-VertexShaderOutput main(VertexPosColor IN)
+VertexShaderOutput main(uint vertexID : SV_VertexID)
 {
-    VertexShaderOutput OUT;
+	VertexShaderOutput OUT;
 
-    OUT.Position = mul(ModelViewProjectionCB.MVP, float4(IN.Position, 1.0f));
-    OUT.Color = float4(IN.Color, 1.0f);
+	VertexIndices indices = Indices[vertexID];
 
-    return OUT;
+	OUT.Position = mul(ModelViewProjectionCB.MVP, float4(Positions[indices.PositionIndex], 1.0f));
+	OUT.Normal = Normals[indices.NormalIndex];
+	OUT.TexCoord = float2(0, 0);
+	//OUT.TexCoord = TexCoords[indices.TexCoordsIndex];
+
+	return OUT;
 }

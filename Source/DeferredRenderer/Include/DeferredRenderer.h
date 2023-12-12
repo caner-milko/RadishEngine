@@ -10,6 +10,8 @@
 namespace dfr
 {
 
+constexpr const char* MeshPath = DFR_ASSETS_DIR "/sanat.obj";
+
 class DeferredRenderer : public Game
 {
 public:
@@ -68,7 +70,7 @@ private:
 	// Create a GPU buffer.
 	void UpdateBufferResource(ComPtr<ID3D12GraphicsCommandList2> commandList,
 		ID3D12Resource** pDestinationResource, ID3D12Resource** pIntermediateResource,
-		size_t numElements, size_t elementSize, const void* bufferData, 
+		size_t bufferSize, const void* bufferData, 
 		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE );
 
 	// Resize the depth buffer to match the size of the client area.
@@ -77,12 +79,15 @@ private:
 
 	uint64_t m_FenceValues[Window::BufferCount] = {};
 
-	// Vertex buffer for the cube.
-	ComPtr<ID3D12Resource> m_VertexBuffer;
-	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
-	// Index buffer for the cube.
-	ComPtr<ID3D12Resource> m_IndexBuffer;
-	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
+	struct GPUMesh
+	{
+		ComPtr<ID3D12Resource> Positions;
+		ComPtr<ID3D12Resource> Normals;
+		ComPtr<ID3D12Resource> TexCoords;
+		ComPtr<ID3D12Resource> VertexIndices;
+		ComPtr<ID3D12DescriptorHeap> Heap;
+		uint32_t HeapSize;
+	} m_GPUMesh;
 
 	// Root signature
 	ComPtr<ID3D12RootSignature> m_RootSignature;

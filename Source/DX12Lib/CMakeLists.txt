@@ -38,7 +38,7 @@ source_group_files("${RESOURCE_FILES}" "Resource")
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
 
-add_dependencies(${PROJECT_NAME} D3D12MemoryAllocator)
+add_dependencies(${PROJECT_NAME} D3D12MemoryAllocator tinyobjloader)
 target_link_libraries( ${PROJECT_NAME} 
 	PUBLIC d3d12.lib
 	dxgi.lib

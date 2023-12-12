@@ -13,13 +13,8 @@ using namespace Microsoft::WRL;
 #include <d3dcompiler.h>
 
 #include <algorithm> // For std::min and std::max.
-#if defined(min)
-#undef min
-#endif
 
-#if defined(max)
-#undef max
-#endif
+#include <AssetLoader.h>
 
 using namespace DirectX;
 
@@ -38,31 +33,51 @@ struct VertexPosColor
 	XMFLOAT3 Color;
 };
 
-static VertexPosColor g_Vertices[8] = {
-	{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
-	{ XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
-	{ XMFLOAT3(1.0f,  1.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
-	{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
-	{ XMFLOAT3(-1.0f, -1.0f,  1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
-	{ XMFLOAT3(-1.0f,  1.0f,  1.0f), XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
-	{ XMFLOAT3(1.0f,  1.0f,  1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
-	{ XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
+static XMFLOAT3 g_VertexPositions[8] = {
+	{ XMFLOAT3(-1.0f, -1.0f, -1.0f) }, // 0
+	{ XMFLOAT3(-1.0f,  1.0f, -1.0f) }, // 1
+	{ XMFLOAT3(1.0f,  1.0f, -1.0f)}, // 2
+	{ XMFLOAT3(1.0f, -1.0f, -1.0f)}, // 3
+	{ XMFLOAT3(-1.0f, -1.0f,  1.0f) }, // 4
+	{ XMFLOAT3(-1.0f,  1.0f,  1.0f) }, // 5
+	{ XMFLOAT3(1.0f,  1.0f,  1.0f)}, // 6
+	{ XMFLOAT3(1.0f, -1.0f,  1.0f)}  // 7
 };
 
-static WORD g_Indicies[36] =
+static XMFLOAT3 g_VertexColors[8] = {
+	{ XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
+	{ XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
+	{ XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
+	{ XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
+	{ XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
+	{ XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
+	{ XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
+	{ XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
+};
+
+struct VertexIndices
 {
-	0, 1, 2,
-	0, 2, 3,
-	4, 6, 5,
-	4, 7, 6,
-	4, 5, 1,
-	4, 1, 0,
-	3, 2, 6,
-	3, 6, 7,
-	1, 5, 6,
-	1, 6, 2,
-	4, 0, 3,
-	4, 3, 7
+	VertexIndices(uint32_t index) : PositionIndex(index), NormalIndex(index), TexCoordsIndex(index)
+	{}
+	uint32_t PositionIndex;
+	uint32_t NormalIndex;
+	uint32_t TexCoordsIndex;
+};
+
+static VertexIndices g_Indicies[36] =
+{
+	VertexIndices(0), VertexIndices(1), VertexIndices(2),
+	VertexIndices(0), VertexIndices(2), VertexIndices(3),
+	VertexIndices(4), VertexIndices(6), VertexIndices(5),
+	VertexIndices(4), VertexIndices(7), VertexIndices(6),
+	VertexIndices(4), VertexIndices(5), VertexIndices(1),
+	VertexIndices(4), VertexIndices(1), VertexIndices(0),
+	VertexIndices(3), VertexIndices(2), VertexIndices(6),
+	VertexIndices(3), VertexIndices(6), VertexIndices(7),
+	VertexIndices(1), VertexIndices(5), VertexIndices(6),
+	VertexIndices(1), VertexIndices(6), VertexIndices(2),
+	VertexIndices(4), VertexIndices(0), VertexIndices(3),
+	VertexIndices(4), VertexIndices(3), VertexIndices(7)
 };
 
 namespace dfr 
@@ -80,12 +95,10 @@ void DeferredRenderer::UpdateBufferResource(
 	ComPtr<ID3D12GraphicsCommandList2> commandList,
 	ID3D12Resource** pDestinationResource,
 	ID3D12Resource** pIntermediateResource,
-	size_t numElements, size_t elementSize, const void* bufferData,
+	size_t bufferSize, const void* bufferData,
 	D3D12_RESOURCE_FLAGS flags)
 {
 	auto device = GDxDev->DxDevice;
-
-	size_t bufferSize = numElements * elementSize;
 
 	// Create a committed resource for the GPU resource in a default heap.
 	CD3DX12_HEAP_PROPERTIES heapProperties(D3D12_HEAP_TYPE_DEFAULT);
@@ -190,7 +203,6 @@ void DeferredRenderer::CreateGBufferHeaps()
 		ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&GBuffers.DepthHeap)));
 	}
 	{
-
 		// Create the descriptor heap for the depth-stencil view.
 		D3D12_DESCRIPTOR_HEAP_DESC albedoHeapDesc = {};
 		albedoHeapDesc.NumDescriptors = 1;
@@ -208,7 +220,6 @@ void DeferredRenderer::CreateGBufferHeaps()
 	}
 
 }
-
 
 void DeferredRenderer::CreateGBufferTextures(XMINT2 size)
 {
@@ -307,29 +318,63 @@ void DeferredRenderer::CreateCamLightBuffers()
 
 void DeferredRenderer::LoadMeshes(d3d12::CommandList* cmdList)
 {
+	rc<Mesh> mesh = std::move(loadObj(MeshPath));
 	// Upload vertex buffer data.
-	ComPtr<ID3D12Resource> intermediateVertexBuffer;
+	cmdList->AddDependency(mesh);
+
+	ComPtr<ID3D12Resource> intermediateVertexPosBuffer;
 	UpdateBufferResource(cmdList->DxCommandList,
-		&m_VertexBuffer, &intermediateVertexBuffer,
-		_countof(g_Vertices), sizeof(VertexPosColor), g_Vertices);
-	cmdList->AddDependency(intermediateVertexBuffer);
-	// Create the vertex buffer view.
-	m_VertexBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress();
-	m_VertexBufferView.SizeInBytes = sizeof(g_Vertices);
-	m_VertexBufferView.StrideInBytes = sizeof(VertexPosColor);
+		&m_GPUMesh.Positions, &intermediateVertexPosBuffer,
+		sizeof(g_VertexPositions), g_VertexPositions);
+	cmdList->AddDependency(intermediateVertexPosBuffer);
+
+	ComPtr<ID3D12Resource> intermediateVertexColBuffer;
+	UpdateBufferResource(cmdList->DxCommandList,
+		&m_GPUMesh.Normals, &intermediateVertexColBuffer,
+		sizeof(g_VertexPositions), g_VertexPositions);
+	cmdList->AddDependency(intermediateVertexColBuffer);
 
 	// Upload index buffer data.
 	ComPtr<ID3D12Resource> intermediateIndexBuffer;
 	UpdateBufferResource(cmdList->DxCommandList,
-		&m_IndexBuffer, &intermediateIndexBuffer,
-		_countof(g_Indicies), sizeof(WORD), g_Indicies);
-
+		&m_GPUMesh.VertexIndices, &intermediateIndexBuffer,
+		sizeof(g_Indicies), g_Indicies);
 	cmdList->AddDependency(intermediateIndexBuffer);
 
-	// Create index buffer view.
-	m_IndexBufferView.BufferLocation = m_IndexBuffer->GetGPUVirtualAddress();
-	m_IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
-	m_IndexBufferView.SizeInBytes = sizeof(g_Indicies);
+	D3D12_DESCRIPTOR_HEAP_DESC desc;
+	desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAGS::D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	desc.NodeMask = 0;
+	desc.NumDescriptors = 3;
+	desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	GDxDev->DxDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_GPUMesh.Heap));
+	m_GPUMesh.HeapSize = GDxDev->DxDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC posNormalDesc = {};
+	posNormalDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	posNormalDesc.Format = DXGI_FORMAT_UNKNOWN;
+	posNormalDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	posNormalDesc.Buffer.FirstElement = 0;
+	posNormalDesc.Buffer.NumElements = _countof(g_VertexPositions);
+	posNormalDesc.Buffer.StructureByteStride = sizeof(XMFLOAT3);
+	posNormalDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC indicesDesc = {};
+	indicesDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	indicesDesc.Format = DXGI_FORMAT_UNKNOWN;
+	indicesDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	indicesDesc.Buffer.FirstElement = 0;
+	indicesDesc.Buffer.NumElements = _countof(g_Indicies);
+	indicesDesc.Buffer.StructureByteStride = sizeof(VertexIndices);
+	indicesDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandles[3];
+	srvHandles[0] = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_GPUMesh.Heap->GetCPUDescriptorHandleForHeapStart(), 0, m_GPUMesh.HeapSize);
+	srvHandles[1] = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_GPUMesh.Heap->GetCPUDescriptorHandleForHeapStart(), 1, m_GPUMesh.HeapSize);
+	srvHandles[2] = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_GPUMesh.Heap->GetCPUDescriptorHandleForHeapStart(), 2, m_GPUMesh.HeapSize);
+	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.VertexIndices.Get(), &indicesDesc, srvHandles[0]);
+	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.Positions.Get(), &posNormalDesc, srvHandles[1]);
+	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.Normals.Get(), &posNormalDesc, srvHandles[2]);
+	//GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.TexCoords.Get(), &srvDesc, srvHandles[0]);
 }
 
 void DeferredRenderer::CreateRootSignatures()
@@ -352,10 +397,14 @@ void DeferredRenderer::CreateRootSignatures()
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
 
-	// A single 32-bit constant root parameter that is used by the vertex shader.
-	CD3DX12_ROOT_PARAMETER1 rootParameters[1];
-	rootParameters[0].InitAsConstants(sizeof(XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	CD3DX12_DESCRIPTOR_RANGE1 DescRange{};
 
+	DescRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
+
+	// A single 32-bit constant root parameter that is used by the vertex shader.
+	CD3DX12_ROOT_PARAMETER1 rootParameters[2];
+	rootParameters[0].InitAsConstants(sizeof(XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParameters[1].InitAsDescriptorTable(1, &DescRange);
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
 	rootSignatureDescription.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, rootSignatureFlags);
 
@@ -381,7 +430,6 @@ void DeferredRenderer::CreatePSOs()
 	struct PipelineStateStream
 	{
 		CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
-		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
 		CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
 		CD3DX12_PIPELINE_STATE_STREAM_VS VS;
 		CD3DX12_PIPELINE_STATE_STREAM_PS PS;
@@ -394,7 +442,6 @@ void DeferredRenderer::CreatePSOs()
 	rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	pipelineStateStream.pRootSignature = m_RootSignature.Get();
-	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(Shaders.MeshVertexShader.Get());
 	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(Shaders.MeshFragmentShader.Get());
@@ -514,8 +561,6 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 	commandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	commandList->IASetVertexBuffers(0, 1, &m_VertexBufferView);
-	commandList->IASetIndexBuffer(&m_IndexBufferView);
 
 	commandList->RSSetViewports(1, &m_Viewport);
 	commandList->RSSetScissorRects(1, &m_ScissorRect);
@@ -526,7 +571,10 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 	XMMATRIX mvpMatrix = XMMatrixMultiply(m_ModelMatrix, m_ViewMatrix);
 	mvpMatrix = XMMatrixMultiply(mvpMatrix, m_ProjectionMatrix);
 	commandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
-
+	ID3D12DescriptorHeap* ppHeaps[] = { m_GPUMesh.Heap.Get(),};
+	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(m_GPUMesh.Heap->GetGPUDescriptorHandleForHeapStart(), 0, m_GPUMesh.HeapSize);
+	commandList->SetGraphicsRootDescriptorTable(1, srvHandle);
 	commandList->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
 
 	// Present

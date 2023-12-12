@@ -11,7 +11,9 @@
 #include <assert.h>
 #include <chrono>
 #include <array>
-
+#include <string_view>
+#include <functional>
+#define NOMINMAX
 #include <wrl/client.h>
 
 namespace dfr
@@ -40,5 +42,4 @@ inline void ThrowIfFailed(long hr)
 #define STR(x) STR1(x)
 #define WSTR1(x) L##x
 #define WSTR(x) WSTR1(x)
-
 };

@@ -248,8 +248,8 @@ void Window::OnResize(ResizeEventArgs& e)
 	// Update the client size.
 	if (ClientWidth != e.Width || ClientHeight != e.Height)
 	{
-		ClientWidth = max(1, e.Width);
-		ClientHeight = max(1, e.Height);
+		ClientWidth = std::max(1, e.Width);
+		ClientHeight = std::max(1, e.Height);
 
 		for (int i = 0; i < BufferCount; ++i)
 		{

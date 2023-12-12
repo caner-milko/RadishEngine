@@ -30,6 +30,8 @@ source_group_files("${SHADER_FILES}" "Shaders")
 source_group_files("${INCLUDE_FILES}" "Include")
 source_group_files("${SRC_FILES}" "Source")
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE DFR_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
+
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 

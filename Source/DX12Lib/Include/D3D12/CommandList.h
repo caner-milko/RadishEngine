@@ -32,14 +32,25 @@ struct CommandList : public DeviceChild
 	void Wait();
 	void Clear();
 	bool CheckIfReady();
-	void AddDependency(ComPtr<ID3D12Object> resource);
+	template<typename T>
+	void AddDependency(ComPtr<T> resource)
+	{
+		assert(CmdState & CommandListState::Recording);
+		Dependencies.emplace_back([resource]() {});
+	}
+	template<typename T>
+	void AddDependency(std::shared_ptr<T> resource)
+	{
+		assert(CmdState & CommandListState::Recording);
+		Dependencies.emplace_back([resource]() {});
+	}
 
 	CommandQueue* CmdQueue = nullptr;
 	ComPtr<ID3D12GraphicsCommandList2> DxCommandList;
 	CommandAllocator CmdAllocator;
 	Fence CmdFence;
 	CommandListState CmdState = CommandListState::Initial;
-	std::vector<ComPtr<ID3D12Object>> Dependencies;
+	std::vector<std::function<void()>> Dependencies;
 };
 
 };
