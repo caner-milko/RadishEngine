@@ -25,7 +25,7 @@ constexpr const T& clamp(const T& val, const T& min, const T& max)
 {
 	return val < min ? min : val > max ? max : val;
 }
-
+/*
 // Vertex data for a colored cube.
 struct VertexPosColor
 {
@@ -36,12 +36,12 @@ struct VertexPosColor
 static XMFLOAT3 g_VertexPositions[8] = {
 	{ XMFLOAT3(-1.0f, -1.0f, -1.0f) }, // 0
 	{ XMFLOAT3(-1.0f,  1.0f, -1.0f) }, // 1
-	{ XMFLOAT3(1.0f,  1.0f, -1.0f)}, // 2
-	{ XMFLOAT3(1.0f, -1.0f, -1.0f)}, // 3
+	{ XMFLOAT3(1.0f,  1.0f, -1.0f )}, // 2
+	{ XMFLOAT3(1.0f, -1.0f, -1.0f )}, // 3
 	{ XMFLOAT3(-1.0f, -1.0f,  1.0f) }, // 4
 	{ XMFLOAT3(-1.0f,  1.0f,  1.0f) }, // 5
-	{ XMFLOAT3(1.0f,  1.0f,  1.0f)}, // 6
-	{ XMFLOAT3(1.0f, -1.0f,  1.0f)}  // 7
+	{ XMFLOAT3(1.0f,  1.0f,  1.0f )}, // 6
+	{ XMFLOAT3(1.0f, -1.0f,  1.0f )}  // 7
 };
 
 static XMFLOAT3 g_VertexColors[8] = {
@@ -64,22 +64,34 @@ struct VertexIndices
 	uint32_t TexCoordsIndex;
 };
 
-static VertexIndices g_Indicies[36] =
+static WORD g_Indicies[36] =
 {
-	VertexIndices(0), VertexIndices(1), VertexIndices(2),
-	VertexIndices(0), VertexIndices(2), VertexIndices(3),
-	VertexIndices(4), VertexIndices(6), VertexIndices(5),
-	VertexIndices(4), VertexIndices(7), VertexIndices(6),
-	VertexIndices(4), VertexIndices(5), VertexIndices(1),
-	VertexIndices(4), VertexIndices(1), VertexIndices(0),
-	VertexIndices(3), VertexIndices(2), VertexIndices(6),
-	VertexIndices(3), VertexIndices(6), VertexIndices(7),
-	VertexIndices(1), VertexIndices(5), VertexIndices(6),
-	VertexIndices(1), VertexIndices(6), VertexIndices(2),
-	VertexIndices(4), VertexIndices(0), VertexIndices(3),
-	VertexIndices(4), VertexIndices(3), VertexIndices(7)
+	0, 1, 2,
+	0, 2, 3,
+	4, 6, 5,
+	4, 7, 6,
+	4, 5, 1,
+	4, 1, 0,
+	3, 2, 6,
+	3, 6, 7,
+	1, 5, 6,
+	1, 6, 2,
+	4, 0, 3,
+	4, 3, 7
 };
 
+static VertexIndices g_IndiciesBuffer[8] =
+{
+	VertexIndices(0), 
+	VertexIndices(1), 
+	VertexIndices(2),
+	VertexIndices(3), 
+	VertexIndices(4), 
+	VertexIndices(5),
+	VertexIndices(6), 
+	VertexIndices(7)
+};
+*/
 namespace dfr 
 {
 DeferredRenderer::DeferredRenderer(const std::wstring& name, int width, int height, bool vSync)
@@ -322,58 +334,86 @@ void DeferredRenderer::LoadMeshes(d3d12::CommandList* cmdList)
 	// Upload vertex buffer data.
 	cmdList->AddDependency(mesh);
 
-	ComPtr<ID3D12Resource> intermediateVertexPosBuffer;
-	UpdateBufferResource(cmdList->DxCommandList,
-		&m_GPUMesh.Positions, &intermediateVertexPosBuffer,
-		sizeof(g_VertexPositions), g_VertexPositions);
-	cmdList->AddDependency(intermediateVertexPosBuffer);
+	m_GPUMesh.IndexCount = mesh->Indices.size();
 
-	ComPtr<ID3D12Resource> intermediateVertexColBuffer;
-	UpdateBufferResource(cmdList->DxCommandList,
-		&m_GPUMesh.Normals, &intermediateVertexColBuffer,
-		sizeof(g_VertexPositions), g_VertexPositions);
-	cmdList->AddDependency(intermediateVertexColBuffer);
+	UpdateBufferResourceFromVec(cmdList, &m_GPUMesh.Positions, mesh->Positions);
+
+	UpdateBufferResourceFromVec(cmdList, &m_GPUMesh.TexCoords, mesh->TexCoords);
+
+	UpdateBufferResourceFromVec(cmdList, &m_GPUMesh.Normals, mesh->Normals);
 
 	// Upload index buffer data.
-	ComPtr<ID3D12Resource> intermediateIndexBuffer;
-	UpdateBufferResource(cmdList->DxCommandList,
-		&m_GPUMesh.VertexIndices, &intermediateIndexBuffer,
-		sizeof(g_Indicies), g_Indicies);
-	cmdList->AddDependency(intermediateIndexBuffer);
+	UpdateBufferResourceFromVec(cmdList, &m_GPUMesh.VertexIndices, mesh->Indices);
+
+	std::vector<uint32_t> indices;
+
+	for (int i = 0; i < mesh->Indices.size(); i++)
+	{
+		indices.push_back(i);
+	}
+
+	//Upload indices
+	UpdateBufferResourceFromVec(cmdList, &m_GPUMesh.IndexBuffer, indices);
+
+	m_GPUMesh.IndexBufferView.BufferLocation = m_GPUMesh.IndexBuffer->GetGPUVirtualAddress();
+	m_GPUMesh.IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	m_GPUMesh.IndexBufferView.SizeInBytes = mesh->Indices.size() * sizeof(uint32_t);
 
 	D3D12_DESCRIPTOR_HEAP_DESC desc;
 	desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAGS::D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	desc.NodeMask = 0;
-	desc.NumDescriptors = 3;
+	desc.NumDescriptors = 4;
 	desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	GDxDev->DxDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_GPUMesh.Heap));
 	m_GPUMesh.HeapSize = GDxDev->DxDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC posNormalDesc = {};
-	posNormalDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	posNormalDesc.Format = DXGI_FORMAT_UNKNOWN;
-	posNormalDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	posNormalDesc.Buffer.FirstElement = 0;
-	posNormalDesc.Buffer.NumElements = _countof(g_VertexPositions);
-	posNormalDesc.Buffer.StructureByteStride = sizeof(XMFLOAT3);
-	posNormalDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC indicesDesc = {};
-	indicesDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	indicesDesc.Format = DXGI_FORMAT_UNKNOWN;
-	indicesDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	indicesDesc.Buffer.FirstElement = 0;
-	indicesDesc.Buffer.NumElements = _countof(g_Indicies);
-	indicesDesc.Buffer.StructureByteStride = sizeof(VertexIndices);
-	indicesDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandles[3];
+	D3D12_SHADER_RESOURCE_VIEW_DESC positionSRVDesc = {};
+	positionSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	positionSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
+	positionSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	positionSRVDesc.Buffer.FirstElement = 0;
+	positionSRVDesc.Buffer.NumElements = mesh->Positions.size()/3;
+	positionSRVDesc.Buffer.StructureByteStride = sizeof(float)*3;
+	positionSRVDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC texCoordsSRVDesc = {};
+	texCoordsSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	texCoordsSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
+	texCoordsSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	texCoordsSRVDesc.Buffer.FirstElement = 0;
+	texCoordsSRVDesc.Buffer.NumElements = mesh->TexCoords.size()/2;
+	texCoordsSRVDesc.Buffer.StructureByteStride = sizeof(float) * 2;
+	texCoordsSRVDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC normalSRVDesc = {};
+	normalSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	normalSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
+	normalSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	normalSRVDesc.Buffer.FirstElement = 0;
+	normalSRVDesc.Buffer.NumElements = mesh->Normals.size()/3;
+	normalSRVDesc.Buffer.StructureByteStride = sizeof(float) * 3;
+	normalSRVDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC indicesSRVDesc = {};
+	indicesSRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	indicesSRVDesc.Format = DXGI_FORMAT_UNKNOWN;
+	indicesSRVDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	indicesSRVDesc.Buffer.FirstElement = 0;
+	indicesSRVDesc.Buffer.NumElements = mesh->Indices.size();
+	indicesSRVDesc.Buffer.StructureByteStride = sizeof(decltype(mesh->Indices)::value_type);
+	indicesSRVDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandles[4];
 	srvHandles[0] = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_GPUMesh.Heap->GetCPUDescriptorHandleForHeapStart(), 0, m_GPUMesh.HeapSize);
 	srvHandles[1] = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_GPUMesh.Heap->GetCPUDescriptorHandleForHeapStart(), 1, m_GPUMesh.HeapSize);
 	srvHandles[2] = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_GPUMesh.Heap->GetCPUDescriptorHandleForHeapStart(), 2, m_GPUMesh.HeapSize);
-	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.VertexIndices.Get(), &indicesDesc, srvHandles[0]);
-	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.Positions.Get(), &posNormalDesc, srvHandles[1]);
-	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.Normals.Get(), &posNormalDesc, srvHandles[2]);
+	srvHandles[3] = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_GPUMesh.Heap->GetCPUDescriptorHandleForHeapStart(), 3, m_GPUMesh.HeapSize);
+	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.VertexIndices.Get(), &indicesSRVDesc, srvHandles[0]);
+	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.Positions.Get(), &positionSRVDesc, srvHandles[1]);
+	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.TexCoords.Get(), &texCoordsSRVDesc, srvHandles[2]);
+	GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.Normals.Get(), &normalSRVDesc, srvHandles[3]);
 	//GDxDev->DxDevice->CreateShaderResourceView(m_GPUMesh.TexCoords.Get(), &srvDesc, srvHandles[0]);
 }
 
@@ -399,7 +439,7 @@ void DeferredRenderer::CreateRootSignatures()
 
 	CD3DX12_DESCRIPTOR_RANGE1 DescRange{};
 
-	DescRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
+	DescRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
 
 	// A single 32-bit constant root parameter that is used by the vertex shader.
 	CD3DX12_ROOT_PARAMETER1 rootParameters[2];
@@ -561,6 +601,7 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 	commandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	commandList->IASetIndexBuffer(&m_GPUMesh.IndexBufferView);
 
 	commandList->RSSetViewports(1, &m_Viewport);
 	commandList->RSSetScissorRects(1, &m_ScissorRect);
@@ -575,7 +616,7 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 	CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(m_GPUMesh.Heap->GetGPUDescriptorHandleForHeapStart(), 0, m_GPUMesh.HeapSize);
 	commandList->SetGraphicsRootDescriptorTable(1, srvHandle);
-	commandList->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+	commandList->DrawIndexedInstanced(m_GPUMesh.IndexCount, 1, 0, 0, 0);
 
 	// Present
 	{

@@ -67,11 +67,21 @@ private:
 	void ClearDepth(ComPtr<ID3D12GraphicsCommandList2> commandList,
 		D3D12_CPU_DESCRIPTOR_HANDLE dsv, FLOAT depth = 1.0f );
 
-	// Create a GPU buffer.
+// Create a GPU buffer.
 	void UpdateBufferResource(ComPtr<ID3D12GraphicsCommandList2> commandList,
 		ID3D12Resource** pDestinationResource, ID3D12Resource** pIntermediateResource,
 		size_t bufferSize, const void* bufferData, 
 		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE );
+
+	template<typename T>
+	void UpdateBufferResourceFromVec(d3d12::CommandList* commandList,
+		ID3D12Resource** pDestinationResource, std::vector<T> const& data,
+		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE)
+	{
+		ComPtr<ID3D12Resource> intermediateBuffer;
+		UpdateBufferResource(commandList->DxCommandList, pDestinationResource, &intermediateBuffer, sizeof(T) * data.size(), data.data(), flags);
+		commandList->AddDependency(intermediateBuffer);
+	}
 
 	// Resize the depth buffer to match the size of the client area.
 	void ResizeBuffers(int width, int height);
@@ -81,11 +91,14 @@ private:
 
 	struct GPUMesh
 	{
+		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		ComPtr<ID3D12Resource> IndexBuffer;
 		ComPtr<ID3D12Resource> Positions;
 		ComPtr<ID3D12Resource> Normals;
 		ComPtr<ID3D12Resource> TexCoords;
 		ComPtr<ID3D12Resource> VertexIndices;
 		ComPtr<ID3D12DescriptorHeap> Heap;
+		size_t IndexCount;
 		uint32_t HeapSize;
 	} m_GPUMesh;
 
