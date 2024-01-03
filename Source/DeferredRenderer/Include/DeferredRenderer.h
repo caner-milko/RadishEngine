@@ -142,8 +142,8 @@ private:
 		ComPtr<ID3D12Resource> Albedo;
 		ComPtr<ID3D12Resource> Normal;
 		ComPtr<ID3D12Resource> Depth;
-		ComPtr<ID3D12DescriptorHeap> AlbedoHeap;
-		ComPtr<ID3D12DescriptorHeap> NormalHeap;
+		ComPtr<ID3D12DescriptorHeap> Heap;
+		uint32_t HeapIncrementSize;
 		ComPtr<ID3D12DescriptorHeap> DepthHeap;
 	} GBuffers;
 };

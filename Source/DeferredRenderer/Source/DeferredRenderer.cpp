@@ -200,13 +200,12 @@ void DeferredRenderer::LoadShaders()
 	ThrowIfFailed(D3DReadFileToBlob(L"VertexShader.cso", &Shaders.MeshVertexShader));
 
 	// Load the pixel shader.
-	ThrowIfFailed(D3DReadFileToBlob(L"PixelShader.cso", &Shaders.MeshFragmentShader));
+	ThrowIfFailed(D3DReadFileToBlob(L"LightingShader.cso", &Shaders.MeshFragmentShader));
 }
 
 void DeferredRenderer::CreateGBufferHeaps()
 {
 	{
-
 		// Create the descriptor heap for the depth-stencil view.
 		D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 		dsvHeapDesc.NumDescriptors = 1;
@@ -216,21 +215,12 @@ void DeferredRenderer::CreateGBufferHeaps()
 	}
 	{
 		// Create the descriptor heap for the depth-stencil view.
-		D3D12_DESCRIPTOR_HEAP_DESC albedoHeapDesc = {};
-		albedoHeapDesc.NumDescriptors = 1;
-		albedoHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		albedoHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAGS::D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&albedoHeapDesc, IID_PPV_ARGS(&GBuffers.AlbedoHeap)));
+		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+		rtvHeapDesc.NumDescriptors = 2;
+		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAGS::D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&GBuffers.Heap)));
 	}
-	{
-		// Create the descriptor heap for the depth-stencil view.
-		D3D12_DESCRIPTOR_HEAP_DESC normalHeapDesc = {};
-		normalHeapDesc.NumDescriptors = 1;
-		normalHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		normalHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAGS::D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		ThrowIfFailed(GDxDev->DxDevice->CreateDescriptorHeap(&normalHeapDesc, IID_PPV_ARGS(&GBuffers.NormalHeap)));
-	}
-
 }
 
 void DeferredRenderer::CreateGBufferTextures(XMINT2 size)
@@ -261,7 +251,7 @@ void DeferredRenderer::CreateGBufferTextures(XMINT2 size)
 		dsv.Format = DXGI_FORMAT_D32_FLOAT;
 		dsv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 		dsv.Texture2D.MipSlice = 0;
-		dsv.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
+		dsv.Flags = D3D12_DSV_FLAG_NONE;
 
 		device->CreateDepthStencilView(GBuffers.Depth.Get(), &dsv,
 			GBuffers.DepthHeap->GetCPUDescriptorHandleForHeapStart());
@@ -287,26 +277,6 @@ void DeferredRenderer::CreateGBufferTextures(XMINT2 size)
 			&optimizedClearValue,
 			IID_PPV_ARGS(&GBuffers.Albedo)
 		));
-
-		D3D12_RENDER_TARGET_VIEW_DESC dsc = {};
-		dsc.Format = albedoFormat;
-		dsc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-		dsc.Texture2D.MipSlice = 0;
-		device->CreateRenderTargetView(GBuffers.Albedo.Get(), &dsc, GBuffers.AlbedoHeap->GetCPUDescriptorHandleForHeapStart());
-	}
-
-	{
-		DXGI_FORMAT normalsFormat = DXGI_FORMAT_R16G16_SNORM;
-
-		// Create an albedo texture.
-		D3D12_CLEAR_VALUE optimizedClearValue = {};
-		optimizedClearValue.Format = normalsFormat;
-		optimizedClearValue.Color[0] = 0.f;
-		optimizedClearValue.Color[1] = 0.f;
-		optimizedClearValue.Color[2] = 0.f;
-		optimizedClearValue.Color[3] = 0.f;
-		auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D(normalsFormat, size.x, size.y,
-			1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 		ThrowIfFailed(device->CreateCommittedResource(
 			&heapProperties,
 			D3D12_HEAP_FLAG_NONE,
@@ -316,12 +286,18 @@ void DeferredRenderer::CreateGBufferTextures(XMINT2 size)
 			IID_PPV_ARGS(&GBuffers.Normal)
 		));
 
+
 		D3D12_RENDER_TARGET_VIEW_DESC dsc = {};
-		dsc.Format = normalsFormat;
+		dsc.Format = albedoFormat;
 		dsc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 		dsc.Texture2D.MipSlice = 0;
-		device->CreateRenderTargetView(GBuffers.Normal.Get(), &dsc, GBuffers.NormalHeap->GetCPUDescriptorHandleForHeapStart());
+		GBuffers.HeapIncrementSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		CD3DX12_CPU_DESCRIPTOR_HANDLE handle(GBuffers.Heap->GetCPUDescriptorHandleForHeapStart());
+		device->CreateRenderTargetView(GBuffers.Albedo.Get(), &dsc, handle);
+		handle.Offset(GBuffers.HeapIncrementSize);
+		device->CreateRenderTargetView(GBuffers.Normal.Get(), &dsc, handle);
 	}
+
 }
 
 void DeferredRenderer::CreateCamLightBuffers()
@@ -462,10 +438,7 @@ void DeferredRenderer::CreatePSOs()
 {
 	auto device = GDxDev->DxDevice;
 	// Create the vertex input layout
-	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	};
+	auto desc = CD3DX12_RASTERIZER_DESC(CD3DX12_DEFAULT{});
 
 	struct PipelineStateStream
 	{
@@ -475,11 +448,14 @@ void DeferredRenderer::CreatePSOs()
 		CD3DX12_PIPELINE_STATE_STREAM_PS PS;
 		CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
 		CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+		CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
 	} pipelineStateStream;
+	pipelineStateStream.Rasterizer = desc;
 
 	D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-	rtvFormats.NumRenderTargets = 1;
+	rtvFormats.NumRenderTargets = 2;
 	rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	rtvFormats.RTFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	pipelineStateStream.pRootSignature = m_RootSignature.Get();
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -586,14 +562,18 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 	UINT currentBackBufferIndex = Window->GetCurrentBackBufferIndex();
 	commandList->SetName((std::wstring(L"Present Cmd ") + std::to_wstring(currentBackBufferIndex)).c_str());
 	auto dsv = GBuffers.DepthHeap->GetCPUDescriptorHandleForHeapStart();
-	auto rtv = GBuffers.AlbedoHeap->GetCPUDescriptorHandleForHeapStart();
-	auto rtResource = GBuffers.Albedo;
+	auto rtv = GBuffers.Heap->GetCPUDescriptorHandleForHeapStart();
+	auto rtAlbedo = GBuffers.Albedo;
+	auto rtNormal = GBuffers.Normal;
 	// Clear the render targets.
 	{
-		TransitionResource(commandList, rtResource,
+		TransitionResource(commandList, rtAlbedo,
 			D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		FLOAT clearColor[] = { 0.4f, 0.6f, 0.9f, 1.0f };
-		ClearRTV(commandList, rtv, clearColor);
+		CD3DX12_CPU_DESCRIPTOR_HANDLE rtHandle(rtv, 0, GBuffers.HeapIncrementSize);
+		ClearRTV(commandList, rtHandle, clearColor);
+		rtHandle.Offset(GBuffers.HeapIncrementSize);
+		ClearRTV(commandList, rtHandle, clearColor);
 		ClearDepth(commandList, dsv);
 	}
 
@@ -606,7 +586,7 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 	commandList->RSSetViewports(1, &m_Viewport);
 	commandList->RSSetScissorRects(1, &m_ScissorRect);
 
-	commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+	commandList->OMSetRenderTargets(2, &rtv, TRUE, &dsv);
 
 	// Update the MVP matrix
 	XMMATRIX mvpMatrix = XMMatrixMultiply(m_ModelMatrix, m_ViewMatrix);
@@ -620,7 +600,7 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 
 	// Present
 	{
-		TransitionResource(commandList, rtResource,
+		TransitionResource(commandList, rtAlbedo,
 			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 		auto& backBuffer = Window->GetCurrentBackBuffer();
 		backBuffer.LastCmdList = dfrCommandList;
@@ -629,7 +609,7 @@ void DeferredRenderer::OnRender(RenderEventArgs& e)
 		TransitionResource(commandList, backBuffer.DxResource,
 			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
 
-		commandList->CopyResource(backBuffer.DxResource.Get(), rtResource.Get());
+		commandList->CopyResource(backBuffer.DxResource.Get(), rtAlbedo.Get());
 
 		TransitionResource(commandList, backBuffer.DxResource,
 			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);

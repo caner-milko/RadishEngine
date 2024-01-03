@@ -7,5 +7,5 @@ struct PixelShaderInput
 
 float4 main( PixelShaderInput IN ) : SV_Target
 {
-    return float4(IN.TexCoord, 0, 0);
+    return float4(IN.TexCoord, 0, 1.0);
 }

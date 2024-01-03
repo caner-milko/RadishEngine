@@ -14,15 +14,17 @@ file(GLOB_RECURSE INCLUDE_FILES CONFIGURE_DEPENDS "${INCLUDE_DIRECTORY}/*")
 
 add_executable(${PROJECT_NAME} WIN32 ${INCLUDE_FILES} ${SRC_FILES} ${SHADER_FILES})
 
-set_source_files_properties( "${VERTEX_SHADER_FILES}" PROPERTIES 
-    VS_SHADER_TYPE Vertex
-    VS_SHADER_MODEL 5.1
-)
+foreach(VERTEX_SHADER ${VERTEX_SHADER_FILES})
+	set_source_files_properties(${VERTEX_SHADER} PROPERTIES VS_SHADER_TYPE Vertex)
+endforeach()
 
-set_source_files_properties( "${PIXEL_SHADER_FILES}" PROPERTIES 
-    VS_SHADER_TYPE Pixel
-    VS_SHADER_MODEL 5.1
-)
+foreach(PIXEL_SHADER ${PIXEL_SHADER_FILES})
+	set_source_files_properties(${PIXEL_SHADER} PROPERTIES VS_SHADER_TYPE Pixel)
+endforeach()
+
+foreach(SHADER ${SHADER_FILES})
+	set_source_files_properties(${SHADER} PROPERTIES VS_SHADER_MODEL 5.1)
+endforeach()
 
 #target_compile_definitions(${PROJECT_NAME} PRIVATE "-D${PROJECT_NAME}_EXPORTS")
 
