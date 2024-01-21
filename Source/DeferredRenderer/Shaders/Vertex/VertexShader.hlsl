@@ -12,10 +12,10 @@ struct VertexIndices
 
 ConstantBuffer<ModelViewProjection> ModelViewProjectionCB : register(b0);
 
-Buffer<VertexIndices> Indices : register(t0);
-Buffer<float3> Positions : register(t1);
-Buffer<float2> TexCoords : register(t2);
-Buffer<float3> Normals : register(t3);
+StructuredBuffer<VertexIndices> Indices : register(t0);
+StructuredBuffer<float3> Positions : register(t1);
+StructuredBuffer<float2> TexCoords : register(t2);
+StructuredBuffer<float3> Normals : register(t3);
 
 struct VertexShaderOutput
 {
@@ -32,7 +32,6 @@ VertexShaderOutput main(uint vertexID : SV_VertexID)
 
 	OUT.Position = mul(ModelViewProjectionCB.MVP, float4(Positions[indices.PositionIndex], 1.0f));
 	OUT.Normal = Normals[indices.NormalIndex];
-	//OUT.TexCoord = float2(0, 0);
 	OUT.TexCoord = TexCoords[indices.TexCoordsIndex];
 
 	return OUT;

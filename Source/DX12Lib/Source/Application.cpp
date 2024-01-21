@@ -1,5 +1,4 @@
 #include "Application.h"
-#include "..\resource.h"
 
 #include "Game.h"
 #include "D3D12/Device.h"
@@ -53,11 +52,9 @@ Application::Application(HINSTANCE hInst)
 	wndClass.lpfnWndProc = &WndProc;
 	wndClass.hInstance = HInstance;
 	wndClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	wndClass.hIcon = LoadIcon(HInstance, MAKEINTRESOURCE(APP_ICON));
 	wndClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
 	wndClass.lpszMenuName = nullptr;
 	wndClass.lpszClassName = WINDOW_CLASS_NAME;
-	wndClass.hIconSm = LoadIcon(HInstance, MAKEINTRESOURCE(APP_ICON));
 
 	if (!RegisterClassExW(&wndClass))
 	{

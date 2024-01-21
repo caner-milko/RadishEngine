@@ -5,12 +5,6 @@ project(DX12Lib)
 set(INCLUDE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Include")
 set(SOURCE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
-set( RESOURCE_FILES 
-	DX12Lib.rc
-	Resources/Icon/app_icon.ico
-	resource.h
-)
-
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "${SOURCE_DIRECTORY}/*")
 file(GLOB_RECURSE INCLUDE_FILES CONFIGURE_DEPENDS "${INCLUDE_DIRECTORY}/*")
 
@@ -34,7 +28,6 @@ endforeach()
 
 #source_group_files("${INCLUDE_FILES}" "Include")
 #source_group_files("${SRC_FILES}" "Source")
-source_group_files("${RESOURCE_FILES}" "Resource")
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
 
@@ -45,5 +38,4 @@ target_link_libraries( ${PROJECT_NAME}
 	dxguid.lib
 	D3D12MemoryAllocator
 	tinyobjloader
-	${CMAKE_CURRENT_BINARY_DIR}/DX12Lib.dir/${CMAKE_CFG_INTDIR}/DX12Lib.res # This is the only way I could figure out how to link the compiled resource file.
 )

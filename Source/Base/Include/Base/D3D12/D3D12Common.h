@@ -1,16 +1,16 @@
 #pragma once
 
-#include "Common.h"
+#include "Base/Common.h"
 
-#include <d3d12.h>
-#include <dxgi1_6.h>
 #include <wrl.h>
-#include "d3dx12.h"
+#include <directx/d3dx12.h>
+#include <dxgi1_6.h>
 
 namespace dfr::d3d12
 {
 template<typename T>
 using ComPtr = Microsoft::WRL::ComPtr<T>;
+
 struct Device;
 struct CommandQueue;
 struct CommandList;

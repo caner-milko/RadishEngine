@@ -25,73 +25,7 @@ constexpr const T& clamp(const T& val, const T& min, const T& max)
 {
 	return val < min ? min : val > max ? max : val;
 }
-/*
-// Vertex data for a colored cube.
-struct VertexPosColor
-{
-	XMFLOAT3 Position;
-	XMFLOAT3 Color;
-};
 
-static XMFLOAT3 g_VertexPositions[8] = {
-	{ XMFLOAT3(-1.0f, -1.0f, -1.0f) }, // 0
-	{ XMFLOAT3(-1.0f,  1.0f, -1.0f) }, // 1
-	{ XMFLOAT3(1.0f,  1.0f, -1.0f )}, // 2
-	{ XMFLOAT3(1.0f, -1.0f, -1.0f )}, // 3
-	{ XMFLOAT3(-1.0f, -1.0f,  1.0f) }, // 4
-	{ XMFLOAT3(-1.0f,  1.0f,  1.0f) }, // 5
-	{ XMFLOAT3(1.0f,  1.0f,  1.0f )}, // 6
-	{ XMFLOAT3(1.0f, -1.0f,  1.0f )}  // 7
-};
-
-static XMFLOAT3 g_VertexColors[8] = {
-	{ XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
-	{ XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
-	{ XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
-	{ XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
-	{ XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
-	{ XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
-	{ XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
-	{ XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
-};
-
-struct VertexIndices
-{
-	VertexIndices(uint32_t index) : PositionIndex(index), NormalIndex(index), TexCoordsIndex(index)
-	{}
-	uint32_t PositionIndex;
-	uint32_t NormalIndex;
-	uint32_t TexCoordsIndex;
-};
-
-static WORD g_Indicies[36] =
-{
-	0, 1, 2,
-	0, 2, 3,
-	4, 6, 5,
-	4, 7, 6,
-	4, 5, 1,
-	4, 1, 0,
-	3, 2, 6,
-	3, 6, 7,
-	1, 5, 6,
-	1, 6, 2,
-	4, 0, 3,
-	4, 3, 7
-};
-
-static VertexIndices g_IndiciesBuffer[8] =
-{
-	VertexIndices(0), 
-	VertexIndices(1), 
-	VertexIndices(2),
-	VertexIndices(3), 
-	VertexIndices(4), 
-	VertexIndices(5),
-	VertexIndices(6), 
-	VertexIndices(7)
-};
-*/
 namespace dfr 
 {
 DeferredRenderer::DeferredRenderer(const std::wstring& name, int width, int height, bool vSync)
