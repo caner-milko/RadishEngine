@@ -11,7 +11,7 @@ CommandList::CommandList(CommandQueue* cmdQueue) : CmdQueue(cmdQueue), DeviceChi
 bool CommandList::Init(CommandListCreateInfo createInfo)
 {
 	CmdAllocator.Init({ .CommandListType = createInfo.CommandListType });
-	ThrowIfFailed(GDxDev->DxDevice->CreateCommandList(0, createInfo.CommandListType, CmdAllocator.DxCommandAllocator.Get(), nullptr, IID_PPV_ARGS(&DxCommandList)));
+	ThrowIfFailed(Dev->DxDevice->CreateCommandList(0, createInfo.CommandListType, CmdAllocator.DxCommandAllocator.Get(), nullptr, IID_PPV_ARGS(&DxCommandList)));
 	CmdFence.Init({});
 	CmdState = CommandListState::Initial;
 	return true;

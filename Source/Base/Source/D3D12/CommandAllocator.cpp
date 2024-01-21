@@ -5,7 +5,7 @@ namespace dfr::d3d12
 {
 void CommandAllocator::Init(CommandAllocatorCreateInfo createInfo)
 {
-	ThrowIfFailed(GDxDev->DxDevice->CreateCommandAllocator(createInfo.CommandListType, IID_PPV_ARGS(&DxCommandAllocator)));
+	ThrowIfFailed(Dev->DxDevice->CreateCommandAllocator(createInfo.CommandListType, IID_PPV_ARGS(&DxCommandAllocator)));
 }
 void CommandAllocator::Reset()
 {

@@ -5,7 +5,7 @@ namespace dfr::d3d12
 
 void Fence::Init(FenceCreateInfo createInfo)
 {
-	ThrowIfFailed(GDxDev->DxDevice->CreateFence(createInfo.InitialValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&DxFence)));
+	ThrowIfFailed(Dev->DxDevice->CreateFence(createInfo.InitialValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&DxFence)));
 	OSEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
 	assert(OSEvent && "Failed to create fence event handle.");
 }

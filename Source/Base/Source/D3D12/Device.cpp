@@ -1,6 +1,8 @@
 #include "Base/D3D12/Device.h"
 #include "Base/D3D12/CommandQueue.h"
 #include "Base/D3D12/CommandList.h"
+#include "Base/D3D12/DXGIInterface.h"
+
 namespace dfr
 {
 ru<d3d12::Device> GDxDev = nullptr;
@@ -37,15 +39,9 @@ UINT Device::GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE type) c
 	return GDxDev->DxDevice->GetDescriptorHandleIncrementSize(type);
 }
 
-bool Device::InitDX(DeviceCreateInfo createInfo)
-{
-	assert(!GDxDev);
-	GDxDev = ru<Device>( new Device() );
-	return GDxDev->Init(createInfo);
-}
 bool Device::Init(DeviceCreateInfo createInfo)
 {
-	ThrowIfFailed(D3D12CreateDevice(createInfo.DXGIAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&DxDevice)));
+	ThrowIfFailed(D3D12CreateDevice(createInfo.Interface->DXGIAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&DxDevice)));
 	//    NAME_D3D12_OBJECT(d3d12Device2);
 
 		// Enable debug messages in debug mode.

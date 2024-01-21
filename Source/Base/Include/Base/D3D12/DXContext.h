@@ -10,7 +10,7 @@ struct DXContext
 {
 	DXContext() { Init(); }
 
-	DXGIInterface* GetDXGIAdapter() 
+	DXGIInterface* GetDXGIInterface() 
 	{
 		return Interface.get();
 	}

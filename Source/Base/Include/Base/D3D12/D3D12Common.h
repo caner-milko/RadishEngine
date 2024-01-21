@@ -12,6 +12,7 @@ template<typename T>
 using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 struct Device;
+struct DXGIInterface;
 struct CommandQueue;
 struct CommandList;
 

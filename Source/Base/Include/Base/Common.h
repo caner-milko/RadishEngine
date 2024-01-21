@@ -14,6 +14,7 @@
 #include <string_view>
 #include <functional>
 
+#include <glm/glm.hpp>
 namespace dfr
 {
 template<typename T>
