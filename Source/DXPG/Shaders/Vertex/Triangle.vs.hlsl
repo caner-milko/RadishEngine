@@ -20,7 +20,7 @@ struct VSOut
 VSOut main(VSIn IN)
 {
     VSOut output;
-    output.Pos = mul(float4(IN.Pos, 1.0f), ModelViewProjectionCB.MVP);
+    output.Pos = mul(ModelViewProjectionCB.MVP, float4(IN.Pos, 1.0));
     output.Color = IN.Color;
     return output;
 }

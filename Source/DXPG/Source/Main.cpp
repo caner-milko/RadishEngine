@@ -8,9 +8,9 @@
 #include <span>
 #include <SDL2/SDL.h>
 #include <SDL_syswm.h>
-
 #include <io.h>
 #include <fcntl.h>
+#include <chrono>
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
@@ -22,9 +22,11 @@
 #endif
 
 #include <wrl.h>
+#include <Shlwapi.h>
 using Microsoft::WRL::ComPtr;
 
 #include "DirectXMath.h"
+using namespace DirectX;
 #include <directx/d3dx12.h>
 #include <d3dcompiler.h>
 
@@ -40,7 +42,7 @@ static FrameContext                 g_frameContext[NUM_FRAMES_IN_FLIGHT] = {};
 static UINT                         g_frameIndex = 0;
 
 static int const                    NUM_BACK_BUFFERS = 3;
-static ComPtr<ID3D12Device> g_pd3dDevice = nullptr;
+static ComPtr<ID3D12Device2> g_pd3dDevice = nullptr;
 static ComPtr<ID3D12DescriptorHeap> g_pd3dRtvDescHeap = nullptr;
 static ComPtr<ID3D12DescriptorHeap> g_pd3dSrvDescHeap = nullptr;
 static ComPtr<ID3D12CommandQueue> g_pd3dCommandQueue = nullptr;
@@ -55,10 +57,61 @@ static D3D12_CPU_DESCRIPTOR_HANDLE  g_mainRenderTargetDescriptor[NUM_BACK_BUFFER
 
 static FrameContext FrameIndependentCtx = {};
 
+
+struct VertexPosColor
+{
+    DirectX::XMFLOAT3 Position;
+    DirectX::XMFLOAT3 Color;
+};
+
+static VertexPosColor g_Vertices[8] = {
+{ DirectX::XMFLOAT3(-1.0f, -1.0f, -1.0f), DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
+{ DirectX::XMFLOAT3(-1.0f,  1.0f, -1.0f), DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
+{ DirectX::XMFLOAT3(1.0f,  1.0f, -1.0f), DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
+{ DirectX::XMFLOAT3(1.0f, -1.0f, -1.0f), DirectX::XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
+{ DirectX::XMFLOAT3(-1.0f, -1.0f,  1.0f), DirectX::XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
+{ DirectX::XMFLOAT3(-1.0f,  1.0f,  1.0f), DirectX::XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
+{ DirectX::XMFLOAT3(1.0f,  1.0f,  1.0f), DirectX::XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
+{ DirectX::XMFLOAT3(1.0f, -1.0f,  1.0f), DirectX::XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
+};
+
+static ComPtr<ID3D12Resource> g_VertexBuffer;
+static D3D12_VERTEX_BUFFER_VIEW g_VertexBufferView;
+static ComPtr<ID3D12Resource> g_IndexBuffer;
+static D3D12_INDEX_BUFFER_VIEW g_IndexBufferView;
+
+static uint16_t g_Indicies[36] =
+{
+    0, 1, 2, 0, 2, 3,
+    4, 6, 5, 4, 7, 6,
+    4, 5, 1, 4, 1, 0,
+    3, 2, 6, 3, 6, 7,
+    1, 5, 6, 1, 6, 2,
+    4, 0, 3, 4, 3, 7
+};
+
+static HWND g_hWnd = nullptr;
+
+static ComPtr<ID3D12Resource> g_DepthBuffer;
+static ComPtr<ID3D12DescriptorHeap> g_DSVHeap;
+
+static ComPtr<ID3D12RootSignature> g_RootSignature;
+static ComPtr<ID3D12PipelineState> g_PipelineState;
+
+static float g_FoV = 45.0f;
+static int g_Width = 1280;
+static int g_Height = 720;
+
+static DirectX::XMMATRIX g_ModelMatrix;
+static DirectX::XMMATRIX g_ViewMatrix;
+static DirectX::XMMATRIX g_ProjectionMatrix;
+static D3D12_VIEWPORT g_Viewport;
+static D3D12_RECT g_ScissorRect;
+
 // Forward declarations of helper functions
-bool CreateDeviceD3D(HWND hWnd);
+bool CreateDeviceD3D();
 void CleanupDeviceD3D();
-void CreateRenderTarget();
+void CreateSwapchainRTVDSV(bool resized);
 void CleanupRenderTarget();
 void WaitForLastSubmittedFrame();
 FrameContext* WaitForNextFrameResources();
@@ -150,12 +203,44 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
     ImGui::Render();
 }
 
+void InitGame()
+{
+}
+
+void UpdateGame(float deltaTime)
+{
+    static float angle = static_cast<float>(0.0f);
+    angle += 90.0f * 0.016f;
+    const DirectX::XMVECTOR rotationAxis = XMVectorSet(0, 1, 1, 0);
+    g_ModelMatrix = DirectX::XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle));
+    const DirectX::XMVECTOR eyePosition = XMVectorSet(0, 0, -10, 1);
+    const DirectX::XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
+    const DirectX::XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
+    g_ViewMatrix = DirectX::XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
+    float aspectRatio = static_cast<float>(g_Width) / static_cast<float>(g_Height);
+    g_ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(XMConvertToRadians(g_FoV), aspectRatio, 0.1f, 100.0f);
+}
+
 void RenderGame()
 {
-    g_pd3dCommandList->IASetIndexBuffer(nullptr);
-    g_pd3dCommandList->IASetVertexBuffers(0, 1, nullptr);
-    g_pd3dCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    
 
+    g_pd3dCommandList->SetPipelineState(g_PipelineState.Get());
+    g_pd3dCommandList->SetGraphicsRootSignature(g_RootSignature.Get());
+    g_pd3dCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_pd3dCommandList->IASetVertexBuffers(0, 1, &g_VertexBufferView);
+    g_pd3dCommandList->IASetIndexBuffer(&g_IndexBufferView);
+
+    DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(g_ModelMatrix, g_ViewMatrix);
+    mvpMatrix = XMMatrixMultiply(mvpMatrix, g_ProjectionMatrix);
+    g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
+
+    g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
+    g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
+    
+    D3D12_CPU_DESCRIPTOR_HANDLE dsDescriptor = g_DSVHeap->GetCPUDescriptorHandleForHeapStart();
+    g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[g_pSwapChain->GetCurrentBackBufferIndex()], FALSE, &dsDescriptor);
+    g_pd3dCommandList->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
 }
 
 void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
@@ -181,16 +266,18 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
 
-
     // Render Dear ImGui graphics
     const float clear_color_with_alpha[4] = { clearCol.x * clearCol.w, clearCol.y * clearCol.w, clearCol.z * clearCol.w, clearCol.w };
     g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx], clear_color_with_alpha, 0, nullptr);
-    g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
+    g_pd3dCommandList->ClearDepthStencilView(g_DSVHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    RenderGame();
+
+    /*g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
 
     ID3D12DescriptorHeap* descHeaps[] = {g_pd3dSrvDescHeap.Get()};
 
     g_pd3dCommandList->SetDescriptorHeaps(1, descHeaps);
-    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());
+    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());*/
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     g_pd3dCommandList->ResourceBarrier(1, &barrier);
@@ -212,6 +299,20 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 // Main code
 int main(int argv, char** args)
 {
+    // Set working directory to executable directory
+    {
+        WCHAR path[MAX_PATH];
+        HMODULE hModule = GetModuleHandleW(NULL);
+        if (GetModuleFileNameW(hModule, path, MAX_PATH) > 0)
+        {
+            PathRemoveFileSpecW(path);
+            SetCurrentDirectoryW(path);
+        }
+    }
+    g_ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+    g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(1280), static_cast<float>(720));
+    g_FoV = 45.0;
+    
     CreateConsole();
     // Setup SDL
     // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
@@ -219,7 +320,7 @@ int main(int argv, char** args)
     
     // Setup window
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    SDL_Window* window = SDL_CreateWindow("DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
+    SDL_Window* window = SDL_CreateWindow("DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_Width, g_Height, window_flags);
     if (window == nullptr)
     {
         printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
@@ -229,9 +330,9 @@ int main(int argv, char** args)
     SDL_VERSION(&wmInfo.version);
     SDL_GetWindowWMInfo(window, &wmInfo);
     HWND hwnd = (HWND)wmInfo.info.win.window;
-
+    g_hWnd = hwnd;
     // Initialize Direct3D
-    if (!CreateDeviceD3D(hwnd))
+    if (!CreateDeviceD3D())
     {
         CleanupDeviceD3D();
         return 1;
@@ -276,11 +377,14 @@ int main(int argv, char** args)
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
     //IM_ASSERT(font != nullptr);
 
-
+    InitGame();
     CreateTriangleData();
 
     // Main loop
     bool done = false;
+    
+    std::chrono::high_resolution_clock::time_point lastTime = std::chrono::high_resolution_clock::now();
+
     while (!done)
     {
         // Poll and handle events (inputs, window resize, etc.)
@@ -298,15 +402,19 @@ int main(int argv, char** args)
                 done = true;
             if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_RESIZED && sdlEvent.window.windowID == SDL_GetWindowID(window))
             {
+                g_Width = sdlEvent.window.data1;
+                g_Height = sdlEvent.window.data2;
                 // Release all outstanding references to the swap chain's buffers before resizing.
                 CleanupRenderTarget();
-                g_pSwapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0);
-                CreateRenderTarget();
+                CreateSwapchainRTVDSV(true);
             }
         }
 
+        UpdateGame(io.DeltaTime);
+
         Render(io, show_demo_window, show_another_window, clear_color);
     }
+
 
     WaitForLastSubmittedFrame();
 
@@ -324,26 +432,8 @@ int main(int argv, char** args)
 
 // Helper functions
 
-bool CreateDeviceD3D(HWND hWnd)
+bool CreateDeviceD3D()
 {
-    // Setup swap chain
-    DXGI_SWAP_CHAIN_DESC1 sd;
-    {
-        ZeroMemory(&sd, sizeof(sd));
-        sd.BufferCount = NUM_BACK_BUFFERS;
-        sd.Width = 0;
-        sd.Height = 0;
-        sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-        sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        sd.SampleDesc.Count = 1;
-        sd.SampleDesc.Quality = 0;
-        sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        sd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-        sd.Scaling = DXGI_SCALING_STRETCH;
-        sd.Stereo = FALSE;
-    }
-
     // [DEBUG] Enable debug interface
 #ifdef DX12_ENABLE_DEBUG_LAYER
     ComPtr<ID3D12Debug> pdx12Debug = nullptr;
@@ -422,20 +512,9 @@ bool CreateDeviceD3D(HWND hWnd)
     if (g_fenceEvent == nullptr)
         return false;
 
-    {
-        ComPtr<IDXGIFactory4> dxgiFactory = nullptr;
-        ComPtr<IDXGISwapChain1> swapChain1 = nullptr;
-        if (CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)) != S_OK)
-            return false;
-        if (dxgiFactory->CreateSwapChainForHwnd(g_pd3dCommandQueue.Get(), hWnd, &sd, nullptr, nullptr, &swapChain1) != S_OK)
-            return false;
-        if (swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain)) != S_OK)
-            return false;
-        g_pSwapChain->SetMaximumFrameLatency(NUM_BACK_BUFFERS);
-        g_hSwapChainWaitableObject = g_pSwapChain->GetFrameLatencyWaitableObject();
-    }
+   
 
-    CreateRenderTarget();
+    CreateSwapchainRTVDSV(false);
     return true;
 }
 
@@ -447,6 +526,12 @@ void CleanupDeviceD3D()
     for (UINT i = 0; i < NUM_FRAMES_IN_FLIGHT; i++)
         g_frameContext[i].CommandAllocator = nullptr;
     FrameIndependentCtx.CommandAllocator = nullptr;
+    g_VertexBuffer = nullptr;
+    g_IndexBuffer = nullptr;
+    g_DepthBuffer = nullptr;
+    g_DSVHeap = nullptr;
+    g_RootSignature = nullptr;
+    g_PipelineState = nullptr;
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_pd3dRtvDescHeap = nullptr;
@@ -454,6 +539,8 @@ void CleanupDeviceD3D()
     g_fence = nullptr;
     if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
     g_pd3dDevice = nullptr;
+
+
 
 #ifdef DX12_ENABLE_DEBUG_LAYER
     
@@ -464,13 +551,87 @@ void CleanupDeviceD3D()
 #endif
 }
 
-void CreateRenderTarget()
+void CreateSwapchainRTVDSV(bool resized)
 {
+    if(!resized){
+        // Setup swap chain
+        DXGI_SWAP_CHAIN_DESC1 sd;
+        {
+            ZeroMemory(&sd, sizeof(sd));
+            sd.BufferCount = NUM_BACK_BUFFERS;
+            sd.Width = g_Width;
+            sd.Height = g_Height;
+            sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+            sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+            sd.SampleDesc.Count = 1;
+            sd.SampleDesc.Quality = 0;
+            sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+            sd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+            sd.Scaling = DXGI_SCALING_STRETCH;
+            sd.Stereo = FALSE;
+        }
+        ComPtr<IDXGIFactory4> dxgiFactory = nullptr;
+        ComPtr<IDXGISwapChain1> swapChain1 = nullptr;
+        ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)));
+        ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(g_pd3dCommandQueue.Get(), g_hWnd, &sd, nullptr, nullptr, &swapChain1));
+        ThrowIfFailed(swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain)));
+        g_pSwapChain->SetMaximumFrameLatency(NUM_BACK_BUFFERS);
+        g_hSwapChainWaitableObject = g_pSwapChain->GetFrameLatencyWaitableObject();
+    }
+    else
+    {
+        for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
+            g_mainRenderTargetResource[i] = nullptr;
+        g_DepthBuffer = nullptr;
+        g_DSVHeap = nullptr;
+        DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
+        ThrowIfFailed(g_pSwapChain->GetDesc(&swapChainDesc));
+        ThrowIfFailed(g_pSwapChain->ResizeBuffers(NUM_BACK_BUFFERS, g_Width, g_Height,
+            swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
+    }
+
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
     {
         g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&g_mainRenderTargetResource[i]));
         g_pd3dDevice->CreateRenderTargetView(g_mainRenderTargetResource[i].Get(), nullptr, g_mainRenderTargetDescriptor[i]);
     }
+    // Create the depth buffer
+    CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, g_Width, g_Height);
+    depthTexDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
+    depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
+    depthOptimizedClearValue.DepthStencil.Stencil = 0;
+
+    auto dsvHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+
+    g_pd3dDevice->CreateCommittedResource(
+        &dsvHeapProp,
+        D3D12_HEAP_FLAG_NONE,
+        &depthTexDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &depthOptimizedClearValue,
+        IID_PPV_ARGS(&g_DepthBuffer));
+
+
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+    dsvHeapDesc.NumDescriptors = 1;
+    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    g_pd3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&g_DSVHeap));
+
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDesc = {};
+    dsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvViewDesc.Flags = D3D12_DSV_FLAG_NONE;
+    dsvViewDesc.Texture2D.MipSlice = 0;
+
+    g_pd3dDevice->CreateDepthStencilView(
+        g_DepthBuffer.Get(),
+        &dsvViewDesc,
+        g_DSVHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
 void CleanupRenderTarget()
@@ -479,6 +640,8 @@ void CleanupRenderTarget()
 
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
         g_mainRenderTargetResource[i] = nullptr;
+    g_DepthBuffer = nullptr;
+    g_DSVHeap = nullptr;
 }
 
 void WaitForLastSubmittedFrame()
@@ -522,53 +685,7 @@ FrameContext* WaitForNextFrameResources()
 
 void CreateTriangleData()
 {
-    ComPtr<ID3D12Resource> m_VertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
-    ComPtr<ID3D12Resource> m_IndexBuffer;
-    D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
-    ComPtr<ID3D12Resource> m_DepthBuffer;
-    ComPtr<ID3D12DescriptorHeap> m_DSVHeap;
-
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_RootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_PipelineState;
-
-    D3D12_VIEWPORT m_Viewport;
-    D3D12_RECT m_ScissorRect;
-
-    float m_FoV;
-
-    DirectX::XMMATRIX m_ModelMatrix;
-    DirectX::XMMATRIX m_ViewMatrix;
-    DirectX::XMMATRIX m_ProjectionMatrix;
-
-    bool m_ContentLoaded;
-
-    struct VertexPosColor
-    {
-        DirectX::XMFLOAT3 Position;
-        DirectX::XMFLOAT3 Color;
-    };
-
-    static VertexPosColor g_Vertices[8] = {
-    { DirectX::XMFLOAT3(-1.0f, -1.0f, -1.0f), DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
-    { DirectX::XMFLOAT3(-1.0f,  1.0f, -1.0f), DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
-    { DirectX::XMFLOAT3(1.0f,  1.0f, -1.0f), DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
-    { DirectX::XMFLOAT3(1.0f, -1.0f, -1.0f), DirectX::XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
-    { DirectX::XMFLOAT3(-1.0f, -1.0f,  1.0f), DirectX::XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
-    { DirectX::XMFLOAT3(-1.0f,  1.0f,  1.0f), DirectX::XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
-    { DirectX::XMFLOAT3(1.0f,  1.0f,  1.0f), DirectX::XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
-    { DirectX::XMFLOAT3(1.0f, -1.0f,  1.0f), DirectX::XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
-    };
-
-    static uint16_t g_Indicies[36] =
-    {
-        0, 1, 2, 0, 2, 3,
-        4, 6, 5, 4, 7, 6,
-        4, 5, 1, 4, 1, 0,
-        3, 2, 6, 3, 6, 7,
-        1, 5, 6, 1, 6, 2,
-        4, 0, 3, 4, 3, 7
-    };
+    
 
     auto bufResDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(g_Vertices));
     auto bufHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -579,7 +696,7 @@ void CreateTriangleData()
 		&bufResDesc,
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		nullptr,
-		IID_PPV_ARGS(&m_VertexBuffer));
+		IID_PPV_ARGS(&g_VertexBuffer));
     
     bufResDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(g_Indicies));
 
@@ -589,77 +706,26 @@ void CreateTriangleData()
         &bufResDesc,
         D3D12_RESOURCE_STATE_COPY_DEST,
         nullptr,
-        IID_PPV_ARGS(&m_IndexBuffer));
+        IID_PPV_ARGS(&g_IndexBuffer));
 
     ComPtr<ID3D12Resource> IntermediateVertexBuffer;
     ComPtr<ID3D12Resource> IntermediateIndexBuffer;
 
     g_pd3dCommandList->Reset(FrameIndependentCtx.CommandAllocator.Get(), nullptr);
 
-    UploadToBuffer(g_pd3dCommandList.Get(), m_VertexBuffer.Get(), &IntermediateVertexBuffer, sizeof(g_Vertices), g_Vertices);
-    UploadToBuffer(g_pd3dCommandList.Get(), m_IndexBuffer.Get(), &IntermediateIndexBuffer, sizeof(g_Indicies), g_Indicies);
+    UploadToBuffer(g_pd3dCommandList.Get(), g_VertexBuffer.Get(), &IntermediateVertexBuffer, sizeof(g_Vertices), g_Vertices);
+    UploadToBuffer(g_pd3dCommandList.Get(), g_IndexBuffer.Get(), &IntermediateIndexBuffer, sizeof(g_Indicies), g_Indicies);
 
     // Create the vertex buffer view
-    m_VertexBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress();
-    m_VertexBufferView.StrideInBytes = sizeof(VertexPosColor);
-    m_VertexBufferView.SizeInBytes = sizeof(g_Vertices);
+    g_VertexBufferView.BufferLocation = g_VertexBuffer->GetGPUVirtualAddress();
+    g_VertexBufferView.StrideInBytes = sizeof(VertexPosColor);
+    g_VertexBufferView.SizeInBytes = sizeof(g_Vertices);
     
     // Create the index buffer view
-    m_IndexBufferView.BufferLocation = m_IndexBuffer->GetGPUVirtualAddress();
-    m_IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    m_IndexBufferView.SizeInBytes = sizeof(g_Indicies);
+    g_IndexBufferView.BufferLocation = g_IndexBuffer->GetGPUVirtualAddress();
+    g_IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    g_IndexBufferView.SizeInBytes = sizeof(g_Indicies);
 
-    // Create the depth buffer
-    D3D12_RESOURCE_DESC depthTexDesc = {};
-    depthTexDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    depthTexDesc.Alignment = 0;
-    depthTexDesc.Width = 1280;
-    depthTexDesc.Height = 720;
-    depthTexDesc.DepthOrArraySize = 1;
-    depthTexDesc.MipLevels = 1;
-    depthTexDesc.Format = DXGI_FORMAT_D32_FLOAT;
-    depthTexDesc.SampleDesc.Count = 1;
-    depthTexDesc.SampleDesc.Quality = 0;
-    depthTexDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    depthTexDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-    D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
-    depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-    depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
-    depthOptimizedClearValue.DepthStencil.Stencil = 0;
-
-    auto dsvHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-
-    g_pd3dDevice->CreateCommittedResource(
-		&dsvHeapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&depthTexDesc,
-		D3D12_RESOURCE_STATE_DEPTH_WRITE,
-		&depthOptimizedClearValue,
-		IID_PPV_ARGS(&m_DepthBuffer));
-
-
-    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-    dsvHeapDesc.NumDescriptors = 1;
-    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-    g_pd3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&m_DSVHeap));
-
-    g_pd3dDevice->CreateDescriptorHeap(
-		&dsvHeapDesc,
-		IID_PPV_ARGS(&m_DSVHeap));
-
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDesc = {};
-    dsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
-    dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    dsvViewDesc.Flags = D3D12_DSV_FLAG_NONE;
-    dsvViewDesc.Texture2D.MipSlice = 0;
-
-    g_pd3dDevice->CreateDepthStencilView(
-        m_DepthBuffer.Get(),
-        &dsvViewDesc,
-        m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
-    
     // Create Root Signature
 
     CD3DX12_ROOT_PARAMETER1 rootParameters[1] = {};
@@ -685,7 +751,7 @@ void CreateTriangleData()
     ComPtr<ID3DBlob> error;
     D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signature, &error);
 
-    g_pd3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature));
+    g_pd3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&g_RootSignature));
 
     struct PipelineStateStream
     {
@@ -696,9 +762,10 @@ void CreateTriangleData()
         CD3DX12_PIPELINE_STATE_STREAM_PS PS;
         CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
         CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+        CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
     } pipelineStateStream;
 
-    pipelineStateStream.pRootSignature = m_RootSignature.Get();
+    pipelineStateStream.pRootSignature = g_RootSignature.Get();
     D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -720,6 +787,18 @@ void CreateTriangleData()
     rtvFormats.NumRenderTargets = 1;
     rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     pipelineStateStream.RTVFormats = rtvFormats;
+
+    CD3DX12_RASTERIZER_DESC desc = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    desc.CullMode = D3D12_CULL_MODE_NONE;
+    desc.FillMode = D3D12_FILL_MODE_SOLID;
+    desc.DepthClipEnable = TRUE;
+    pipelineStateStream.Rasterizer = desc;
+
+    D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc = {
+		sizeof(PipelineStateStream), &pipelineStateStream
+	};
+
+    g_pd3dDevice->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&g_PipelineState));
 
     //Execute and flush
     g_pd3dCommandList->Close();
