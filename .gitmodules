@@ -10,9 +10,6 @@
 [submodule "External/SDL"]
 	path = External/SDL
 	url = https://github.com/libsdl-org/SDL.git
-[submodule "External/glm"]
-	path = External/glm
-	url = https://github.com/g-truc/glm.git
 [submodule "External/DirectX-Headers"]
 	path = External/DirectX-Headers
 	url = https://github.com/microsoft/DirectX-Headers.git
