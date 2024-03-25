@@ -26,7 +26,9 @@
 using Microsoft::WRL::ComPtr;
 
 #include "DirectXMath.h"
-using namespace DirectX;
+using Matrix4x4 = DirectX::XMMATRIX;
+using Vector4 = DirectX::XMVECTOR;
+using Vector3 = DirectX::XMFLOAT3;
 #include <directx/d3dx12.h>
 #include <d3dcompiler.h>
 
@@ -60,25 +62,41 @@ static FrameContext FrameIndependentCtx = {};
 
 struct VertexPosColor
 {
-    DirectX::XMFLOAT3 Position;
-    DirectX::XMFLOAT3 Color;
+    Vector3 Position;
+    Vector3 Color;
 };
 
 static VertexPosColor g_Vertices[8] = {
-{ DirectX::XMFLOAT3(-1.0f, -1.0f, -1.0f), DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
-{ DirectX::XMFLOAT3(-1.0f,  1.0f, -1.0f), DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
-{ DirectX::XMFLOAT3(1.0f,  1.0f, -1.0f), DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
-{ DirectX::XMFLOAT3(1.0f, -1.0f, -1.0f), DirectX::XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
-{ DirectX::XMFLOAT3(-1.0f, -1.0f,  1.0f), DirectX::XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
-{ DirectX::XMFLOAT3(-1.0f,  1.0f,  1.0f), DirectX::XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
-{ DirectX::XMFLOAT3(1.0f,  1.0f,  1.0f), DirectX::XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
-{ DirectX::XMFLOAT3(1.0f, -1.0f,  1.0f), DirectX::XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
+{ Vector3(-1.0f, -1.0f, -1.0f),Vector3(0.0f, 0.0f, 0.0f) }, // 0
+{ Vector3(-1.0f,  1.0f, -1.0f),Vector3(0.0f, 1.0f, 0.0f) }, // 1
+{ Vector3(1.0f,  1.0f, -1.0f), Vector3(1.0f, 1.0f, 0.0f) }, // 2
+{ Vector3(1.0f, -1.0f, -1.0f), Vector3(1.0f, 0.0f, 0.0f) }, // 3
+{ Vector3(-1.0f, -1.0f,  1.0f),Vector3(0.0f, 0.0f, 1.0f) }, // 4
+{ Vector3(-1.0f,  1.0f,  1.0f),Vector3(0.0f, 1.0f, 1.0f) }, // 5
+{ Vector3(1.0f,  1.0f,  1.0f), Vector3(1.0f, 1.0f, 1.0f) }, // 6
+{ Vector3(1.0f, -1.0f,  1.0f), Vector3(1.0f, 0.0f, 1.0f) }  // 7
 };
 
-static ComPtr<ID3D12Resource> g_VertexBuffer;
-static D3D12_VERTEX_BUFFER_VIEW g_VertexBufferView;
-static ComPtr<ID3D12Resource> g_IndexBuffer;
-static D3D12_INDEX_BUFFER_VIEW g_IndexBufferView;
+struct Mesh
+{
+    ComPtr<ID3D12Resource> VertexBuffer;
+    D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
+    ComPtr<ID3D12Resource> IndexBuffer;
+    D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+
+    Vector4 Position = { 0, 0, 0, 1 };
+    Vector4 Rotation = {0, 0, 0, 0};
+    Vector4 Scale = { 1, 1, 1, 0 };
+
+    Matrix4x4 GetWorldMatrix()
+    {
+        Matrix4x4 translation = DirectX::XMMatrixTranslationFromVector(Position);
+        Matrix4x4 rotation = DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
+        Matrix4x4 scale = DirectX::XMMatrixScalingFromVector(Scale);
+		return scale * rotation * translation;
+    }
+};
+
 
 static uint16_t g_Indicies[36] =
 {
@@ -102,11 +120,12 @@ static float g_FoV = 45.0f;
 static int g_Width = 1280;
 static int g_Height = 720;
 
-static DirectX::XMMATRIX g_ModelMatrix;
 static DirectX::XMMATRIX g_ViewMatrix;
 static DirectX::XMMATRIX g_ProjectionMatrix;
 static D3D12_VIEWPORT g_Viewport;
 static D3D12_RECT g_ScissorRect;
+
+static std::vector<Mesh> g_Meshes;
 
 // Forward declarations of helper functions
 bool CreateDeviceD3D();
@@ -209,38 +228,42 @@ void InitGame()
 
 void UpdateGame(float deltaTime)
 {
-    static float angle = static_cast<float>(0.0f);
-    angle += 90.0f * 0.016f;
-    const DirectX::XMVECTOR rotationAxis = XMVectorSet(0, 1, 1, 0);
-    g_ModelMatrix = DirectX::XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle));
-    const DirectX::XMVECTOR eyePosition = XMVectorSet(0, 0, -10, 1);
-    const DirectX::XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
-    const DirectX::XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
+    for (auto& mesh : g_Meshes)
+    {
+        mesh.Rotation = DirectX::XMVectorSetY(mesh.Rotation, DirectX::XMVectorGetY(mesh.Rotation) + DirectX::XMConvertToRadians(45 * deltaTime));
+    }
+    const Vector4 eyePosition = { 0, 0, -10, 1 };
+    const Vector4 focusPoint = { 0, 0, 0, 1 };
+    const Vector4 upDirection = {0, 1, 0, 0};
     g_ViewMatrix = DirectX::XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
     float aspectRatio = static_cast<float>(g_Width) / static_cast<float>(g_Height);
-    g_ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(XMConvertToRadians(g_FoV), aspectRatio, 0.1f, 100.0f);
+    g_ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(g_FoV), aspectRatio, 0.1f, 100.0f);
 }
 
-void RenderGame()
+void RenderGame(Mesh* meshes, size_t meshCount)
 {
     
+    for (int i = 0; i < meshCount; i++)
+    {
 
-    g_pd3dCommandList->SetPipelineState(g_PipelineState.Get());
-    g_pd3dCommandList->SetGraphicsRootSignature(g_RootSignature.Get());
-    g_pd3dCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    g_pd3dCommandList->IASetVertexBuffers(0, 1, &g_VertexBufferView);
-    g_pd3dCommandList->IASetIndexBuffer(&g_IndexBufferView);
+        auto& mesh = meshes[i];
+        g_pd3dCommandList->SetPipelineState(g_PipelineState.Get());
+        g_pd3dCommandList->SetGraphicsRootSignature(g_RootSignature.Get());
+        g_pd3dCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        g_pd3dCommandList->IASetVertexBuffers(0, 1, &mesh.VertexBufferView);
+        g_pd3dCommandList->IASetIndexBuffer(&mesh.IndexBufferView);
 
-    DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(g_ModelMatrix, g_ViewMatrix);
-    mvpMatrix = XMMatrixMultiply(mvpMatrix, g_ProjectionMatrix);
-    g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
+        DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.GetWorldMatrix(), g_ViewMatrix);
+        mvpMatrix = XMMatrixMultiply(mvpMatrix, g_ProjectionMatrix);
+        g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix4x4) / 4, &mvpMatrix, 0);
 
-    g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
-    g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
+        g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
+        g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
     
-    D3D12_CPU_DESCRIPTOR_HANDLE dsDescriptor = g_DSVHeap->GetCPUDescriptorHandleForHeapStart();
-    g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[g_pSwapChain->GetCurrentBackBufferIndex()], FALSE, &dsDescriptor);
-    g_pd3dCommandList->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+        D3D12_CPU_DESCRIPTOR_HANDLE dsDescriptor = g_DSVHeap->GetCPUDescriptorHandleForHeapStart();
+        g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[g_pSwapChain->GetCurrentBackBufferIndex()], FALSE, &dsDescriptor);
+        g_pd3dCommandList->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+    }
 }
 
 void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
@@ -270,7 +293,7 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     const float clear_color_with_alpha[4] = { clearCol.x * clearCol.w, clearCol.y * clearCol.w, clearCol.z * clearCol.w, clearCol.w };
     g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx], clear_color_with_alpha, 0, nullptr);
     g_pd3dCommandList->ClearDepthStencilView(g_DSVHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-    RenderGame();
+    RenderGame(g_Meshes.data(), g_Meshes.size());
 
     /*g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
 
@@ -520,14 +543,13 @@ bool CreateDeviceD3D()
 
 void CleanupDeviceD3D()
 {
+    g_Meshes.clear();
     CleanupRenderTarget();
     if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain = nullptr; }
     if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
     for (UINT i = 0; i < NUM_FRAMES_IN_FLIGHT; i++)
         g_frameContext[i].CommandAllocator = nullptr;
     FrameIndependentCtx.CommandAllocator = nullptr;
-    g_VertexBuffer = nullptr;
-    g_IndexBuffer = nullptr;
     g_DepthBuffer = nullptr;
     g_DSVHeap = nullptr;
     g_RootSignature = nullptr;
@@ -685,10 +707,10 @@ FrameContext* WaitForNextFrameResources()
 
 void CreateTriangleData()
 {
-    
-
     auto bufResDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(g_Vertices));
     auto bufHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+
+    auto& mesh = g_Meshes.emplace_back();
 
     g_pd3dDevice->CreateCommittedResource(
 		&bufHeapProp,
@@ -696,7 +718,7 @@ void CreateTriangleData()
 		&bufResDesc,
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		nullptr,
-		IID_PPV_ARGS(&g_VertexBuffer));
+		IID_PPV_ARGS(&mesh.VertexBuffer));
     
     bufResDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(g_Indicies));
 
@@ -706,25 +728,25 @@ void CreateTriangleData()
         &bufResDesc,
         D3D12_RESOURCE_STATE_COPY_DEST,
         nullptr,
-        IID_PPV_ARGS(&g_IndexBuffer));
+        IID_PPV_ARGS(&mesh.IndexBuffer));
 
     ComPtr<ID3D12Resource> IntermediateVertexBuffer;
     ComPtr<ID3D12Resource> IntermediateIndexBuffer;
 
     g_pd3dCommandList->Reset(FrameIndependentCtx.CommandAllocator.Get(), nullptr);
 
-    UploadToBuffer(g_pd3dCommandList.Get(), g_VertexBuffer.Get(), &IntermediateVertexBuffer, sizeof(g_Vertices), g_Vertices);
-    UploadToBuffer(g_pd3dCommandList.Get(), g_IndexBuffer.Get(), &IntermediateIndexBuffer, sizeof(g_Indicies), g_Indicies);
+    UploadToBuffer(g_pd3dCommandList.Get(), mesh.VertexBuffer.Get(), &IntermediateVertexBuffer, sizeof(g_Vertices), g_Vertices);
+    UploadToBuffer(g_pd3dCommandList.Get(), mesh.IndexBuffer.Get(), &IntermediateIndexBuffer, sizeof(g_Indicies), g_Indicies);
 
     // Create the vertex buffer view
-    g_VertexBufferView.BufferLocation = g_VertexBuffer->GetGPUVirtualAddress();
-    g_VertexBufferView.StrideInBytes = sizeof(VertexPosColor);
-    g_VertexBufferView.SizeInBytes = sizeof(g_Vertices);
+    mesh.VertexBufferView.BufferLocation = mesh.VertexBuffer->GetGPUVirtualAddress();
+    mesh.VertexBufferView.StrideInBytes = sizeof(VertexPosColor);
+    mesh.VertexBufferView.SizeInBytes = sizeof(g_Vertices);
     
     // Create the index buffer view
-    g_IndexBufferView.BufferLocation = g_IndexBuffer->GetGPUVirtualAddress();
-    g_IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    g_IndexBufferView.SizeInBytes = sizeof(g_Indicies);
+    mesh.IndexBufferView.BufferLocation = mesh.IndexBuffer->GetGPUVirtualAddress();
+    mesh.IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    mesh.IndexBufferView.SizeInBytes = sizeof(g_Indicies);
 
     // Create Root Signature
 
