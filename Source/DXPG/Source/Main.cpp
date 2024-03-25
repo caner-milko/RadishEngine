@@ -26,9 +26,11 @@
 using Microsoft::WRL::ComPtr;
 
 #include "DirectXMath.h"
+using namespace DirectX;
 using Matrix4x4 = DirectX::XMMATRIX;
 using Vector4 = DirectX::XMVECTOR;
 using Vector3 = DirectX::XMFLOAT3;
+using Vector2 = DirectX::XMFLOAT2;
 #include <directx/d3dx12.h>
 #include <d3dcompiler.h>
 
@@ -97,7 +99,6 @@ struct Mesh
     }
 };
 
-
 static uint16_t g_Indicies[36] =
 {
     0, 1, 2, 0, 2, 3,
@@ -116,17 +117,91 @@ static ComPtr<ID3D12DescriptorHeap> g_DSVHeap;
 static ComPtr<ID3D12RootSignature> g_RootSignature;
 static ComPtr<ID3D12PipelineState> g_PipelineState;
 
-static float g_FoV = 45.0f;
 static int g_Width = 1280;
 static int g_Height = 720;
 
-static DirectX::XMMATRIX g_ViewMatrix;
-static DirectX::XMMATRIX g_ProjectionMatrix;
+// Keep last & current sdl key states
+enum KEY_STATE
+{
+    KEY_UP = 0,
+	KEY_DOWN = 1,
+    KEY_PRESSED = 2,
+    KEY_RELEASED = 3
+};
+KEY_STATE CUR_KEYS[SDL_NUM_SCANCODES];
+
+Vector2 g_MousePos = {0.5, 0.5};
+Vector2 g_MouseDelta = {0, 0};
+
+bool IsKeyDown(SDL_Scancode key)
+{
+	return CUR_KEYS[key] == KEY_DOWN || CUR_KEYS[key] == KEY_PRESSED;
+}
+
+bool IsKeyPressed(SDL_Scancode key)
+{
+	return CUR_KEYS[key] == KEY_PRESSED;
+}
+
+bool IsKeyReleased(SDL_Scancode key)
+{
+	return CUR_KEYS[key] == KEY_RELEASED;
+}
+
+bool IsKeyUp(SDL_Scancode key)
+{
+	return CUR_KEYS[key] == KEY_UP || CUR_KEYS[key] == KEY_RELEASED;
+}
+
 static D3D12_VIEWPORT g_Viewport;
 static D3D12_RECT g_ScissorRect;
 
 static std::vector<Mesh> g_Meshes;
+struct Camera
+{
+    float MoveSpeed = 5.0f;
+    float RotSpeed = 0.5f;
+    Vector4 Position = { 0, 0, -10, 1 };
+    Vector4 Rotation = { 0, 0, 0, 0 };
+    float FoV = 45.0f;
+    
+	Matrix4x4 GetRotationMatrix()
+	{
+		return DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
+	}
 
+	Vector4 GetDirection()
+	{
+		return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 0, 1, 0), GetRotationMatrix());
+	}
+	Vector4 GetRight()
+	{
+		return DirectX::XMVector4Transform(DirectX::XMVectorSet(1, 0, 0, 0), GetRotationMatrix());
+	}
+	Vector4 GetUp()
+	{
+		return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 1, 0, 0), GetRotationMatrix());
+	}
+
+    void SetFoV(float fov)
+    {
+		FoV = std::clamp(fov, 30.0f, 90.0f);
+	}
+
+	Matrix4x4 GetViewMatrix()
+	{
+		const Vector4 upDirection = { 0, 1, 0, 0 };
+		return DirectX::XMMatrixLookToLH(Position, GetDirection(), upDirection);
+	}
+
+	Matrix4x4 GetProjectionMatrix()
+	{
+		float aspectRatio = static_cast<float>(g_Width) / static_cast<float>(g_Height);
+		return DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(FoV), aspectRatio, 0.1f, 100.0f);
+	}
+
+
+} g_Cam = {};
 // Forward declarations of helper functions
 bool CreateDeviceD3D();
 void CleanupDeviceD3D();
@@ -180,7 +255,10 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 {
 
     ImGui::NewFrame();
-
+    if (ImGui::IsKeyPressed(ImGuiKey_F))
+    {
+        SDL_ShowCursor(SDL_ShowCursor(SDL_QUERY) ^ 1);
+    }
     // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
     if (showDemoWindow)
         ImGui::ShowDemoWindow(&showDemoWindow);
@@ -224,20 +302,31 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 
 void InitGame()
 {
+    memset(CUR_KEYS, 0, sizeof(CUR_KEYS));
 }
 
 void UpdateGame(float deltaTime)
 {
+    if (IsKeyPressed(SDL_SCANCODE_R))
+    {
+        g_Cam = {};
+    }
+    {
+        std::cout << "Pos: " << g_MousePos.x << ", " << g_MousePos.y << std::endl;
+        std::cout << "Delta: " << g_MouseDelta.x << ", " << g_MouseDelta.y << std::endl;
+        g_Cam.SetFoV(g_Cam.FoV + ImGui::GetIO().MouseWheel * 5.0f * deltaTime);
+        Vector4 moveDir = { int32_t(IsKeyDown(SDL_SCANCODE_D)) - int32_t(IsKeyDown(SDL_SCANCODE_S))
+            , int32_t(IsKeyDown(SDL_SCANCODE_SPACE) || IsKeyDown(SDL_SCANCODE_E)) - int32_t(IsKeyDown(SDL_SCANCODE_LCTRL) || IsKeyDown(SDL_SCANCODE_Q))
+            , int32_t(IsKeyDown(SDL_SCANCODE_W)) - int32_t(IsKeyDown(SDL_SCANCODE_S)), 0 };
+        moveDir = XMVector4Normalize(moveDir);
+        g_Cam.Rotation = g_Cam.Rotation + XMVectorSet(g_MouseDelta.y, g_MouseDelta.x, 0, 0) * deltaTime * g_Cam.RotSpeed;
+        g_Cam.Rotation = XMVectorSetX(g_Cam.Rotation, std::clamp(XMVectorGetX(g_Cam.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
+        g_Cam.Position = g_Cam.Position + XMVector4Transform(moveDir, g_Cam.GetRotationMatrix()) * deltaTime * g_Cam.MoveSpeed;
+    }
     for (auto& mesh : g_Meshes)
     {
         mesh.Rotation = DirectX::XMVectorSetY(mesh.Rotation, DirectX::XMVectorGetY(mesh.Rotation) + DirectX::XMConvertToRadians(45 * deltaTime));
     }
-    const Vector4 eyePosition = { 0, 0, -10, 1 };
-    const Vector4 focusPoint = { 0, 0, 0, 1 };
-    const Vector4 upDirection = {0, 1, 0, 0};
-    g_ViewMatrix = DirectX::XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
-    float aspectRatio = static_cast<float>(g_Width) / static_cast<float>(g_Height);
-    g_ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(g_FoV), aspectRatio, 0.1f, 100.0f);
 }
 
 void RenderGame(Mesh* meshes, size_t meshCount)
@@ -253,8 +342,8 @@ void RenderGame(Mesh* meshes, size_t meshCount)
         g_pd3dCommandList->IASetVertexBuffers(0, 1, &mesh.VertexBufferView);
         g_pd3dCommandList->IASetIndexBuffer(&mesh.IndexBufferView);
 
-        DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.GetWorldMatrix(), g_ViewMatrix);
-        mvpMatrix = XMMatrixMultiply(mvpMatrix, g_ProjectionMatrix);
+        DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.GetWorldMatrix(), g_Cam.GetViewMatrix());
+        mvpMatrix = XMMatrixMultiply(mvpMatrix, g_Cam.GetProjectionMatrix());
         g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix4x4) / 4, &mvpMatrix, 0);
 
         g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
@@ -268,12 +357,6 @@ void RenderGame(Mesh* meshes, size_t meshCount)
 
 void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
 {
-    // Start the Dear ImGui frame
-    ImGui_ImplDX12_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
-
-    UIUpdate(io, showDemoWindow, showAnotherWindow, clearCol);
-
     FrameContext* frameCtx = WaitForNextFrameResources();
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
     frameCtx->CommandAllocator->Reset();
@@ -295,12 +378,12 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     g_pd3dCommandList->ClearDepthStencilView(g_DSVHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     RenderGame(g_Meshes.data(), g_Meshes.size());
 
-    /*g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
+    g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
 
     ID3D12DescriptorHeap* descHeaps[] = {g_pd3dSrvDescHeap.Get()};
 
     g_pd3dCommandList->SetDescriptorHeaps(1, descHeaps);
-    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());*/
+    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     g_pd3dCommandList->ResourceBarrier(1, &barrier);
@@ -333,8 +416,7 @@ int main(int argv, char** args)
         }
     }
     g_ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(1280), static_cast<float>(720));
-    g_FoV = 45.0;
+    g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
     
     CreateConsole();
     // Setup SDL
@@ -367,6 +449,8 @@ int main(int argv, char** args)
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 
     // Our state
     bool show_demo_window = true;
@@ -383,7 +467,6 @@ int main(int argv, char** args)
         DXGI_FORMAT_R8G8B8A8_UNORM, g_pd3dSrvDescHeap.Get(),
         g_pd3dSrvDescHeap->GetCPUDescriptorHandleForHeapStart(),
         g_pd3dSrvDescHeap->GetGPUDescriptorHandleForHeapStart());
-
     // Load Fonts
     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
@@ -427,15 +510,49 @@ int main(int argv, char** args)
             {
                 g_Width = sdlEvent.window.data1;
                 g_Height = sdlEvent.window.data2;
+                g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
                 // Release all outstanding references to the swap chain's buffers before resizing.
                 CleanupRenderTarget();
                 CreateSwapchainRTVDSV(true);
             }
+            if (sdlEvent.type == SDL_KEYDOWN)
+            {
+                CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? KEY_DOWN : KEY_PRESSED;
+            }
+            if (sdlEvent.type == SDL_KEYUP)
+            {
+                CUR_KEYS[sdlEvent.key.keysym.scancode] = KEY_RELEASED;
+            }
+            if (sdlEvent.type == SDL_MOUSEMOTION)
+            {
+                g_MouseDelta = { static_cast<float>(sdlEvent.motion.xrel), static_cast<float>(sdlEvent.motion.yrel) };
+				g_MousePos = { static_cast<float>(sdlEvent.motion.x) / static_cast<float>(g_Width), static_cast<float>(sdlEvent.motion.y) / static_cast<float>(g_Height) };
+			}
         }
+
+        // Start the Dear ImGui frame
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+
+        UIUpdate(io, show_demo_window, show_another_window, clear_color);
 
         UpdateGame(io.DeltaTime);
 
         Render(io, show_demo_window, show_another_window, clear_color);
+
+        for (int i = 0; i < 322; i++)
+        {
+            if (CUR_KEYS[i] == KEY_PRESSED)
+            {
+				CUR_KEYS[i] = KEY_DOWN;
+			}
+            if (CUR_KEYS[i] == KEY_RELEASED)
+            {
+				CUR_KEYS[i] = KEY_UP;
+			}
+		}
+
+        g_MouseDelta = {};
     }
 
 
@@ -810,11 +927,7 @@ void CreateTriangleData()
     rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     pipelineStateStream.RTVFormats = rtvFormats;
 
-    CD3DX12_RASTERIZER_DESC desc = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    desc.CullMode = D3D12_CULL_MODE_NONE;
-    desc.FillMode = D3D12_FILL_MODE_SOLID;
-    desc.DepthClipEnable = TRUE;
-    pipelineStateStream.Rasterizer = desc;
+    pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
     D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc = {
 		sizeof(PipelineStateStream), &pipelineStateStream
