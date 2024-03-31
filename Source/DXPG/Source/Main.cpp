@@ -34,6 +34,8 @@ using Vector2 = DirectX::XMFLOAT2;
 #include <directx/d3dx12.h>
 #include <d3dcompiler.h>
 
+#include <tiny_obj_loader.h>
+
 struct FrameContext
 {
     ComPtr<ID3D12CommandAllocator> CommandAllocator;
@@ -68,26 +70,36 @@ struct VertexPosColor
     Vector3 Color;
 };
 
-static VertexPosColor g_Vertices[8] = {
-{ Vector3(-1.0f, -1.0f, -1.0f),Vector3(0.0f, 0.0f, 0.0f) }, // 0
-{ Vector3(-1.0f,  1.0f, -1.0f),Vector3(0.0f, 1.0f, 0.0f) }, // 1
-{ Vector3(1.0f,  1.0f, -1.0f), Vector3(1.0f, 1.0f, 0.0f) }, // 2
-{ Vector3(1.0f, -1.0f, -1.0f), Vector3(1.0f, 0.0f, 0.0f) }, // 3
-{ Vector3(-1.0f, -1.0f,  1.0f),Vector3(0.0f, 0.0f, 1.0f) }, // 4
-{ Vector3(-1.0f,  1.0f,  1.0f),Vector3(0.0f, 1.0f, 1.0f) }, // 5
-{ Vector3(1.0f,  1.0f,  1.0f), Vector3(1.0f, 1.0f, 1.0f) }, // 6
-{ Vector3(1.0f, -1.0f,  1.0f), Vector3(1.0f, 0.0f, 1.0f) }  // 7
+struct MeshRenderData
+{
+    ID3D12DescriptorHeap* VertexDataBufferHeap;
+    D3D12_GPU_VIRTUAL_ADDRESS PositionsBufferHandle;
+    D3D12_GPU_VIRTUAL_ADDRESS NormalsBufferHandle;
+    D3D12_GPU_VIRTUAL_ADDRESS TexCoordsBufferHandle;
+	D3D12_VERTEX_BUFFER_VIEW IndexBufferView;
+    size_t IndexCount;
+    Matrix4x4 ModelMatrix;
 };
 
-struct Mesh
+struct D3D12VertexData
 {
-    ComPtr<ID3D12Resource> VertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
-    ComPtr<ID3D12Resource> IndexBuffer;
-    D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+    ComPtr<ID3D12DescriptorHeap> VertexBufferHeap;
+	ComPtr<ID3D12Resource> PositionsBuffer;
+    D3D12_GPU_VIRTUAL_ADDRESS PositionsBufferHandle;
+    ComPtr<ID3D12Resource> NormalsBuffer;
+    D3D12_GPU_VIRTUAL_ADDRESS NormalsBufferHandle;
+    ComPtr<ID3D12Resource> TexCoordsBuffer;
+    D3D12_GPU_VIRTUAL_ADDRESS TexCoordsBufferHandle;
+};
+
+struct D3D12Mesh
+{
+    std::shared_ptr<D3D12VertexData> VertexGroup;
+    ComPtr<ID3D12Resource> Indices;
+    D3D12_VERTEX_BUFFER_VIEW IndicesView {};
 
     Vector4 Position = { 0, 0, 0, 1 };
-    Vector4 Rotation = {0, 0, 0, 0};
+    Vector4 Rotation = { 0, 0, 0, 0 };
     Vector4 Scale = { 1, 1, 1, 0 };
 
     Matrix4x4 GetWorldMatrix()
@@ -95,19 +107,28 @@ struct Mesh
         Matrix4x4 translation = DirectX::XMMatrixTranslationFromVector(Position);
         Matrix4x4 rotation = DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
         Matrix4x4 scale = DirectX::XMMatrixScalingFromVector(Scale);
-		return scale * rotation * translation;
+        return scale * rotation * translation;
     }
 };
 
-static uint16_t g_Indicies[36] =
+struct MeshAsset
 {
-    0, 1, 2, 0, 2, 3,
-    4, 6, 5, 4, 7, 6,
-    4, 5, 1, 4, 1, 0,
-    3, 2, 6, 3, 6, 7,
-    1, 5, 6, 1, 6, 2,
-    4, 0, 3, 4, 3, 7
+	std::vector<tinyobj::index_t> Indicies;
+    std::string Name;
+    std::shared_ptr<D3D12Mesh> GPUMesh;
 };
+
+struct MeshGroup
+{
+    std::vector<float> Positions;
+    std::vector<float> Normals;
+    std::vector<float> TexCoords;
+    std::shared_ptr<D3D12VertexData> GPUVertexData;
+    std::vector<MeshAsset> Meshes;
+};
+
+
+std::vector<MeshGroup> g_LoadedMeshGroups;
 
 static HWND g_hWnd = nullptr;
 
@@ -120,47 +141,57 @@ static ComPtr<ID3D12PipelineState> g_PipelineState;
 static int g_Width = 1280;
 static int g_Height = 720;
 
-// Keep last & current sdl key states
-enum KEY_STATE
+struct IO
 {
-    KEY_UP = 0,
-	KEY_DOWN = 1,
-    KEY_PRESSED = 2,
-    KEY_RELEASED = 3
-};
-KEY_STATE CUR_KEYS[SDL_NUM_SCANCODES];
+    // Keep last & current sdl key states
+    enum KEY_STATE
+    {
+        KEY_UP = 0,
+	    KEY_DOWN = 1,
+        KEY_PRESSED = 2,
+        KEY_RELEASED = 3
+    };
+    KEY_STATE CUR_KEYS[SDL_NUM_SCANCODES];
+    
+    bool CursorEnabled = false;
 
-Vector2 g_MousePos = {0.5, 0.5};
-Vector2 g_MouseDelta = {0, 0};
+    struct Immediate
+    {
+        float MouseWheelDelta = 0.0f;
+        Vector2 MouseDelta = { 0, 0 };
+    } Immediate;
 
-bool IsKeyDown(SDL_Scancode key)
-{
-	return CUR_KEYS[key] == KEY_DOWN || CUR_KEYS[key] == KEY_PRESSED;
-}
+    bool IsKeyDown(SDL_Scancode key)
+    {
+	    return CUR_KEYS[key] == KEY_DOWN || CUR_KEYS[key] == KEY_PRESSED;
+    }
 
-bool IsKeyPressed(SDL_Scancode key)
-{
-	return CUR_KEYS[key] == KEY_PRESSED;
-}
+    bool IsKeyPressed(SDL_Scancode key)
+    {
+	    return CUR_KEYS[key] == KEY_PRESSED;
+    }
 
-bool IsKeyReleased(SDL_Scancode key)
-{
-	return CUR_KEYS[key] == KEY_RELEASED;
-}
+    bool IsKeyReleased(SDL_Scancode key)
+    {
+	    return CUR_KEYS[key] == KEY_RELEASED;
+    }
 
-bool IsKeyUp(SDL_Scancode key)
-{
-	return CUR_KEYS[key] == KEY_UP || CUR_KEYS[key] == KEY_RELEASED;
-}
+    bool IsKeyUp(SDL_Scancode key)
+    {
+	    return CUR_KEYS[key] == KEY_UP || CUR_KEYS[key] == KEY_RELEASED;
+    }
+
+} static g_IO;
+
+
 
 static D3D12_VIEWPORT g_Viewport;
 static D3D12_RECT g_ScissorRect;
 
-static std::vector<Mesh> g_Meshes;
 struct Camera
 {
-    float MoveSpeed = 5.0f;
-    float RotSpeed = 0.5f;
+    float MoveSpeed = 1000.0f;
+    float RotSpeed = 2.0f;
     Vector4 Position = { 0, 0, -10, 1 };
     Vector4 Rotation = { 0, 0, 0, 0 };
     float FoV = 45.0f;
@@ -197,7 +228,7 @@ struct Camera
 	Matrix4x4 GetProjectionMatrix()
 	{
 		float aspectRatio = static_cast<float>(g_Width) / static_cast<float>(g_Height);
-		return DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(FoV), aspectRatio, 0.1f, 100.0f);
+		return DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(FoV), aspectRatio, 0.1f, 10000.0f);
 	}
 
 
@@ -210,8 +241,10 @@ void CleanupRenderTarget();
 void WaitForLastSubmittedFrame();
 FrameContext* WaitForNextFrameResources();
 
-void CreateTriangleData();
+void LoadSceneData();
 void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t size, void* data);
+
+MeshGroup* LoadObjFile(const char* path);
 
 inline void ThrowIfFailed(HRESULT hr)
 {
@@ -255,34 +288,17 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 {
 
     ImGui::NewFrame();
-    if (ImGui::IsKeyPressed(ImGuiKey_F))
+
     {
-        SDL_ShowCursor(SDL_ShowCursor(SDL_QUERY) ^ 1);
-    }
-    // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-    if (showDemoWindow)
-        ImGui::ShowDemoWindow(&showDemoWindow);
+        ImGui::Begin("Camera");                          // Create a window called "Hello, world!" and append into it.
 
-    // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
-    {
-        static float f = 0.0f;
-        static int counter = 0;
+        ImGui::InputFloat3("Position", &g_Cam.Position.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputFloat3("Rotation", &g_Cam.Rotation.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputFloat("FoV", &g_Cam.FoV, 0.1f, 1.0f, "%.3f", ImGuiInputTextFlags_ReadOnly);
 
-        ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-        ImGui::Checkbox("Demo Window", &showDemoWindow);      // Edit bools storing our window open/close state
-        ImGui::Checkbox("Another Window", &showAnotherWindow);
-
-        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-        ImGui::ColorEdit3("clear color", (float*)&clearCol); // Edit 3 floats representing a color
-
-        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text("counter = %d", counter);
-
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        ImGui::SliderFloat("Move Speed", &g_Cam.MoveSpeed, 0.0f, 10000.0f);
+        ImGui::SliderFloat("Rotation Speed", &g_Cam.RotSpeed, 0.1f, 10.0f);
+        
         ImGui::End();
     }
 
@@ -302,34 +318,42 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 
 void InitGame()
 {
-    memset(CUR_KEYS, 0, sizeof(CUR_KEYS));
+    memset(g_IO.CUR_KEYS, 0, sizeof(g_IO.CUR_KEYS));
 }
 
 void UpdateGame(float deltaTime)
 {
-    if (IsKeyPressed(SDL_SCANCODE_R))
+    if (g_IO.IsKeyPressed(SDL_SCANCODE_E))
+    {
+        SDL_SetRelativeMouseMode((SDL_bool)g_IO.CursorEnabled);
+        g_IO.CursorEnabled = !g_IO.CursorEnabled;
+    }
+    if (g_IO.IsKeyPressed(SDL_SCANCODE_R))
     {
         g_Cam = {};
     }
     {
-        std::cout << "Pos: " << g_MousePos.x << ", " << g_MousePos.y << std::endl;
-        std::cout << "Delta: " << g_MouseDelta.x << ", " << g_MouseDelta.y << std::endl;
-        g_Cam.SetFoV(g_Cam.FoV + ImGui::GetIO().MouseWheel * 5.0f * deltaTime);
-        Vector4 moveDir = { int32_t(IsKeyDown(SDL_SCANCODE_D)) - int32_t(IsKeyDown(SDL_SCANCODE_S))
-            , int32_t(IsKeyDown(SDL_SCANCODE_SPACE) || IsKeyDown(SDL_SCANCODE_E)) - int32_t(IsKeyDown(SDL_SCANCODE_LCTRL) || IsKeyDown(SDL_SCANCODE_Q))
-            , int32_t(IsKeyDown(SDL_SCANCODE_W)) - int32_t(IsKeyDown(SDL_SCANCODE_S)), 0 };
+        g_Cam.SetFoV(g_Cam.FoV - g_IO.Immediate.MouseWheelDelta * 2.0f);
+        Vector4 moveDir = { int32_t(g_IO.IsKeyDown(SDL_SCANCODE_D)) - int32_t(g_IO.IsKeyDown(SDL_SCANCODE_A))
+            , int32_t(g_IO.IsKeyDown(SDL_SCANCODE_SPACE)) - int32_t(g_IO.IsKeyDown(SDL_SCANCODE_LCTRL))
+            , int32_t(g_IO.IsKeyDown(SDL_SCANCODE_W)) - int32_t(g_IO.IsKeyDown(SDL_SCANCODE_S)), 0 };
         moveDir = XMVector4Normalize(moveDir);
-        g_Cam.Rotation = g_Cam.Rotation + XMVectorSet(g_MouseDelta.y, g_MouseDelta.x, 0, 0) * deltaTime * g_Cam.RotSpeed;
-        g_Cam.Rotation = XMVectorSetX(g_Cam.Rotation, std::clamp(XMVectorGetX(g_Cam.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
+        
         g_Cam.Position = g_Cam.Position + XMVector4Transform(moveDir, g_Cam.GetRotationMatrix()) * deltaTime * g_Cam.MoveSpeed;
+        
+        if(!g_IO.CursorEnabled)
+        {
+            g_Cam.Rotation = g_Cam.Rotation + XMVectorSet(g_IO.Immediate.MouseDelta.y, g_IO.Immediate.MouseDelta.x, 0, 0) * g_Cam.RotSpeed * deltaTime;
+            g_Cam.Rotation = XMVectorSetX(g_Cam.Rotation, std::clamp(XMVectorGetX(g_Cam.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
+        }
+
     }
-    for (auto& mesh : g_Meshes)
-    {
-        mesh.Rotation = DirectX::XMVectorSetY(mesh.Rotation, DirectX::XMVectorGetY(mesh.Rotation) + DirectX::XMConvertToRadians(45 * deltaTime));
-    }
+//    for (auto& group : g_LoadedMeshGroups)
+//        for (auto& mesh : group.Meshes)
+//            mesh.GPUMesh->Rotation = DirectX::XMVectorSetY(mesh.GPUMesh->Rotation, DirectX::XMVectorGetY(mesh.GPUMesh->Rotation) + DirectX::XMConvertToRadians(45 * deltaTime));
 }
 
-void RenderGame(Mesh* meshes, size_t meshCount)
+void RenderGame(MeshRenderData* meshes, size_t meshCount)
 {
     
     for (int i = 0; i < meshCount; i++)
@@ -339,19 +363,23 @@ void RenderGame(Mesh* meshes, size_t meshCount)
         g_pd3dCommandList->SetPipelineState(g_PipelineState.Get());
         g_pd3dCommandList->SetGraphicsRootSignature(g_RootSignature.Get());
         g_pd3dCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        g_pd3dCommandList->IASetVertexBuffers(0, 1, &mesh.VertexBufferView);
-        g_pd3dCommandList->IASetIndexBuffer(&mesh.IndexBufferView);
+        g_pd3dCommandList->IASetVertexBuffers(0, 1, &mesh.IndexBufferView);
 
-        DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.GetWorldMatrix(), g_Cam.GetViewMatrix());
+        DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.ModelMatrix, g_Cam.GetViewMatrix());
         mvpMatrix = XMMatrixMultiply(mvpMatrix, g_Cam.GetProjectionMatrix());
         g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix4x4) / 4, &mvpMatrix, 0);
+
+        g_pd3dCommandList->SetDescriptorHeaps(1, &mesh.VertexDataBufferHeap);
+        g_pd3dCommandList->SetGraphicsRootShaderResourceView(1, mesh.PositionsBufferHandle);
+        g_pd3dCommandList->SetGraphicsRootShaderResourceView(2, mesh.NormalsBufferHandle);
+        g_pd3dCommandList->SetGraphicsRootShaderResourceView(3, mesh.TexCoordsBufferHandle);
 
         g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
         g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
     
         D3D12_CPU_DESCRIPTOR_HANDLE dsDescriptor = g_DSVHeap->GetCPUDescriptorHandleForHeapStart();
         g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[g_pSwapChain->GetCurrentBackBufferIndex()], FALSE, &dsDescriptor);
-        g_pd3dCommandList->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+        g_pd3dCommandList->DrawInstanced(mesh.IndexCount, 1, 0, 0);
     }
 }
 
@@ -376,7 +404,25 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     const float clear_color_with_alpha[4] = { clearCol.x * clearCol.w, clearCol.y * clearCol.w, clearCol.z * clearCol.w, clearCol.w };
     g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx], clear_color_with_alpha, 0, nullptr);
     g_pd3dCommandList->ClearDepthStencilView(g_DSVHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-    RenderGame(g_Meshes.data(), g_Meshes.size());
+
+    std::vector<MeshRenderData> meshesToRender;
+    for (auto& group : g_LoadedMeshGroups)
+    {
+        MeshRenderData renderData{};
+        renderData.VertexDataBufferHeap = group.GPUVertexData->VertexBufferHeap.Get();
+        renderData.PositionsBufferHandle = group.GPUVertexData->PositionsBufferHandle;
+        renderData.NormalsBufferHandle = group.GPUVertexData->NormalsBufferHandle;
+        renderData.TexCoordsBufferHandle = group.GPUVertexData->TexCoordsBufferHandle;
+        for (auto& mesh : group.Meshes)
+        {
+            renderData.IndexCount = mesh.Indicies.size();
+            renderData.IndexBufferView = mesh.GPUMesh->IndicesView;
+            renderData.ModelMatrix = mesh.GPUMesh->GetWorldMatrix();
+            meshesToRender.emplace_back(renderData);
+        }
+	}
+
+    RenderGame(meshesToRender.data(), meshesToRender.size());
 
     g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
 
@@ -484,8 +530,8 @@ int main(int argv, char** args)
     //IM_ASSERT(font != nullptr);
 
     InitGame();
-    CreateTriangleData();
-
+    LoadSceneData();
+    SDL_SetRelativeMouseMode(SDL_TRUE);
     // Main loop
     bool done = false;
     
@@ -516,18 +562,13 @@ int main(int argv, char** args)
                 CreateSwapchainRTVDSV(true);
             }
             if (sdlEvent.type == SDL_KEYDOWN)
-            {
-                CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? KEY_DOWN : KEY_PRESSED;
-            }
+                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? IO::KEY_DOWN : IO::KEY_PRESSED;
             if (sdlEvent.type == SDL_KEYUP)
-            {
-                CUR_KEYS[sdlEvent.key.keysym.scancode] = KEY_RELEASED;
-            }
+                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = IO::KEY_RELEASED;
             if (sdlEvent.type == SDL_MOUSEMOTION)
-            {
-                g_MouseDelta = { static_cast<float>(sdlEvent.motion.xrel), static_cast<float>(sdlEvent.motion.yrel) };
-				g_MousePos = { static_cast<float>(sdlEvent.motion.x) / static_cast<float>(g_Width), static_cast<float>(sdlEvent.motion.y) / static_cast<float>(g_Height) };
-			}
+                g_IO.Immediate.MouseDelta = { float(sdlEvent.motion.xrel), float(sdlEvent.motion.yrel) };
+            if (sdlEvent.type == SDL_MOUSEWHEEL)
+                g_IO.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
         }
 
         // Start the Dear ImGui frame
@@ -542,17 +583,13 @@ int main(int argv, char** args)
 
         for (int i = 0; i < 322; i++)
         {
-            if (CUR_KEYS[i] == KEY_PRESSED)
-            {
-				CUR_KEYS[i] = KEY_DOWN;
-			}
-            if (CUR_KEYS[i] == KEY_RELEASED)
-            {
-				CUR_KEYS[i] = KEY_UP;
-			}
+            if (g_IO.CUR_KEYS[i] == IO::KEY_PRESSED)
+                g_IO.CUR_KEYS[i] = IO::KEY_DOWN;
+            if (g_IO.CUR_KEYS[i] == IO::KEY_RELEASED)
+                g_IO.CUR_KEYS[i] = IO::KEY_UP;
 		}
 
-        g_MouseDelta = {};
+        g_IO.Immediate = {};
     }
 
 
@@ -660,7 +697,7 @@ bool CreateDeviceD3D()
 
 void CleanupDeviceD3D()
 {
-    g_Meshes.clear();
+    g_LoadedMeshGroups.clear();
     CleanupRenderTarget();
     if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain = nullptr; }
     if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
@@ -822,118 +859,161 @@ FrameContext* WaitForNextFrameResources()
     return frameCtx;
 }
 
-void CreateTriangleData()
+void LoadSceneData()
 {
-    auto bufResDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(g_Vertices));
-    auto bufHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    // Create PSO
+    {
+        // Create Root Signature
 
-    auto& mesh = g_Meshes.emplace_back();
+        CD3DX12_ROOT_PARAMETER1 rootParameters[4] = {};
+        rootParameters[0].InitAsConstants(sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+        rootParameters[1].InitAsShaderResourceView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC, D3D12_SHADER_VISIBILITY_VERTEX);
+        rootParameters[2].InitAsShaderResourceView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC, D3D12_SHADER_VISIBILITY_VERTEX);
+        rootParameters[3].InitAsShaderResourceView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC, D3D12_SHADER_VISIBILITY_VERTEX);
 
-    g_pd3dDevice->CreateCommittedResource(
-		&bufHeapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&bufResDesc,
-		D3D12_RESOURCE_STATE_COPY_DEST,
-		nullptr,
-		IID_PPV_ARGS(&mesh.VertexBuffer));
-    
-    bufResDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(g_Indicies));
+        D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
 
-    g_pd3dDevice->CreateCommittedResource(
-        &bufHeapProp,
-        D3D12_HEAP_FLAG_NONE,
-        &bufResDesc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr,
-        IID_PPV_ARGS(&mesh.IndexBuffer));
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
 
-    ComPtr<ID3D12Resource> IntermediateVertexBuffer;
-    ComPtr<ID3D12Resource> IntermediateIndexBuffer;
+        rootSignatureDesc.Init_1_1(
+            _countof(rootParameters),
+            rootParameters,
+            0,
+            nullptr,
+            rootSignatureFlags);
+
+        ComPtr<ID3DBlob> signature;
+        ComPtr<ID3DBlob> error;
+        D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signature, &error);
+
+        g_pd3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&g_RootSignature));
+
+        struct PipelineStateStream
+        {
+            CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+            CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+            CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+            CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+            CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+            CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+            CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+            CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
+        } pipelineStateStream;
+
+        pipelineStateStream.pRootSignature = g_RootSignature.Get();
+        D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+            { "POSINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+            { "NORMALINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+            { "TEXCOORDINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        };
+
+        pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+        pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        ComPtr<ID3DBlob> vertexShaderBlob;
+        ThrowIfFailed(D3DReadFileToBlob(L"Triangle.vs.cso", &vertexShaderBlob));
+        ComPtr<ID3DBlob> pixelShaderBlob;
+        ThrowIfFailed(D3DReadFileToBlob(L"Triangle.ps.cso", &pixelShaderBlob));
+
+        pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShaderBlob.Get());
+        pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShaderBlob.Get());
+
+        pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+        D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+        rtvFormats.NumRenderTargets = 1;
+        rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+        pipelineStateStream.RTVFormats = rtvFormats;
+
+        pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+        D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc = {
+            sizeof(PipelineStateStream), &pipelineStateStream
+        };
+
+        g_pd3dDevice->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&g_PipelineState));
+    }
+
+
+
+
+
+
+
+
+
+
 
     g_pd3dCommandList->Reset(FrameIndependentCtx.CommandAllocator.Get(), nullptr);
 
-    UploadToBuffer(g_pd3dCommandList.Get(), mesh.VertexBuffer.Get(), &IntermediateVertexBuffer, sizeof(g_Vertices), g_Vertices);
-    UploadToBuffer(g_pd3dCommandList.Get(), mesh.IndexBuffer.Get(), &IntermediateIndexBuffer, sizeof(g_Indicies), g_Indicies);
+    auto group = LoadObjFile(DXPG_SPONZA_DIR "sponza.obj");
+    auto vertexData = (group->GPUVertexData = std::make_shared<D3D12VertexData>());
 
-    // Create the vertex buffer view
-    mesh.VertexBufferView.BufferLocation = mesh.VertexBuffer->GetGPUVirtualAddress();
-    mesh.VertexBufferView.StrideInBytes = sizeof(VertexPosColor);
-    mesh.VertexBufferView.SizeInBytes = sizeof(g_Vertices);
-    
-    // Create the index buffer view
-    mesh.IndexBufferView.BufferLocation = mesh.IndexBuffer->GetGPUVirtualAddress();
-    mesh.IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    mesh.IndexBufferView.SizeInBytes = sizeof(g_Indicies);
+    D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+    heapDesc.NumDescriptors = 3;
+    heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    g_pd3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&vertexData->VertexBufferHeap));
 
-    // Create Root Signature
+    auto start = vertexData->VertexBufferHeap->GetCPUDescriptorHandleForHeapStart();
 
-    CD3DX12_ROOT_PARAMETER1 rootParameters[1] = {};
-    rootParameters[0].InitAsConstants(sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    srvDesc.Buffer.FirstElement = 0;
+    srvDesc.Buffer.StructureByteStride = 0;
+    srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+    auto increment = g_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    auto bufHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
-
-    rootSignatureDesc.Init_1_1(
-		1,
-		rootParameters,
-		0,
-		nullptr,
-        rootSignatureFlags);
-
-    ComPtr<ID3DBlob> signature;
-    ComPtr<ID3DBlob> error;
-    D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signature, &error);
-
-    g_pd3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&g_RootSignature));
-
-    struct PipelineStateStream
+    const auto createAndUploadBuf = [](ComPtr<ID3D12Resource>& buf, ComPtr<ID3D12Resource>& uploadBuf, D3D12_HEAP_PROPERTIES heapProps, void* data, size_t size)
     {
-        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
-        CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
-        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
-        CD3DX12_PIPELINE_STATE_STREAM_VS VS;
-        CD3DX12_PIPELINE_STATE_STREAM_PS PS;
-        CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
-        CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
-        CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
-    } pipelineStateStream;
-
-    pipelineStateStream.pRootSignature = g_RootSignature.Get();
-    D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    };
-
-    pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout)};
-    pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
-    ComPtr<ID3DBlob> vertexShaderBlob;
-    ThrowIfFailed(D3DReadFileToBlob(L"Triangle.vs.cso", &vertexShaderBlob));
-    ComPtr<ID3DBlob> pixelShaderBlob;
-    ThrowIfFailed(D3DReadFileToBlob(L"Triangle.ps.cso", &pixelShaderBlob));
-
-	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShaderBlob.Get());
-    pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShaderBlob.Get());
-
-    pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-    D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-    rtvFormats.NumRenderTargets = 1;
-    rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    pipelineStateStream.RTVFormats = rtvFormats;
-
-    pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-
-    D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc = {
-		sizeof(PipelineStateStream), &pipelineStateStream
+        auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
+        g_pd3dDevice->CreateCommittedResource(
+		&heapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&desc,
+		D3D12_RESOURCE_STATE_COPY_DEST,
+		nullptr,
+		IID_PPV_ARGS(&buf));
+		UploadToBuffer(g_pd3dCommandList.Get(), buf.Get(), &uploadBuf, size, data);
 	};
 
-    g_pd3dDevice->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&g_PipelineState));
+    std::vector<ComPtr<ID3D12Resource>> intermediateBuffers;
+
+    createAndUploadBuf(vertexData->PositionsBuffer, intermediateBuffers.emplace_back(), bufHeapProp, group->Positions.data(), group->Positions.size() * sizeof(float));
+
+    srvDesc.Buffer.NumElements = group->Positions.size() / 3;
+    g_pd3dDevice->CreateShaderResourceView(vertexData->PositionsBuffer.Get(), &srvDesc, start);
+    vertexData->PositionsBufferHandle = vertexData->PositionsBuffer->GetGPUVirtualAddress();
+
+    createAndUploadBuf(vertexData->NormalsBuffer, intermediateBuffers.emplace_back(), bufHeapProp, group->Normals.data(), group->Normals.size() * sizeof(float));
+    srvDesc.Buffer.NumElements = group->Normals.size() / 3;
+    g_pd3dDevice->CreateShaderResourceView(vertexData->NormalsBuffer.Get(), &srvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE(start, increment));
+    vertexData->NormalsBufferHandle = vertexData->NormalsBuffer->GetGPUVirtualAddress();
+
+    createAndUploadBuf(vertexData->TexCoordsBuffer, intermediateBuffers.emplace_back(), bufHeapProp, group->TexCoords.data(), group->TexCoords.size() * sizeof(float));
+    srvDesc.Buffer.NumElements = group->TexCoords.size() / 2;
+    srvDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+    g_pd3dDevice->CreateShaderResourceView(vertexData->TexCoordsBuffer.Get(), &srvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE(start, increment * 2));
+    vertexData->TexCoordsBufferHandle = vertexData->TexCoordsBuffer->GetGPUVirtualAddress();
+
+    for (auto& mesh : group->Meshes)
+    {
+        mesh.GPUMesh = std::make_shared<D3D12Mesh>();
+		mesh.GPUMesh->VertexGroup = vertexData;
+        size_t size = mesh.Indicies.size() * sizeof(tinyobj::index_t);
+		createAndUploadBuf(mesh.GPUMesh->Indices, intermediateBuffers.emplace_back(), bufHeapProp, mesh.Indicies.data(), size);
+        mesh.GPUMesh->IndicesView.BufferLocation = mesh.GPUMesh->Indices->GetGPUVirtualAddress();
+        mesh.GPUMesh->IndicesView.SizeInBytes = size;
+        mesh.GPUMesh->IndicesView.StrideInBytes = sizeof(tinyobj::index_t);
+    }
 
     //Execute and flush
     g_pd3dCommandList->Close();
@@ -968,4 +1048,32 @@ void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12
     subresourceData.SlicePitch = subresourceData.RowPitch;
 
     UpdateSubresources(cmd, dest, *intermediateBuf, 0, 0, 1, &subresourceData);
+}
+
+MeshGroup* LoadObjFile(const char* path)
+{
+    // Load the obj file using tinyobjloader
+    tinyobj::ObjReaderConfig readerConfig;
+    readerConfig.mtl_search_path = "./"; // Path to material files
+    tinyobj::ObjReader reader;
+    reader.ParseFromFile(path, readerConfig);
+    assert(reader.Valid());
+    auto& attrib = reader.GetAttrib();
+    auto& shapes = reader.GetShapes();
+
+    auto& meshGroup = g_LoadedMeshGroups.emplace_back();
+    meshGroup.Positions = attrib.vertices;
+    meshGroup.Normals = attrib.normals;
+    meshGroup.TexCoords = attrib.texcoords;
+
+    meshGroup.Meshes.reserve(shapes.size());
+    // Loop over shapes
+    for (auto& shape : shapes)
+    {
+        auto& mesh = meshGroup.Meshes.emplace_back();
+        mesh.Indicies = shape.mesh.indices;
+        mesh.Name = shape.name;
+    }
+
+    return &meshGroup;
 }

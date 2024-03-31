@@ -5,10 +5,15 @@ struct ModelViewProjection
  
 ConstantBuffer<ModelViewProjection> ModelViewProjectionCB : register(b0);
 
+StructuredBuffer<float3> Positions : register(t0);
+StructuredBuffer<float3> Normals : register(t1);
+StructuredBuffer<float3> TexCoords : register(t2);
+
 struct VSIn
 {
-    float3 Pos : POSITION;
-    float3 Color : COLOR;
+    uint PosIndex : POSINDEX;
+    uint NormalIndex : NORMALINDEX;
+    uint TexCoordIndex : TEXCOORDINDEX;
 };
 
 struct VSOut
@@ -20,7 +25,7 @@ struct VSOut
 VSOut main(VSIn IN)
 {
     VSOut output;
-    output.Pos = mul(ModelViewProjectionCB.MVP, float4(IN.Pos, 1.0));
-    output.Color = IN.Color;
+    output.Pos = mul(ModelViewProjectionCB.MVP, float4(Positions[IN.PosIndex], 1.0));
+    output.Color = mul(ModelViewProjectionCB.MVP, float4(Normals[IN.NormalIndex], 0.0)).xyz;
     return output;
 }

@@ -48,9 +48,10 @@ foreach(shader IN LISTS SHADER_FILES)
 endforeach()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE DXPG_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
+target_compile_definitions(${PROJECT_NAME} PRIVATE DXPG_SPONZA_DIR="${EXTERNAL_DIR}/Sponza/")
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
-    d3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib
+    d3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader
 )

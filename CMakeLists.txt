@@ -48,6 +48,8 @@ set(CMAKE_CXX_STANDARD 20)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "PredefinedTargets")
 
+set(EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External")
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/External)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
