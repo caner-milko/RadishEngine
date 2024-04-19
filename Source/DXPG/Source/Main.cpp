@@ -12,34 +12,21 @@
 #include <fcntl.h>
 #include <chrono>
 
-#ifdef _DEBUG
-#define DX12_ENABLE_DEBUG_LAYER
-#endif
-
-#ifdef DX12_ENABLE_DEBUG_LAYER
-#include <dxgidebug.h>
-#pragma comment(lib, "dxguid.lib")
-#endif
-
-#include <wrl.h>
+#include "DXHelpers.h"
 #include <Shlwapi.h>
-using Microsoft::WRL::ComPtr;
-
-#include "DirectXMath.h"
-using namespace DirectX;
-using Matrix4x4 = DirectX::XMMATRIX;
-using Vector4 = DirectX::XMVECTOR;
-using Vector3 = DirectX::XMFLOAT3;
-using Vector2 = DirectX::XMFLOAT2;
-#include <directx/d3dx12.h>
-#include <d3dcompiler.h>
 
 #include <tiny_obj_loader.h>
+#include <stb_image.h>
+
+namespace dxpg
+{
 
 struct FrameContext
 {
+    bool Ready = false;
     ComPtr<ID3D12CommandAllocator> CommandAllocator;
     UINT64                  FenceValue;
+    std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, dx12::DescriptorHeapPage*> GPUHeapPages = {};
 };
 
 // Data
@@ -49,8 +36,7 @@ static UINT                         g_frameIndex = 0;
 
 static int const                    NUM_BACK_BUFFERS = 3;
 static ComPtr<ID3D12Device2> g_pd3dDevice = nullptr;
-static ComPtr<ID3D12DescriptorHeap> g_pd3dRtvDescHeap = nullptr;
-static ComPtr<ID3D12DescriptorHeap> g_pd3dSrvDescHeap = nullptr;
+
 static ComPtr<ID3D12CommandQueue> g_pd3dCommandQueue = nullptr;
 static ComPtr<ID3D12GraphicsCommandList> g_pd3dCommandList = nullptr;
 static ComPtr<ID3D12Fence> g_fence = nullptr;
@@ -59,63 +45,45 @@ static UINT64                       g_fenceLastSignaledValue = 0;
 static ComPtr<IDXGISwapChain3> g_pSwapChain = nullptr;
 static HANDLE                       g_hSwapChainWaitableObject = nullptr;
 static ComPtr<ID3D12Resource> g_mainRenderTargetResource[NUM_BACK_BUFFERS] = {};
-static D3D12_CPU_DESCRIPTOR_HANDLE  g_mainRenderTargetDescriptor[NUM_BACK_BUFFERS] = {};
+static std::unique_ptr<dx12::RenderTargetView> g_mainRTV[NUM_BACK_BUFFERS] = {};
 
 static FrameContext FrameIndependentCtx = {};
 
-
-struct VertexPosColor
-{
-    Vector3 Position;
-    Vector3 Color;
-};
-
 struct MeshRenderData
 {
-    ID3D12DescriptorHeap* VertexDataBufferHeap;
-    D3D12_GPU_VIRTUAL_ADDRESS PositionsBufferHandle;
-    D3D12_GPU_VIRTUAL_ADDRESS NormalsBufferHandle;
-    D3D12_GPU_VIRTUAL_ADDRESS TexCoordsBufferHandle;
+    dx12::ShaderResourceView* VertexDataView;
 	D3D12_VERTEX_BUFFER_VIEW IndexBufferView;
     size_t IndexCount;
     Matrix4x4 ModelMatrix;
 };
 
-struct D3D12VertexData
+struct D3D12Texture
 {
-    ComPtr<ID3D12DescriptorHeap> VertexBufferHeap;
-	ComPtr<ID3D12Resource> PositionsBuffer;
-    D3D12_GPU_VIRTUAL_ADDRESS PositionsBufferHandle;
-    ComPtr<ID3D12Resource> NormalsBuffer;
-    D3D12_GPU_VIRTUAL_ADDRESS NormalsBufferHandle;
-    ComPtr<ID3D12Resource> TexCoordsBuffer;
-    D3D12_GPU_VIRTUAL_ADDRESS TexCoordsBufferHandle;
+    ComPtr<ID3D12Resource> Texture;
+    D3D12_RESOURCE_DESC Desc;
 };
 
-struct D3D12Mesh
+struct D3D12Material
 {
-    std::shared_ptr<D3D12VertexData> VertexGroup;
-    ComPtr<ID3D12Resource> Indices;
-    D3D12_VERTEX_BUFFER_VIEW IndicesView {};
+    std::shared_ptr<D3D12Texture> DiffuseTexture;
+    std::shared_ptr<D3D12Texture> SpecularTexture;
+    Vector3 Ambient;
+    Vector3 Diffuse;
+    Vector3 Specular;
+    float Shininess;
+};
 
-    Vector4 Position = { 0, 0, 0, 1 };
-    Vector4 Rotation = { 0, 0, 0, 0 };
-    Vector4 Scale = { 1, 1, 1, 0 };
-
-    Matrix4x4 GetWorldMatrix()
-    {
-        Matrix4x4 translation = DirectX::XMMatrixTranslationFromVector(Position);
-        Matrix4x4 rotation = DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
-        Matrix4x4 scale = DirectX::XMMatrixScalingFromVector(Scale);
-        return scale * rotation * translation;
-    }
+struct Material
+{
+    std::string Name;
+    std::shared_ptr<D3D12Material> GPUMaterial;
 };
 
 struct MeshAsset
 {
 	std::vector<tinyobj::index_t> Indicies;
     std::string Name;
-    std::shared_ptr<D3D12Mesh> GPUMesh;
+    std::shared_ptr<dxpg::dx12::D3D12Mesh> GPUMesh;
 };
 
 struct MeshGroup
@@ -123,17 +91,17 @@ struct MeshGroup
     std::vector<float> Positions;
     std::vector<float> Normals;
     std::vector<float> TexCoords;
-    std::shared_ptr<D3D12VertexData> GPUVertexData;
+    std::shared_ptr<dx12::VertexData> GPUVertexData;
     std::vector<MeshAsset> Meshes;
+    std::vector<Material> Materials;
 };
-
 
 std::vector<MeshGroup> g_LoadedMeshGroups;
 
 static HWND g_hWnd = nullptr;
 
 static ComPtr<ID3D12Resource> g_DepthBuffer;
-static ComPtr<ID3D12DescriptorHeap> g_DSVHeap;
+static std::unique_ptr<dx12::DepthStencilView> g_DSV;
 
 static ComPtr<ID3D12RootSignature> g_RootSignature;
 static ComPtr<ID3D12PipelineState> g_PipelineState;
@@ -284,6 +252,29 @@ void CreateConsole()
     std::wcin.clear();
 }
 
+void BeginFrame(FrameContext& frameCtx)
+{
+    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = dx12::g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
+    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = dx12::g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
+    g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
+    frameCtx.Ready = true;
+}
+
+void EndFrame(FrameContext& frameCtx)
+{
+    frameCtx.Ready = false;
+}
+
+void ClearFrame(FrameContext& frameCtx)
+{
+    for (auto& [type, heapPage] : frameCtx.GPUHeapPages)
+    {
+        dx12::g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
+    }
+	frameCtx.GPUHeapPages.clear();
+    frameCtx.CommandAllocator->Reset();
+}
+
 void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
 {
 
@@ -353,12 +344,11 @@ void UpdateGame(float deltaTime)
 //            mesh.GPUMesh->Rotation = DirectX::XMVectorSetY(mesh.GPUMesh->Rotation, DirectX::XMVectorGetY(mesh.GPUMesh->Rotation) + DirectX::XMConvertToRadians(45 * deltaTime));
 }
 
-void RenderGame(MeshRenderData* meshes, size_t meshCount)
+void RenderGame(FrameContext& frameCtx, MeshRenderData* meshes, size_t meshCount)
 {
-    
+    ComPtr<ID3D12DescriptorHeap> heap;
     for (int i = 0; i < meshCount; i++)
     {
-
         auto& mesh = meshes[i];
         g_pd3dCommandList->SetPipelineState(g_PipelineState.Get());
         g_pd3dCommandList->SetGraphicsRootSignature(g_RootSignature.Get());
@@ -368,17 +358,18 @@ void RenderGame(MeshRenderData* meshes, size_t meshCount)
         DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.ModelMatrix, g_Cam.GetViewMatrix());
         mvpMatrix = XMMatrixMultiply(mvpMatrix, g_Cam.GetProjectionMatrix());
         g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix4x4) / 4, &mvpMatrix, 0);
+        
+        
 
-        g_pd3dCommandList->SetDescriptorHeaps(1, &mesh.VertexDataBufferHeap);
-        g_pd3dCommandList->SetGraphicsRootShaderResourceView(1, mesh.PositionsBufferHandle);
-        g_pd3dCommandList->SetGraphicsRootShaderResourceView(2, mesh.NormalsBufferHandle);
-        g_pd3dCommandList->SetGraphicsRootShaderResourceView(3, mesh.TexCoordsBufferHandle);
+        g_pd3dCommandList->SetGraphicsRootDescriptorTable(1, frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->CopyFrom(mesh.VertexDataView)->GetGPUHandle());
 
         g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
         g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
     
-        D3D12_CPU_DESCRIPTOR_HANDLE dsDescriptor = g_DSVHeap->GetCPUDescriptorHandleForHeapStart();
-        g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[g_pSwapChain->GetCurrentBackBufferIndex()], FALSE, &dsDescriptor);
+        auto rtvHandles = g_mainRTV[g_pSwapChain->GetCurrentBackBufferIndex()]->GetCPUHandle();
+        auto dsvHandle = g_DSV->GetCPUHandle();
+
+        g_pd3dCommandList->OMSetRenderTargets(1, &rtvHandles, FALSE, &dsvHandle);
         g_pd3dCommandList->DrawInstanced(mesh.IndexCount, 1, 0, 0);
     }
 }
@@ -386,8 +377,10 @@ void RenderGame(MeshRenderData* meshes, size_t meshCount)
 void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
 {
     FrameContext* frameCtx = WaitForNextFrameResources();
+    ClearFrame(*frameCtx);
+
+    BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
-    frameCtx->CommandAllocator->Reset();
 
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -399,20 +392,16 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     g_pd3dCommandList->Reset(frameCtx->CommandAllocator.Get(), nullptr);
     g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
-
     // Render Dear ImGui graphics
     const float clear_color_with_alpha[4] = { clearCol.x * clearCol.w, clearCol.y * clearCol.w, clearCol.z * clearCol.w, clearCol.w };
-    g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx], clear_color_with_alpha, 0, nullptr);
-    g_pd3dCommandList->ClearDepthStencilView(g_DSVHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    g_pd3dCommandList->ClearRenderTargetView(g_mainRTV[backBufferIdx]->GetCPUHandle(), clear_color_with_alpha, 0, nullptr);
+    g_pd3dCommandList->ClearDepthStencilView(g_DSV->GetCPUHandle(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     std::vector<MeshRenderData> meshesToRender;
     for (auto& group : g_LoadedMeshGroups)
     {
         MeshRenderData renderData{};
-        renderData.VertexDataBufferHeap = group.GPUVertexData->VertexBufferHeap.Get();
-        renderData.PositionsBufferHandle = group.GPUVertexData->PositionsBufferHandle;
-        renderData.NormalsBufferHandle = group.GPUVertexData->NormalsBufferHandle;
-        renderData.TexCoordsBufferHandle = group.GPUVertexData->TexCoordsBufferHandle;
+        renderData.VertexDataView = group.GPUVertexData->VertexSRV.get();
         for (auto& mesh : group.Meshes)
         {
             renderData.IndexCount = mesh.Indicies.size();
@@ -422,13 +411,16 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
         }
 	}
 
-    RenderGame(meshesToRender.data(), meshesToRender.size());
+    auto heaps = dx12::g_GPUDescriptorAllocator->GetHeaps();
 
-    g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
+    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 
-    ID3D12DescriptorHeap* descHeaps[] = {g_pd3dSrvDescHeap.Get()};
+    RenderGame(*frameCtx, meshesToRender.data(), meshesToRender.size());
 
-    g_pd3dCommandList->SetDescriptorHeaps(1, descHeaps);
+    auto rtvHandle = g_mainRTV[backBufferIdx]->GetCPUHandle();
+
+    g_pd3dCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
@@ -446,166 +438,9 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     g_pd3dCommandQueue->Signal(g_fence.Get(), fenceValue);
     g_fenceLastSignaledValue = fenceValue;
     frameCtx->FenceValue = fenceValue;
+    EndFrame(*frameCtx);
 }
 
-// Main code
-int main(int argv, char** args)
-{
-    // Set working directory to executable directory
-    {
-        WCHAR path[MAX_PATH];
-        HMODULE hModule = GetModuleHandleW(NULL);
-        if (GetModuleFileNameW(hModule, path, MAX_PATH) > 0)
-        {
-            PathRemoveFileSpecW(path);
-            SetCurrentDirectoryW(path);
-        }
-    }
-    g_ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
-    
-    CreateConsole();
-    // Setup SDL
-    // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
-    // depending on whether SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to the latest version of SDL is recommended!)
-    
-    // Setup window
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    SDL_Window* window = SDL_CreateWindow("DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_Width, g_Height, window_flags);
-    if (window == nullptr)
-    {
-        printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
-        return -1;
-    }
-    SDL_SysWMinfo wmInfo;
-    SDL_VERSION(&wmInfo.version);
-    SDL_GetWindowWMInfo(window, &wmInfo);
-    HWND hwnd = (HWND)wmInfo.info.win.window;
-    g_hWnd = hwnd;
-    // Initialize Direct3D
-    if (!CreateDeviceD3D())
-    {
-        CleanupDeviceD3D();
-        return 1;
-    }
-
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-
-    // Our state
-    bool show_demo_window = true;
-    bool show_another_window = false;
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplSDL2_InitForD3D(window);
-    ImGui_ImplDX12_Init(g_pd3dDevice.Get(), NUM_FRAMES_IN_FLIGHT,
-        DXGI_FORMAT_R8G8B8A8_UNORM, g_pd3dSrvDescHeap.Get(),
-        g_pd3dSrvDescHeap->GetCPUDescriptorHandleForHeapStart(),
-        g_pd3dSrvDescHeap->GetGPUDescriptorHandleForHeapStart());
-    // Load Fonts
-    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-    // - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-    // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-    // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
-    // - Read 'docs/FONTS.md' for more instructions and details.
-    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    //io.Fonts->AddFontDefault();
-    //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-    //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
-    //IM_ASSERT(font != nullptr);
-
-    InitGame();
-    LoadSceneData();
-    SDL_SetRelativeMouseMode(SDL_TRUE);
-    // Main loop
-    bool done = false;
-    
-    std::chrono::high_resolution_clock::time_point lastTime = std::chrono::high_resolution_clock::now();
-
-    while (!done)
-    {
-        // Poll and handle events (inputs, window resize, etc.)
-        // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
-        // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
-        // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
-        // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-        SDL_Event sdlEvent;
-        while (SDL_PollEvent(&sdlEvent))
-        {
-            ImGui_ImplSDL2_ProcessEvent(&sdlEvent);
-            if (sdlEvent.type == SDL_QUIT)
-                done = true;
-            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_CLOSE && sdlEvent.window.windowID == SDL_GetWindowID(window))
-                done = true;
-            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_RESIZED && sdlEvent.window.windowID == SDL_GetWindowID(window))
-            {
-                g_Width = sdlEvent.window.data1;
-                g_Height = sdlEvent.window.data2;
-                g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
-                // Release all outstanding references to the swap chain's buffers before resizing.
-                CleanupRenderTarget();
-                CreateSwapchainRTVDSV(true);
-            }
-            if (sdlEvent.type == SDL_KEYDOWN)
-                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? IO::KEY_DOWN : IO::KEY_PRESSED;
-            if (sdlEvent.type == SDL_KEYUP)
-                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = IO::KEY_RELEASED;
-            if (sdlEvent.type == SDL_MOUSEMOTION)
-                g_IO.Immediate.MouseDelta = { float(sdlEvent.motion.xrel), float(sdlEvent.motion.yrel) };
-            if (sdlEvent.type == SDL_MOUSEWHEEL)
-                g_IO.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
-        }
-
-        // Start the Dear ImGui frame
-        ImGui_ImplDX12_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-
-        UIUpdate(io, show_demo_window, show_another_window, clear_color);
-
-        UpdateGame(io.DeltaTime);
-
-        Render(io, show_demo_window, show_another_window, clear_color);
-
-        for (int i = 0; i < 322; i++)
-        {
-            if (g_IO.CUR_KEYS[i] == IO::KEY_PRESSED)
-                g_IO.CUR_KEYS[i] = IO::KEY_DOWN;
-            if (g_IO.CUR_KEYS[i] == IO::KEY_RELEASED)
-                g_IO.CUR_KEYS[i] = IO::KEY_UP;
-		}
-
-        g_IO.Immediate = {};
-    }
-
-
-    WaitForLastSubmittedFrame();
-
-    // Cleanup
-    ImGui_ImplDX12_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
-
-    CleanupDeviceD3D();
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-
-    return 0;
-}
 
 // Helper functions
 
@@ -636,30 +471,8 @@ bool CreateDeviceD3D()
 #endif
 
     {
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        desc.NumDescriptors = NUM_BACK_BUFFERS;
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        desc.NodeMask = 1;
-        if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dRtvDescHeap)) != S_OK)
-            return false;
-
-        SIZE_T rtvDescriptorSize = g_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_pd3dRtvDescHeap->GetCPUDescriptorHandleForHeapStart();
-        for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
-        {
-            g_mainRenderTargetDescriptor[i] = rtvHandle;
-            rtvHandle.ptr += rtvDescriptorSize;
-        }
-    }
-
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        desc.NumDescriptors = 1;
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dSrvDescHeap)) != S_OK)
-            return false;
+        dx12::g_CPUDescriptorAllocator = dx12::CPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get(), 1024);
+        dx12::g_GPUDescriptorAllocator = dx12::GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get(), 1024, NUM_BACK_BUFFERS, 1);
     }
 
     {
@@ -676,7 +489,7 @@ bool CreateDeviceD3D()
             return false;
 
     if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&FrameIndependentCtx.CommandAllocator)) != S_OK)
-        return false;
+			return false;
 
     if (g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, FrameIndependentCtx.CommandAllocator.Get(), nullptr, IID_PPV_ARGS(&g_pd3dCommandList)) != S_OK ||
         g_pd3dCommandList->Close() != S_OK)
@@ -705,14 +518,13 @@ void CleanupDeviceD3D()
         g_frameContext[i].CommandAllocator = nullptr;
     FrameIndependentCtx.CommandAllocator = nullptr;
     g_DepthBuffer = nullptr;
-    g_DSVHeap = nullptr;
     g_RootSignature = nullptr;
     g_PipelineState = nullptr;
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
-    g_pd3dRtvDescHeap = nullptr;
-    g_pd3dSrvDescHeap = nullptr;
     g_fence = nullptr;
+    dx12::g_CPUDescriptorAllocator = nullptr;
+    dx12::g_GPUDescriptorAllocator = nullptr;
     if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
     g_pd3dDevice = nullptr;
 
@@ -759,18 +571,21 @@ void CreateSwapchainRTVDSV(bool resized)
     {
         for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
             g_mainRenderTargetResource[i] = nullptr;
+
+        dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
+        
         g_DepthBuffer = nullptr;
-        g_DSVHeap = nullptr;
         DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
         ThrowIfFailed(g_pSwapChain->GetDesc(&swapChainDesc));
         ThrowIfFailed(g_pSwapChain->ResizeBuffers(NUM_BACK_BUFFERS, g_Width, g_Height,
             swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
     }
 
+    dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
     {
         g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&g_mainRenderTargetResource[i]));
-        g_pd3dDevice->CreateRenderTargetView(g_mainRenderTargetResource[i].Get(), nullptr, g_mainRenderTargetDescriptor[i]);
+        g_mainRTV[i] = dx12::RenderTargetView::Create(g_pd3dDevice.Get(), {g_mainRenderTargetResource[i].Get(), nullptr});
     }
     // Create the depth buffer
     CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, g_Width, g_Height);
@@ -791,23 +606,13 @@ void CreateSwapchainRTVDSV(bool resized)
         &depthOptimizedClearValue,
         IID_PPV_ARGS(&g_DepthBuffer));
 
-
-    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-    dsvHeapDesc.NumDescriptors = 1;
-    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-    g_pd3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&g_DSVHeap));
-
+    dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDesc = {};
     dsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
     dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvViewDesc.Flags = D3D12_DSV_FLAG_NONE;
     dsvViewDesc.Texture2D.MipSlice = 0;
-
-    g_pd3dDevice->CreateDepthStencilView(
-        g_DepthBuffer.Get(),
-        &dsvViewDesc,
-        g_DSVHeap->GetCPUDescriptorHandleForHeapStart());
+    dx12::DepthStencilView::Create(g_pd3dDevice.Get(), {g_DepthBuffer.Get(), &dsvViewDesc});
 }
 
 void CleanupRenderTarget()
@@ -817,7 +622,9 @@ void CleanupRenderTarget()
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
         g_mainRenderTargetResource[i] = nullptr;
     g_DepthBuffer = nullptr;
-    g_DSVHeap = nullptr;
+
+    dx12::g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
+    dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
 }
 
 void WaitForLastSubmittedFrame()
@@ -834,6 +641,9 @@ void WaitForLastSubmittedFrame()
 
     g_fence->SetEventOnCompletion(fenceValue, g_fenceEvent);
     WaitForSingleObject(g_fenceEvent, INFINITE);
+
+    for (UINT i = 0; i < NUM_FRAMES_IN_FLIGHT; i++)
+        ClearFrame(g_frameContext[i]);
 }
 
 FrameContext* WaitForNextFrameResources()
@@ -855,7 +665,10 @@ FrameContext* WaitForNextFrameResources()
     }
 
     WaitForMultipleObjects(numWaitableObjects, waitableObjects, TRUE, INFINITE);
-
+    
+    ClearFrame(*frameCtx);
+    BeginFrame(*frameCtx);
+    
     return frameCtx;
 }
 
@@ -946,31 +759,11 @@ void LoadSceneData()
 
 
 
-
-
-    g_pd3dCommandList->Reset(FrameIndependentCtx.CommandAllocator.Get(), nullptr);
+    ClearFrame(FrameIndependentCtx);
+    BeginFrame(FrameIndependentCtx);
 
     auto group = LoadObjFile(DXPG_SPONZA_DIR "sponza.obj");
-    auto vertexData = (group->GPUVertexData = std::make_shared<D3D12VertexData>());
-
-    D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-    heapDesc.NumDescriptors = 3;
-    heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    g_pd3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&vertexData->VertexBufferHeap));
-
-    auto start = vertexData->VertexBufferHeap->GetCPUDescriptorHandleForHeapStart();
-
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-    srvDesc.Buffer.FirstElement = 0;
-    srvDesc.Buffer.StructureByteStride = 0;
-    srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-
-    auto increment = g_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    auto bufHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    auto vertexData = (group->GPUVertexData = dx12::VertexData::Create(g_pd3dDevice.Get(), group->Positions.size() / 3, group->Normals.size() / 3, group->TexCoords.size() / 2));
 
     const auto createAndUploadBuf = [](ComPtr<ID3D12Resource>& buf, ComPtr<ID3D12Resource>& uploadBuf, D3D12_HEAP_PROPERTIES heapProps, void* data, size_t size)
     {
@@ -987,32 +780,14 @@ void LoadSceneData()
 
     std::vector<ComPtr<ID3D12Resource>> intermediateBuffers;
 
-    createAndUploadBuf(vertexData->PositionsBuffer, intermediateBuffers.emplace_back(), bufHeapProp, group->Positions.data(), group->Positions.size() * sizeof(float));
-
-    srvDesc.Buffer.NumElements = group->Positions.size() / 3;
-    g_pd3dDevice->CreateShaderResourceView(vertexData->PositionsBuffer.Get(), &srvDesc, start);
-    vertexData->PositionsBufferHandle = vertexData->PositionsBuffer->GetGPUVirtualAddress();
-
-    createAndUploadBuf(vertexData->NormalsBuffer, intermediateBuffers.emplace_back(), bufHeapProp, group->Normals.data(), group->Normals.size() * sizeof(float));
-    srvDesc.Buffer.NumElements = group->Normals.size() / 3;
-    g_pd3dDevice->CreateShaderResourceView(vertexData->NormalsBuffer.Get(), &srvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE(start, increment));
-    vertexData->NormalsBufferHandle = vertexData->NormalsBuffer->GetGPUVirtualAddress();
-
-    createAndUploadBuf(vertexData->TexCoordsBuffer, intermediateBuffers.emplace_back(), bufHeapProp, group->TexCoords.data(), group->TexCoords.size() * sizeof(float));
-    srvDesc.Buffer.NumElements = group->TexCoords.size() / 2;
-    srvDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
-    g_pd3dDevice->CreateShaderResourceView(vertexData->TexCoordsBuffer.Get(), &srvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE(start, increment * 2));
-    vertexData->TexCoordsBufferHandle = vertexData->TexCoordsBuffer->GetGPUVirtualAddress();
+    UploadToBuffer(g_pd3dCommandList.Get(), vertexData->PositionsBuffer.Get(), &intermediateBuffers.emplace_back(), group->Positions.size() * 3 * sizeof(float), group->Positions.data());
+    UploadToBuffer(g_pd3dCommandList.Get(), vertexData->NormalsBuffer.Get(), &intermediateBuffers.emplace_back(), group->Normals.size() * 3 * sizeof(float), group->Normals.data());
+    UploadToBuffer(g_pd3dCommandList.Get(), vertexData->TexCoordsBuffer.Get(), &intermediateBuffers.emplace_back(), group->TexCoords.size() * 2 * sizeof(float), group->TexCoords.data());
 
     for (auto& mesh : group->Meshes)
     {
-        mesh.GPUMesh = std::make_shared<D3D12Mesh>();
-		mesh.GPUMesh->VertexGroup = vertexData;
-        size_t size = mesh.Indicies.size() * sizeof(tinyobj::index_t);
-		createAndUploadBuf(mesh.GPUMesh->Indices, intermediateBuffers.emplace_back(), bufHeapProp, mesh.Indicies.data(), size);
-        mesh.GPUMesh->IndicesView.BufferLocation = mesh.GPUMesh->Indices->GetGPUVirtualAddress();
-        mesh.GPUMesh->IndicesView.SizeInBytes = size;
-        mesh.GPUMesh->IndicesView.StrideInBytes = sizeof(tinyobj::index_t);
+        mesh.GPUMesh = dx12::D3D12Mesh::Create(g_pd3dDevice.Get(), group->GPUVertexData.get(), mesh.Indicies.size(), sizeof(tinyobj::index_t));
+        UploadToBuffer(g_pd3dCommandList.Get(), mesh.GPUMesh->Indices.Get(), &intermediateBuffers.emplace_back(), mesh.Indicies.size() * sizeof(tinyobj::index_t), mesh.Indicies.data());
     }
 
     //Execute and flush
@@ -1026,7 +801,8 @@ void LoadSceneData()
     HANDLE fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     fence->SetEventOnCompletion(1, fenceEvent);
     WaitForSingleObject(fenceEvent, INFINITE);
-    FrameIndependentCtx.CommandAllocator->Reset();
+    EndFrame(FrameIndependentCtx);
+    ClearFrame(FrameIndependentCtx);
 }
 
 void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t size, void* data)
@@ -1054,7 +830,6 @@ MeshGroup* LoadObjFile(const char* path)
 {
     // Load the obj file using tinyobjloader
     tinyobj::ObjReaderConfig readerConfig;
-    readerConfig.mtl_search_path = "./"; // Path to material files
     tinyobj::ObjReader reader;
     reader.ParseFromFile(path, readerConfig);
     assert(reader.Valid());
@@ -1075,5 +850,235 @@ MeshGroup* LoadObjFile(const char* path)
         mesh.Name = shape.name;
     }
 
+
+    //for (auto& mat : reader.GetMaterials())
+    //{
+    //    auto& material = meshGroup.Materials.emplace_back();
+    //    material.Name = mat.name;
+    //
+    //    auto& gpuMat = material.GPUMaterial = std::make_shared<D3D12Material>();
+    //
+    //    // Load the textures
+    //    if (!mat.diffuse_texname.empty())
+    //    {
+    //        auto& diffuseTex = (gpuMat->DiffuseTexture = std::make_shared<D3D12Texture>());
+	//		// Load the texture
+    //        int width, height, channels;
+    //        auto data = stbi_load(mat.diffuse_texname.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+    //
+    //        // Create the texture
+    //        auto desc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UINT, width, height);
+    //        auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    //        g_pd3dDevice->CreateCommittedResource(
+	//			&heapProp,
+	//			D3D12_HEAP_FLAG_NONE,
+	//			&desc,
+	//			D3D12_RESOURCE_STATE_COPY_DEST,
+	//			nullptr,
+	//			IID_PPV_ARGS(&diffuseTex->Texture));
+    //        
+    //        diffuseTex->Desc = desc;
+    //
+    //        //Copy the texture data
+    //        auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    //        auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width * height * 4);
+    //        ComPtr<ID3D12Resource> intermediateBuf;
+    //        g_pd3dDevice->CreateCommittedResource(
+    //            &intermediateHeapProp,
+    //            D3D12_HEAP_FLAG_NONE,
+    //            &intermediateResDesc,
+    //            D3D12_RESOURCE_STATE_GENERIC_READ,
+    //            nullptr,
+    //            IID_PPV_ARGS(&intermediateBuf));
+    //
+    //        D3D12_SUBRESOURCE_DATA subresourceData = {};
+    //        subresourceData.pData = data;
+    //        subresourceData.RowPitch = width * 4;
+    //        subresourceData.SlicePitch = subresourceData.RowPitch * height;
+    //
+    //        UpdateSubresources(g_pd3dCommandList.Get(), diffuseTex->Texture.Get(), intermediateBuf.Get(), 0, 0, 1, &subresourceData);
+    //        stbi_image_free(data);
+    //
+    //        // Create descriptor heap for material
+    //        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+    //        heapDesc.NumDescriptors = 1;
+    //        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    //        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    //        g_pd3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&gpuMat->SRVHeap));
+    //
+    //
+    //        // Create the SRV
+    //        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    //        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    //        srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    //        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	//	    srvDesc.Texture2D.MipLevels = 1;
+    //        g_pd3dDevice->CreateShaderResourceView(diffuseTex->Texture.Get(), &srvDesc, );
+    //
+    //
+    //    }
+    //}
     return &meshGroup;
+}
+}
+
+// Main code
+int main(int argv, char** args)
+{
+    using namespace::dxpg;
+    // Set working directory to executable directory
+    {
+        WCHAR path[MAX_PATH];
+        HMODULE hModule = GetModuleHandleW(NULL);
+        if (GetModuleFileNameW(hModule, path, MAX_PATH) > 0)
+        {
+            PathRemoveFileSpecW(path);
+            SetCurrentDirectoryW(path);
+        }
+    }
+    g_ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+    g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
+
+    CreateConsole();
+    // Setup SDL
+    // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
+    // depending on whether SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to the latest version of SDL is recommended!)
+
+    // Setup window
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    SDL_Window* window = SDL_CreateWindow("DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_Width, g_Height, window_flags);
+    if (window == nullptr)
+    {
+        printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
+        return -1;
+    }
+    SDL_SysWMinfo wmInfo;
+    SDL_VERSION(&wmInfo.version);
+    SDL_GetWindowWMInfo(window, &wmInfo);
+    HWND hwnd = (HWND)wmInfo.info.win.window;
+    g_hWnd = hwnd;
+    // Initialize Direct3D
+    if (!CreateDeviceD3D())
+    {
+        CleanupDeviceD3D();
+        return 1;
+    }
+
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+
+    // Our state
+    bool show_demo_window = true;
+    bool show_another_window = false;
+    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsLight();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplSDL2_InitForD3D(window);
+    auto fontAllocation = dx12::g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+    ImGui_ImplDX12_Init(g_pd3dDevice.Get(), NUM_FRAMES_IN_FLIGHT,
+        DXGI_FORMAT_R8G8B8A8_UNORM, fontAllocation->Heap->Heap.Get(),
+        fontAllocation->GetCPUHandle(),
+        fontAllocation->GetGPUHandle());
+    // Load Fonts
+    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
+    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
+    // - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
+    // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
+    // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
+    // - Read 'docs/FONTS.md' for more instructions and details.
+    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
+    //io.Fonts->AddFontDefault();
+    //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
+    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
+    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
+    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
+    //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+    //IM_ASSERT(font != nullptr);
+
+    InitGame();
+    LoadSceneData();
+    SDL_SetRelativeMouseMode(SDL_TRUE);
+    // Main loop
+    bool done = false;
+
+    std::chrono::high_resolution_clock::time_point lastTime = std::chrono::high_resolution_clock::now();
+
+    while (!done)
+    {
+        // Poll and handle events (inputs, window resize, etc.)
+        // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
+        // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
+        // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
+        // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
+        SDL_Event sdlEvent;
+        while (SDL_PollEvent(&sdlEvent))
+        {
+            ImGui_ImplSDL2_ProcessEvent(&sdlEvent);
+            if (sdlEvent.type == SDL_QUIT)
+                done = true;
+            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_CLOSE && sdlEvent.window.windowID == SDL_GetWindowID(window))
+                done = true;
+            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_RESIZED && sdlEvent.window.windowID == SDL_GetWindowID(window))
+            {
+                g_Width = sdlEvent.window.data1;
+                g_Height = sdlEvent.window.data2;
+                g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
+                // Release all outstanding references to the swap chain's buffers before resizing.
+                CleanupRenderTarget();
+                CreateSwapchainRTVDSV(true);
+            }
+            if (sdlEvent.type == SDL_KEYDOWN)
+                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? IO::KEY_DOWN : IO::KEY_PRESSED;
+            if (sdlEvent.type == SDL_KEYUP)
+                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = IO::KEY_RELEASED;
+            if (sdlEvent.type == SDL_MOUSEMOTION)
+                g_IO.Immediate.MouseDelta = { float(sdlEvent.motion.xrel), float(sdlEvent.motion.yrel) };
+            if (sdlEvent.type == SDL_MOUSEWHEEL)
+                g_IO.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
+        }
+
+        // Start the Dear ImGui frame
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+
+        UIUpdate(io, show_demo_window, show_another_window, clear_color);
+
+        UpdateGame(io.DeltaTime);
+
+        Render(io, show_demo_window, show_another_window, clear_color);
+
+        for (int i = 0; i < 322; i++)
+        {
+            if (g_IO.CUR_KEYS[i] == IO::KEY_PRESSED)
+                g_IO.CUR_KEYS[i] = IO::KEY_DOWN;
+            if (g_IO.CUR_KEYS[i] == IO::KEY_RELEASED)
+                g_IO.CUR_KEYS[i] = IO::KEY_UP;
+        }
+
+        g_IO.Immediate = {};
+    }
+
+
+    WaitForLastSubmittedFrame();
+
+    // Cleanup
+    ImGui_ImplDX12_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+
+    CleanupDeviceD3D();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
+    return 0;
 }

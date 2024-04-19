@@ -16,3 +16,6 @@
 [submodule "External/Sponza"]
 	path = External/Sponza
 	url = https://github.com/jimmiebergmann/Sponza.git
+[submodule "External/stb"]
+	path = External/stb
+	url = https://github.com/nothings/stb.git
