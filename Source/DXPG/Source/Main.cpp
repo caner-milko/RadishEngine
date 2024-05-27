@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <chrono>
 #include <filesystem>
+#include <variant>
 
 #include "DXHelpers.h"
 #include <Shlwapi.h>
@@ -52,10 +53,16 @@ static FrameContext FrameIndependentCtx = {};
 
 struct MeshRenderData
 {
-    dx12::ShaderResourceView* VertexDataView;
 	D3D12_VERTEX_BUFFER_VIEW IndexBufferView;
     size_t IndexCount;
     Matrix4x4 ModelMatrix;
+
+	bool UseDiffuseTexture = false;
+    Vector3 DiffuseColor{};
+    D3D12_GPU_DESCRIPTOR_HANDLE DiffuseSRV{};
+
+    bool UseAlphaTexture = false;
+	D3D12_GPU_DESCRIPTOR_HANDLE AlphaSRV{};
 };
 
 struct D3D12Texture
@@ -68,8 +75,10 @@ struct Material
 {
     std::string Name;
     std::optional<std::string> DiffuseTextureName;
-	std::optional<std::string> NormalTextureName;
-    
+    std::optional<std::string> AlphaTextureName;
+
+    Vector3 DiffuseColor = { 1, 1, 1 };
+
     std::shared_ptr<dx12::D3D12Material> GPUMaterial;
 };
 
@@ -78,6 +87,7 @@ struct MeshAsset
 	std::vector<tinyobj::index_t> Indicies;
     std::string Name;
     std::shared_ptr<dxpg::dx12::D3D12Mesh> GPUMesh;
+	std::string Material;
 };
 
 struct MeshGroup
@@ -87,12 +97,11 @@ struct MeshGroup
     std::vector<float> TexCoords;
     std::shared_ptr<dx12::VertexData> GPUVertexData;
     std::vector<MeshAsset> Meshes;
-    std::vector<Material> Materials;
+    std::unordered_map<std::string, Material> Materials;
 };
 
 std::vector<MeshGroup> g_LoadedMeshGroups;
 std::unordered_map<std::string, std::unique_ptr<dx12::D3D12Texture>> g_LoadedTextures;
-
 
 static HWND g_hWnd = nullptr;
 
@@ -341,6 +350,13 @@ void UpdateGame(float deltaTime)
 //            mesh.GPUMesh->Rotation = DirectX::XMVectorSetY(mesh.GPUMesh->Rotation, DirectX::XMVectorGetY(mesh.GPUMesh->Rotation) + DirectX::XMConvertToRadians(45 * deltaTime));
 }
 
+struct ShaderMaterialInfo
+{
+    Vector4 Diffuse;
+    int UseDiffuseTexture;
+	int UseAlphaTexture;
+};
+
 void RenderSubMeshes(FrameContext& frameCtx, MeshRenderData* meshes, size_t meshCount)
 {
 
@@ -351,7 +367,21 @@ void RenderSubMeshes(FrameContext& frameCtx, MeshRenderData* meshes, size_t mesh
         g_pd3dCommandList->IASetVertexBuffers(0, 1, &mesh.IndexBufferView);
         DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.ModelMatrix, g_Cam.GetViewMatrix());
         mvpMatrix = XMMatrixMultiply(mvpMatrix, g_Cam.GetProjectionMatrix());
-        g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix4x4) / 4, &mvpMatrix, 0);
+        g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix4x4) / sizeof(uint32_t), &mvpMatrix, 0);
+
+        ShaderMaterialInfo matInfo{};
+
+		matInfo.UseDiffuseTexture = mesh.UseDiffuseTexture;
+        matInfo.Diffuse = { mesh.DiffuseColor.x, mesh.DiffuseColor.y, mesh.DiffuseColor.z, 1 };
+
+        if (mesh.UseDiffuseTexture)
+            g_pd3dCommandList->SetGraphicsRootDescriptorTable(2, mesh.DiffuseSRV);
+
+        if (mesh.UseAlphaTexture)
+			g_pd3dCommandList->SetGraphicsRootDescriptorTable(3, mesh.AlphaSRV);
+
+		g_pd3dCommandList->SetGraphicsRoot32BitConstants(4, sizeof(ShaderMaterialInfo) / sizeof(uint32_t), &matInfo, 0);
+
         g_pd3dCommandList->DrawInstanced(mesh.IndexCount, 1, 0, 0);
     }
 }
@@ -392,21 +422,49 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     auto dsvHandle = g_DSV->GetCPUHandle();
 
     g_pd3dCommandList->OMSetRenderTargets(1, &rtvHandles, FALSE, &dsvHandle);
-    
+
+	std::unordered_map<dx12::ShaderResourceView*, std::unique_ptr<dx12::DescriptorAllocation>> textureHandles;
+
+	auto& srvHeapPage = frameCtx->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV];
+
+	constexpr auto addToTextureHandles = [](decltype(srvHeapPage)& heapPage, decltype(textureHandles)& handles, dx12::ShaderResourceView* srv) -> dx12::DescriptorAllocation*
+	{
+        if(!srv)
+			return nullptr;
+		auto it = handles.find(srv);
+		if (it == handles.end())
+		{
+			return handles.emplace(srv, heapPage->CopyFrom(srv)).first->second.get();
+		}
+		return it->second.get();
+	};
+
     for (auto& group : g_LoadedMeshGroups)
     {
+        for (auto& [_, material] : group.Materials)
+            if (auto* srv = material.GPUMaterial->DiffuseSRV)
+                ;
+
         std::vector<MeshRenderData> meshesToRender;
         MeshRenderData renderData{};
-        renderData.VertexDataView = group.GPUVertexData->VertexSRV.get();
         for (auto& mesh : group.Meshes)
         {
             renderData.IndexCount = mesh.Indicies.size();
             renderData.IndexBufferView = mesh.GPUMesh->IndicesView;
             renderData.ModelMatrix = mesh.GPUMesh->GetWorldMatrix();
+            auto& mat = group.Materials[mesh.Material];
+			
+            if (auto* alloc = addToTextureHandles(srvHeapPage, textureHandles, mat.GPUMaterial->DiffuseSRV))
+            {
+                renderData.UseDiffuseTexture = true;
+                renderData.DiffuseSRV = alloc->GetGPUHandle();
+            }
+			renderData.DiffuseColor = mat.DiffuseColor;
+            
             meshesToRender.emplace_back(renderData);
         }
 
-        g_pd3dCommandList->SetGraphicsRootDescriptorTable(1, frameCtx->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->CopyFrom(group.GPUVertexData->VertexSRV.get())->GetGPUHandle());
+        g_pd3dCommandList->SetGraphicsRootDescriptorTable(1, srvHeapPage->CopyFrom(group.GPUVertexData->VertexSRV.get())->GetGPUHandle());
         RenderSubMeshes(*frameCtx, meshesToRender.data(), meshesToRender.size());
 	}
 
@@ -673,25 +731,57 @@ void LoadSceneData()
         CD3DX12_ROOT_PARAMETER1 rootParam = {};
         rootParam.InitAsConstants(sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
         rootParams.push_back(rootParam);
-        CD3DX12_DESCRIPTOR_RANGE1 range = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
+
+        std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
+        ranges.push_back(CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0));
+        ranges.push_back(CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3));
+        ranges.push_back(CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4));
         rootParam = {};
-        rootParam.InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_VERTEX);
+        rootParam.InitAsDescriptorTable(1, ranges.data(), D3D12_SHADER_VISIBILITY_VERTEX);
         rootParams.push_back(rootParam);
+
+        rootParam = {};
+        rootParam.InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL);
+        rootParams.push_back(rootParam);
+
+        rootParam = {};
+        rootParam.InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL);
+        rootParams.push_back(rootParam);
+        
+        rootParam = {};
+        rootParam.InitAsConstants(sizeof(ShaderMaterialInfo) / 4, 1, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+        rootParams.push_back(rootParam);
+
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
             D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
             D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
             D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
+
+        D3D12_STATIC_SAMPLER_DESC staticSampler = {};
+        staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+        staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+        staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+        staticSampler.MipLODBias = 0.0f;
+        staticSampler.MaxAnisotropy = 1;
+        staticSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        staticSampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+        staticSampler.MinLOD = 0.0f;
+        staticSampler.MaxLOD = D3D12_FLOAT32_MAX;
+        staticSampler.ShaderRegister = 0;  // Register s0
+        staticSampler.RegisterSpace = 0;
+        staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // Visible to pixel shader
+
 
         rootSignatureDesc.Init_1_1(
             rootParams.size(),
             rootParams.data(),
-            0,
-            nullptr,
+            1,
+            &staticSampler,
             rootSignatureFlags);
 
         ComPtr<ID3DBlob> signature;
@@ -745,14 +835,6 @@ void LoadSceneData()
         g_pd3dDevice->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&g_PipelineState));
     }
 
-
-
-
-
-
-
-
-
     ClearFrame(FrameIndependentCtx);
     BeginFrame(FrameIndependentCtx);
 
@@ -784,35 +866,49 @@ void LoadSceneData()
         UploadToBuffer(g_pd3dCommandList.Get(), mesh.GPUMesh->Indices.Get(), &intermediateBuffers.emplace_back(), mesh.Indicies.size() * sizeof(tinyobj::index_t), mesh.Indicies.data());
     }
 
-    for (auto& mat : group->Materials)
+    for (auto& [_, mat] : group->Materials)
     {
-        auto gpuMat = std::make_shared<dx12::D3D12Material>();
-        if (mat.DiffuseTextureName)
-        {
-            if (auto it = g_LoadedTextures.find(*mat.DiffuseTextureName); it != g_LoadedTextures.end())
+        auto gpuMat = mat.GPUMaterial = std::make_shared<dx12::D3D12Material>();
+
+        constexpr auto loadTex = [](dx12::ShaderResourceView*& srvToFill, std::optional<std::string> const& textureName, bool alphaOnly, decltype(intermediateBuffers)& intermediateBufs)
             {
-                gpuMat->DiffuseSRV = it->second->SRV.get();
-            }
-            else
-            {
-                // Load the texture
-                int width, height, channels;
-                auto data = stbi_load(mat.DiffuseTextureName->c_str(), &width, &height, &channels, STBI_rgb_alpha);
+                if (textureName)
+                {
+                    if (auto it = g_LoadedTextures.find(*textureName); it != g_LoadedTextures.end())
+                    {
+                        srvToFill = it->second->SRV.get();
+                    }
+                    else
+                    {
+                        // Load the texture
+                        int width, height, channels;
+                        stbi_set_flip_vertically_on_load(true);
+                        auto data = stbi_load(textureName->c_str(), &width, &height, &channels, alphaOnly ? STBI_grey : STBI_rgb_alpha);
+                        if (!data)
+                            return;
 
-                // Create the texture
-                auto& tex = g_LoadedTextures[*mat.DiffuseTextureName] = dx12::D3D12Texture::Create(g_pd3dDevice.Get(), DXGI_FORMAT_R8G8B8A8_UNORM, width, height);
+                        // Create the texture
+                        auto& tex = g_LoadedTextures[*textureName] = dx12::D3D12Texture::Create(g_pd3dDevice.Get(), alphaOnly ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM, width, height);
 
-                //Copy the texture data
-                auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-                auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width * height * 4);
+                        //Copy the texture data
+                        auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+                        auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width * height * (alphaOnly ? 1 : 4));
 
-				UploadToTexture(g_pd3dCommandList.Get(), tex->Resource.Get(), &intermediateBuffers.emplace_back(), width, height, 4, data);
-                
-                stbi_image_free(data);
+                        UploadToTexture(g_pd3dCommandList.Get(), tex->Resource.Get(), &intermediateBufs.emplace_back(), width, height, 4, data);
 
-				gpuMat->DiffuseSRV = tex->SRV.get();
-            }
-        }
+                        // transition to shader resource
+                        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(tex->Resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                        g_pd3dCommandList->ResourceBarrier(1, &barrier);
+
+                        stbi_image_free(data);
+
+                        srvToFill = tex->SRV.get();
+                    }
+                }
+            };
+
+		loadTex(gpuMat->DiffuseSRV, mat.DiffuseTextureName, false, intermediateBuffers);
+		loadTex(gpuMat->AlphaSRV, mat.AlphaTextureName, true, intermediateBuffers);
     }
 
 
@@ -827,6 +923,7 @@ void LoadSceneData()
     HANDLE fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     fence->SetEventOnCompletion(1, fenceEvent);
     WaitForSingleObject(fenceEvent, INFINITE);
+	CloseHandle(fenceEvent);
     EndFrame(FrameIndependentCtx);
     ClearFrame(FrameIndependentCtx);
 }
@@ -890,24 +987,36 @@ MeshGroup* LoadObjFile(const char* path)
     meshGroup.TexCoords = attrib.texcoords;
 
     meshGroup.Meshes.reserve(shapes.size());
+
+    for (auto& mat : reader.GetMaterials())
+    {
+        auto& material = meshGroup.Materials[mat.name];
+        material.Name = mat.name;
+
+        // Load the textures
+        if (!mat.diffuse_texname.empty())
+            material.DiffuseTextureName = std::filesystem::path(path).parent_path().string() + "/" + mat.diffuse_texname;
+        else
+			material.DiffuseColor = Vector3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
+
+		if (!mat.alpha_texname.empty())
+			material.AlphaTextureName = std::filesystem::path(path).parent_path().string() + "/" + mat.alpha_texname;
+    }
+
     // Loop over shapes
     for (auto& shape : shapes)
     {
         auto& mesh = meshGroup.Meshes.emplace_back();
         mesh.Indicies = shape.mesh.indices;
         mesh.Name = shape.name;
+
+        if (!shape.mesh.material_ids.empty())
+        {
+			auto& mat = reader.GetMaterials()[shape.mesh.material_ids[0]];
+			mesh.Material = mat.name;
+        }
     }
-
-
-    for (auto& mat : reader.GetMaterials())
-    {
-        auto& material = meshGroup.Materials.emplace_back();
-        material.Name = mat.name;
     
-        // Load the textures
-        if (!mat.diffuse_texname.empty())
-            material.DiffuseTextureName = std::filesystem::path(path).parent_path().string() + "/" + mat.diffuse_texname;
-    }
     return &meshGroup;
 }
 }

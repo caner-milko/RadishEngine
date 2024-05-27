@@ -314,14 +314,7 @@ private:
 struct D3D12Material
 {
     ShaderResourceView* DiffuseSRV = nullptr;
-	ShaderResourceView* NormalSRV = nullptr;
-	ShaderResourceView* SpecularSRV = nullptr;
-	ShaderResourceView* RoughnessSRV = nullptr;
-	ShaderResourceView* MetalnessSRV = nullptr;
-
-	Vector3 DiffuseColor = { 1, 1, 1 };
-	float Roughness = 0.5f;
-	float Metalness = 0.5f;
+	ShaderResourceView* AlphaSRV = nullptr;
 };
 
 }

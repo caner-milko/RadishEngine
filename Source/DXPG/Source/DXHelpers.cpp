@@ -183,6 +183,15 @@ namespace dxpg::dx12
             D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             IID_PPV_ARGS(&texture->Resource));
+
+		// Create the SRV
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = format;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Texture2D.MipLevels = 1;
+		texture->SRV = ShaderResourceView::Create(device, { ResourceViewToDesc<ViewTypes::ShaderResourceView>{ &srvDesc, texture->Resource.Get() } });
+
         return texture;
     }
 
