@@ -11,6 +11,7 @@
 #include <io.h>
 #include <fcntl.h>
 #include <chrono>
+#include <filesystem>
 
 #include "DXHelpers.h"
 #include <Shlwapi.h>
@@ -63,20 +64,13 @@ struct D3D12Texture
     D3D12_RESOURCE_DESC Desc;
 };
 
-struct D3D12Material
-{
-    std::shared_ptr<D3D12Texture> DiffuseTexture;
-    std::shared_ptr<D3D12Texture> SpecularTexture;
-    Vector3 Ambient;
-    Vector3 Diffuse;
-    Vector3 Specular;
-    float Shininess;
-};
-
 struct Material
 {
     std::string Name;
-    std::shared_ptr<D3D12Material> GPUMaterial;
+    std::optional<std::string> DiffuseTextureName;
+	std::optional<std::string> NormalTextureName;
+    
+    std::shared_ptr<dx12::D3D12Material> GPUMaterial;
 };
 
 struct MeshAsset
@@ -97,6 +91,8 @@ struct MeshGroup
 };
 
 std::vector<MeshGroup> g_LoadedMeshGroups;
+std::unordered_map<std::string, std::unique_ptr<dx12::D3D12Texture>> g_LoadedTextures;
+
 
 static HWND g_hWnd = nullptr;
 
@@ -211,6 +207,7 @@ FrameContext* WaitForNextFrameResources();
 
 void LoadSceneData();
 void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t size, void* data);
+void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t width, size_t height, size_t componentCount, void* data);
 
 MeshGroup* LoadObjFile(const char* path);
 
@@ -581,7 +578,7 @@ void CreateSwapchainRTVDSV(bool resized)
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
     {
         g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&g_mainRenderTargetResource[i]));
-        g_mainRTV[i] = dx12::RenderTargetView::Create(g_pd3dDevice.Get(), {g_mainRenderTargetResource[i].Get(), nullptr});
+        g_mainRTV[i] = dx12::RenderTargetView::Create(g_pd3dDevice.Get(), { dx12::ResourceViewToDesc<dx12::ViewTypes::RenderTargetView>{.Resource = g_mainRenderTargetResource[i].Get()} });
     }
     // Create the depth buffer
     CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, g_Width, g_Height);
@@ -608,7 +605,7 @@ void CreateSwapchainRTVDSV(bool resized)
     dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvViewDesc.Flags = D3D12_DSV_FLAG_NONE;
     dsvViewDesc.Texture2D.MipSlice = 0;
-    g_DSV = dx12::DepthStencilView::Create(g_pd3dDevice.Get(), {g_DepthBuffer.Get(), &dsvViewDesc});
+    g_DSV = dx12::DepthStencilView::Create(g_pd3dDevice.Get(), { dx12::ResourceViewToDesc<dx12::ViewTypes::DepthStencilView>{.Desc = &dsvViewDesc, .Resource = g_DepthBuffer.Get()} });
 }
 
 void CleanupRenderTarget()
@@ -763,17 +760,17 @@ void LoadSceneData()
     auto vertexData = (group->GPUVertexData = dx12::VertexData::Create(g_pd3dDevice.Get(), group->Positions.size() / 3, group->Normals.size() / 3, group->TexCoords.size() / 2));
 
     const auto createAndUploadBuf = [](ComPtr<ID3D12Resource>& buf, ComPtr<ID3D12Resource>& uploadBuf, D3D12_HEAP_PROPERTIES heapProps, void* data, size_t size)
-    {
-        auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
-        g_pd3dDevice->CreateCommittedResource(
-		&heapProps,
-		D3D12_HEAP_FLAG_NONE,
-		&desc,
-		D3D12_RESOURCE_STATE_COPY_DEST,
-		nullptr,
-		IID_PPV_ARGS(&buf));
-		UploadToBuffer(g_pd3dCommandList.Get(), buf.Get(), &uploadBuf, size, data);
-	};
+        {
+            auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
+            g_pd3dDevice->CreateCommittedResource(
+                &heapProps,
+                D3D12_HEAP_FLAG_NONE,
+                &desc,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                nullptr,
+                IID_PPV_ARGS(&buf));
+            UploadToBuffer(g_pd3dCommandList.Get(), buf.Get(), &uploadBuf, size, data);
+        };
 
     std::vector<ComPtr<ID3D12Resource>> intermediateBuffers;
 
@@ -786,6 +783,38 @@ void LoadSceneData()
         mesh.GPUMesh = dx12::D3D12Mesh::Create(g_pd3dDevice.Get(), group->GPUVertexData.get(), mesh.Indicies.size(), sizeof(tinyobj::index_t));
         UploadToBuffer(g_pd3dCommandList.Get(), mesh.GPUMesh->Indices.Get(), &intermediateBuffers.emplace_back(), mesh.Indicies.size() * sizeof(tinyobj::index_t), mesh.Indicies.data());
     }
+
+    for (auto& mat : group->Materials)
+    {
+        auto gpuMat = std::make_shared<dx12::D3D12Material>();
+        if (mat.DiffuseTextureName)
+        {
+            if (auto it = g_LoadedTextures.find(*mat.DiffuseTextureName); it != g_LoadedTextures.end())
+            {
+                gpuMat->DiffuseSRV = it->second->SRV.get();
+            }
+            else
+            {
+                // Load the texture
+                int width, height, channels;
+                auto data = stbi_load(mat.DiffuseTextureName->c_str(), &width, &height, &channels, STBI_rgb_alpha);
+
+                // Create the texture
+                auto& tex = g_LoadedTextures[*mat.DiffuseTextureName] = dx12::D3D12Texture::Create(g_pd3dDevice.Get(), DXGI_FORMAT_R8G8B8A8_UNORM, width, height);
+
+                //Copy the texture data
+                auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+                auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width * height * 4);
+
+				UploadToTexture(g_pd3dCommandList.Get(), tex->Resource.Get(), &intermediateBuffers.emplace_back(), width, height, 4, data);
+                
+                stbi_image_free(data);
+
+				gpuMat->DiffuseSRV = tex->SRV.get();
+            }
+        }
+    }
+
 
     //Execute and flush
     g_pd3dCommandList->Close();
@@ -823,6 +852,28 @@ void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12
     UpdateSubresources(cmd, dest, *intermediateBuf, 0, 0, 1, &subresourceData);
 }
 
+
+void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t width, size_t height, size_t componentCount, void* data)
+{
+    // Create the intermediate upload heap
+    auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width*height*componentCount);
+    g_pd3dDevice->CreateCommittedResource(
+        &intermediateHeapProp,
+        D3D12_HEAP_FLAG_NONE,
+        &intermediateResDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(intermediateBuf));
+
+    D3D12_SUBRESOURCE_DATA subresourceData = {};
+    subresourceData.pData = data;
+    subresourceData.RowPitch = width * componentCount;
+    subresourceData.SlicePitch = height * subresourceData.RowPitch;
+
+    UpdateSubresources(cmd, dest, *intermediateBuf, 0, 0, 1, &subresourceData);
+}
+
 MeshGroup* LoadObjFile(const char* path)
 {
     // Load the obj file using tinyobjloader
@@ -848,73 +899,15 @@ MeshGroup* LoadObjFile(const char* path)
     }
 
 
-    //for (auto& mat : reader.GetMaterials())
-    //{
-    //    auto& material = meshGroup.Materials.emplace_back();
-    //    material.Name = mat.name;
-    //
-    //    auto& gpuMat = material.GPUMaterial = std::make_shared<D3D12Material>();
-    //
-    //    // Load the textures
-    //    if (!mat.diffuse_texname.empty())
-    //    {
-    //        auto& diffuseTex = (gpuMat->DiffuseTexture = std::make_shared<D3D12Texture>());
-	//		// Load the texture
-    //        int width, height, channels;
-    //        auto data = stbi_load(mat.diffuse_texname.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-    //
-    //        // Create the texture
-    //        auto desc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UINT, width, height);
-    //        auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    //        g_pd3dDevice->CreateCommittedResource(
-	//			&heapProp,
-	//			D3D12_HEAP_FLAG_NONE,
-	//			&desc,
-	//			D3D12_RESOURCE_STATE_COPY_DEST,
-	//			nullptr,
-	//			IID_PPV_ARGS(&diffuseTex->Texture));
-    //        
-    //        diffuseTex->Desc = desc;
-    //
-    //        //Copy the texture data
-    //        auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    //        auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width * height * 4);
-    //        ComPtr<ID3D12Resource> intermediateBuf;
-    //        g_pd3dDevice->CreateCommittedResource(
-    //            &intermediateHeapProp,
-    //            D3D12_HEAP_FLAG_NONE,
-    //            &intermediateResDesc,
-    //            D3D12_RESOURCE_STATE_GENERIC_READ,
-    //            nullptr,
-    //            IID_PPV_ARGS(&intermediateBuf));
-    //
-    //        D3D12_SUBRESOURCE_DATA subresourceData = {};
-    //        subresourceData.pData = data;
-    //        subresourceData.RowPitch = width * 4;
-    //        subresourceData.SlicePitch = subresourceData.RowPitch * height;
-    //
-    //        UpdateSubresources(g_pd3dCommandList.Get(), diffuseTex->Texture.Get(), intermediateBuf.Get(), 0, 0, 1, &subresourceData);
-    //        stbi_image_free(data);
-    //
-    //        // Create descriptor heap for material
-    //        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-    //        heapDesc.NumDescriptors = 1;
-    //        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    //        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    //        g_pd3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&gpuMat->SRVHeap));
-    //
-    //
-    //        // Create the SRV
-    //        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    //        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    //        srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    //        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	//	    srvDesc.Texture2D.MipLevels = 1;
-    //        g_pd3dDevice->CreateShaderResourceView(diffuseTex->Texture.Get(), &srvDesc, );
-    //
-    //
-    //    }
-    //}
+    for (auto& mat : reader.GetMaterials())
+    {
+        auto& material = meshGroup.Materials.emplace_back();
+        material.Name = mat.name;
+    
+        // Load the textures
+        if (!mat.diffuse_texname.empty())
+            material.DiffuseTextureName = std::filesystem::path(path).parent_path().string() + "/" + mat.diffuse_texname;
+    }
     return &meshGroup;
 }
 }

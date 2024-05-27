@@ -218,21 +218,43 @@ enum class ViewTypes
 template<ViewTypes type>
 struct ResourceViewToDesc;
 
-template<> struct ResourceViewToDesc<ViewTypes::ShaderResourceView> { const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV; using Desc = D3D12_SHADER_RESOURCE_VIEW_DESC; };
-template<> struct ResourceViewToDesc<ViewTypes::UnorderedAccessView> { const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV; using Desc = D3D12_UNORDERED_ACCESS_VIEW_DESC; };
-template<> struct ResourceViewToDesc<ViewTypes::ConstantBufferView> { const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV; using Desc = D3D12_CONSTANT_BUFFER_VIEW_DESC; };
-template<> struct ResourceViewToDesc<ViewTypes::Sampler> { const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER; using Desc = D3D12_SAMPLER_DESC; };
-template<> struct ResourceViewToDesc<ViewTypes::RenderTargetView> { const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; using Desc = D3D12_RENDER_TARGET_VIEW_DESC; };
-template<> struct ResourceViewToDesc<ViewTypes::DepthStencilView> { const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_DSV; using Desc = D3D12_DEPTH_STENCIL_VIEW_DESC;};
+template<> struct ResourceViewToDesc<ViewTypes::ShaderResourceView> {
+	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	D3D12_SHADER_RESOURCE_VIEW_DESC* Desc;
+	ID3D12Resource* Resource;
+};
+template<> struct ResourceViewToDesc<ViewTypes::UnorderedAccessView> {
+	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	D3D12_UNORDERED_ACCESS_VIEW_DESC* Desc;
+	ID3D12Resource* Resource;
+};
+template<> struct ResourceViewToDesc<ViewTypes::ConstantBufferView> {
+	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	D3D12_CONSTANT_BUFFER_VIEW_DESC* Desc;
+};
+template<> struct ResourceViewToDesc<ViewTypes::Sampler> {
+	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+	D3D12_SAMPLER_DESC* Desc;
+};
+template<> struct ResourceViewToDesc<ViewTypes::RenderTargetView> {
+	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	D3D12_RENDER_TARGET_VIEW_DESC* Desc;
+	ID3D12Resource* Resource;
+};
+template<> struct ResourceViewToDesc<ViewTypes::DepthStencilView> {
+	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	D3D12_DEPTH_STENCIL_VIEW_DESC* Desc;
+	ID3D12Resource* Resource;
+};
 
 template<ViewTypes type>
 struct ResourceView : DescriptorAllocation
 {
-    static std::unique_ptr<ResourceView<type>> Create(ID3D12Device* device, std::pair<ID3D12Resource*, typename ResourceViewToDesc<type>::Desc*> resourceXDesc)
+    static std::unique_ptr<ResourceView<type>> Create(ID3D12Device* device, typename ResourceViewToDesc<type> descs)
     {
-		return Create(device, std::span{ &resourceXDesc, 1 });
+		return Create(device, std::span{ &descs, 1 });
 	}
-    static std::unique_ptr<ResourceView<type>> Create(ID3D12Device* device, std::span<std::pair<ID3D12Resource*, typename ResourceViewToDesc<type>::Desc*>> resourcesXDescs);
+    static std::unique_ptr<ResourceView<type>> Create(ID3D12Device* device, std::span<typename ResourceViewToDesc<type>> descs);
 };
 
 using ShaderResourceView = ResourceView<ViewTypes::ShaderResourceView>;
@@ -276,4 +298,30 @@ struct D3D12Mesh
 private:
     D3D12Mesh() = default;
 };
+
+struct D3D12Texture
+{
+	static std::unique_ptr<D3D12Texture> Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height);
+
+
+
+	ComPtr<ID3D12Resource> Resource;
+	std::unique_ptr<ShaderResourceView> SRV;
+private:
+	D3D12Texture() = default;
+};
+
+struct D3D12Material
+{
+    ShaderResourceView* DiffuseSRV = nullptr;
+	ShaderResourceView* NormalSRV = nullptr;
+	ShaderResourceView* SpecularSRV = nullptr;
+	ShaderResourceView* RoughnessSRV = nullptr;
+	ShaderResourceView* MetalnessSRV = nullptr;
+
+	Vector3 DiffuseColor = { 1, 1, 1 };
+	float Roughness = 0.5f;
+	float Metalness = 0.5f;
+};
+
 }

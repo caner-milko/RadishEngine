@@ -68,27 +68,28 @@ namespace dxpg::dx12
 
 
     template<ViewTypes type>
-    std::unique_ptr<ResourceView<type>> ResourceView<type>::Create(ID3D12Device * device, std::span<std::pair<ID3D12Resource*, typename ResourceViewToDesc<type>::Desc*>> resourcesXDescs)
+    std::unique_ptr<ResourceView<type>> ResourceView<type>::Create(ID3D12Device * device, std::span<typename ResourceViewToDesc<type>> descs)
     {
         using ViewToDesc = ResourceViewToDesc<type>;
-        auto* view = g_CPUDescriptorAllocator->AllocateFromStatic(ViewToDesc::HeapType, resourcesXDescs.size()).release();
-        for (size_t i = 0; i < resourcesXDescs.size(); i++)
+        auto* view = g_CPUDescriptorAllocator->AllocateFromStatic(ViewToDesc::HeapType, descs.size()).release();
+        for (size_t i = 0; i < descs.size(); i++)
         {
+			auto& desc = descs[i];
             if constexpr (type == ViewTypes::ShaderResourceView)
-                device->CreateShaderResourceView(resourcesXDescs[i].first, resourcesXDescs[i].second, view->GetCPUHandle(i));
+                device->CreateShaderResourceView(desc.Resource, desc.Desc, view->GetCPUHandle(i));
             else if constexpr (type == ViewTypes::UnorderedAccessView)
             {
                 assert(false);
                 //device->CreateUnorderedAccessView(resourcesXDescs[i].first, resourcesXDescs[i].second, view->Allocation->GetCPUHandle(i));
             }
             else if constexpr (type == ViewTypes::ConstantBufferView)
-                device->CreateConstantBufferView(resourcesXDescs[i].second, view->GetCPUHandle(i));
+                device->CreateConstantBufferView(desc.Desc, view->GetCPUHandle(i));
             else if constexpr (type == ViewTypes::Sampler)
-                device->CreateSampler(resourcesXDescs[i].second, view->GetCPUHandle(i));
+                device->CreateSampler(desc.Desc, view->GetCPUHandle(i));
             else if constexpr (type == ViewTypes::RenderTargetView)
-                device->CreateRenderTargetView(resourcesXDescs[i].first, resourcesXDescs[i].second, view->GetCPUHandle(i));
+                device->CreateRenderTargetView(desc.Resource, desc.Desc, view->GetCPUHandle(i));
             else if constexpr (type == ViewTypes::DepthStencilView)
-                device->CreateDepthStencilView(resourcesXDescs[i].first, resourcesXDescs[i].second, view->GetCPUHandle(i));
+                device->CreateDepthStencilView(desc.Resource, desc.Desc, view->GetCPUHandle(i));
             else
             {
                 assert(false);
@@ -134,25 +135,25 @@ namespace dxpg::dx12
 
         device->CreatePlacedResource(vertexData->Heap.Get(), posAllocInfo.SizeInBytes + normalAllocInfo.SizeInBytes, &texCoordDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&vertexData->TexCoordsBuffer));
 
-        std::pair<ID3D12Resource*, D3D12_SHADER_RESOURCE_VIEW_DESC*> resources[3] = {};
-        D3D12_SHADER_RESOURCE_VIEW_DESC posViewDesc{};
-        posViewDesc.Format = DXGI_FORMAT_UNKNOWN;
-        posViewDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        posViewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        posViewDesc.Buffer.StructureByteStride = 3 * sizeof(float);
-        posViewDesc.Buffer.FirstElement = 0;
-        posViewDesc.Buffer.NumElements = positionsCount;
-        resources[0] = { vertexData->PositionsBuffer.Get(), &posViewDesc };
-        auto normalsViewDesc = posViewDesc;
-        normalsViewDesc.Buffer.NumElements = normalsCount;
-        resources[1] = { vertexData->NormalsBuffer.Get(), &normalsViewDesc};
-        auto texCoordsViewDesc = normalsViewDesc;
-        texCoordsViewDesc.Buffer.StructureByteStride = 2 * sizeof(float);
-        texCoordsViewDesc.Buffer.NumElements = texCoordsCount;
-        resources[2] = { vertexData->TexCoordsBuffer.Get(), &texCoordsViewDesc };
+		ResourceViewToDesc<ViewTypes::ShaderResourceView> resources[3] = {};
+		D3D12_SHADER_RESOURCE_VIEW_DESC posViewDesc{};
+		posViewDesc.Format = DXGI_FORMAT_UNKNOWN;
+		posViewDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		posViewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		posViewDesc.Buffer.StructureByteStride = 3 * sizeof(float);
+		posViewDesc.Buffer.FirstElement = 0;
+		posViewDesc.Buffer.NumElements = positionsCount;
+		resources[0] = { .Desc = &posViewDesc, .Resource = vertexData->PositionsBuffer.Get() };
+		auto normalsViewDesc = posViewDesc;
+		normalsViewDesc.Buffer.NumElements = normalsCount;
+		resources[1] = { &normalsViewDesc, vertexData->NormalsBuffer.Get() };
+		auto texCoordsViewDesc = normalsViewDesc;
+		texCoordsViewDesc.Buffer.StructureByteStride = 2 * sizeof(float);
+		texCoordsViewDesc.Buffer.NumElements = texCoordsCount;
+		resources[2] = { &texCoordsViewDesc, vertexData->TexCoordsBuffer.Get() };
 
-        vertexData->VertexSRV = ShaderResourceView::Create(device, std::span{ resources });
-        return vertexData;
+		vertexData->VertexSRV = ShaderResourceView::Create(device, std::span{ resources });
+		return vertexData;
     }
 
     std::unique_ptr<D3D12Mesh> D3D12Mesh::Create(ID3D12Device* device, dx12::VertexData* vertexData, size_t indicesCount, size_t indexSize)
@@ -167,6 +168,22 @@ namespace dxpg::dx12
         mesh->IndicesView.SizeInBytes = indicesCount * indexSize;
         mesh->IndicesView.StrideInBytes = indexSize;
 		return mesh;
+    }
+
+    std::unique_ptr<D3D12Texture> D3D12Texture::Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height)
+    {
+		auto texture = std::unique_ptr<D3D12Texture>(new D3D12Texture());
+        // Create the texture
+        auto desc = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height);
+        auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        device->CreateCommittedResource(
+            &heapProp,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COMMON,
+            nullptr,
+            IID_PPV_ARGS(&texture->Resource));
+        return texture;
     }
 
 }
