@@ -20,6 +20,8 @@
 #include <tiny_obj_loader.h>
 #include <stb_image.h>
 
+#include "ShaderCompiler.h"
+
 namespace dxpg
 {
 
@@ -48,6 +50,8 @@ static ComPtr<IDXGISwapChain3> g_pSwapChain = nullptr;
 static HANDLE                       g_hSwapChainWaitableObject = nullptr;
 static ComPtr<ID3D12Resource> g_mainRenderTargetResource[NUM_BACK_BUFFERS] = {};
 static std::unique_ptr<dx12::RenderTargetView> g_mainRTV[NUM_BACK_BUFFERS] = {};
+
+static std::unique_ptr<dx12::ShaderCompiler> g_ShaderCompiler;
 
 static FrameContext FrameIndependentCtx = {};
 
@@ -102,6 +106,7 @@ struct MeshGroup
 
 std::vector<MeshGroup> g_LoadedMeshGroups;
 std::unordered_map<std::string, std::unique_ptr<dx12::D3D12Texture>> g_LoadedTextures;
+std::unordered_map<std::string, std::unique_ptr<dx12::Shader>> g_LoadedShaders;
 
 static HWND g_hWnd = nullptr;
 
@@ -219,14 +224,6 @@ void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12
 void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t width, size_t height, size_t componentCount, void* data);
 
 MeshGroup* LoadObjFile(const char* path);
-
-inline void ThrowIfFailed(HRESULT hr)
-{
-    if (FAILED(hr))
-    {
-        throw std::exception();
-    }
-}
 
 void CreateConsole()
 {
@@ -521,6 +518,8 @@ bool CreateDeviceD3D()
     }
 #endif
 
+	g_ShaderCompiler = dx12::ShaderCompiler::Create();
+
     {
         dx12::g_CPUDescriptorAllocator = dx12::CPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get(), 1024);
         dx12::g_GPUDescriptorAllocator = dx12::GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get(), 2048, NUM_BACK_BUFFERS, 1);
@@ -574,6 +573,7 @@ void CleanupDeviceD3D()
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_fence = nullptr;
+    g_ShaderCompiler = nullptr;
     dx12::g_CPUDescriptorAllocator = nullptr;
     dx12::g_GPUDescriptorAllocator = nullptr;
     if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
@@ -812,13 +812,11 @@ void LoadSceneData()
         pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
         pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-        ComPtr<ID3DBlob> vertexShaderBlob;
-        ThrowIfFailed(D3DReadFileToBlob(L"Triangle.vs.cso", &vertexShaderBlob));
-        ComPtr<ID3DBlob> pixelShaderBlob;
-        ThrowIfFailed(D3DReadFileToBlob(L"Triangle.ps.cso", &pixelShaderBlob));
+		auto& vertexShader = g_LoadedShaders["Trianle.vs"] = g_ShaderCompiler->CompileShader(L"Triangle.vs", DXPG_SHADERS_DIR L"Vertex/Triangle.vs.hlsl", dx12::ShaderCompiler::ShaderType::Vertex);
+		auto& pixelShader = g_LoadedShaders["Triangle.ps"] = g_ShaderCompiler->CompileShader(L"Triangle.ps", DXPG_SHADERS_DIR L"Pixel/Triangle.ps.hlsl", dx12::ShaderCompiler::ShaderType::Pixel);
 
-        pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShaderBlob.Get());
-        pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShaderBlob.Get());
+        pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
+        pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
 
         pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
         D3D12_RT_FORMAT_ARRAY rtvFormats = {};

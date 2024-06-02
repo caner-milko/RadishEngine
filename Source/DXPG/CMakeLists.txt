@@ -4,26 +4,16 @@ project(DXPG)
 
 set(INCLUDE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Include;${EXTERNAL_DIR}/stb")
 set(SOURCE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Source")
-set(SHADER_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Shaders")
+set(SHADER_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders")
 
 file(GLOB_RECURSE SHADER_FILES "${SHADER_DIRECTORY}/*")
-file(GLOB_RECURSE VERTEX_SHADER_FILES "${SHADER_DIRECTORY}/Vertex/*")
-file(GLOB_RECURSE PIXEL_SHADER_FILES "${SHADER_DIRECTORY}/Pixel/*")
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "${SOURCE_DIRECTORY}/*")
 file(GLOB_RECURSE INCLUDE_FILES CONFIGURE_DEPENDS "${INCLUDE_DIRECTORY}/*")
 
 add_executable(${PROJECT_NAME} WIN32 ${INCLUDE_FILES} ${SRC_FILES} ${SHADER_FILES})
 
-foreach(VERTEX_SHADER ${VERTEX_SHADER_FILES})
-	set_source_files_properties(${VERTEX_SHADER} PROPERTIES VS_SHADER_TYPE Vertex)
-endforeach()
-
-foreach(PIXEL_SHADER ${PIXEL_SHADER_FILES})
-	set_source_files_properties(${PIXEL_SHADER} PROPERTIES VS_SHADER_TYPE Pixel)
-endforeach()
-
 foreach(SHADER ${SHADER_FILES})
-	set_source_files_properties(${SHADER} PROPERTIES VS_SHADER_MODEL 5.1)
+	set_source_files_properties(${SHADER} PROPERTIES VS_TOOL_OVERRIDE "Text")
 endforeach()
 
 foreach(source IN LISTS SRC_FILES)
@@ -42,16 +32,28 @@ endforeach()
 
 foreach(shader IN LISTS SHADER_FILES)
 	get_filename_component(shader_path "${shader}" PATH)
-	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "" shader_path_compact "${shader_path}")
+	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/Assets" "" shader_path_compact "${shader_path}")
 	string(REPLACE "/" "\\" shader_path_msvc "${shader_path_compact}")
 	source_group("${shader_path_msvc}" FILES "${shader}")
 endforeach()
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE DXPG_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets")
+target_compile_definitions(${PROJECT_NAME} PRIVATE DXPG_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets/")
+target_compile_definitions(${PROJECT_NAME} PRIVATE DXPG_SHADERS_DIR="${SHADER_DIRECTORY}/")
 target_compile_definitions(${PROJECT_NAME} PRIVATE DXPG_SPONZA_DIR="${EXTERNAL_DIR}/Sponza/")
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     d3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${EXTERNAL_DIR}/DirectXShaderCompiler/bin/x64/dxcompiler.dll"
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>
+)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${EXTERNAL_DIR}/DirectXShaderCompiler//bin/x64/dxil.dll"
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>
 )

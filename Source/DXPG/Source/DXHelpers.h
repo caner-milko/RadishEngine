@@ -26,6 +26,14 @@ using Vector2 = DirectX::XMFLOAT2;
 #include <directx/d3dx12.h>
 #include <d3dcompiler.h>
 
+inline void ThrowIfFailed(HRESULT hr)
+{
+    if (FAILED(hr))
+    {
+        throw std::exception();
+    }
+}
+
 namespace dxpg::dx12
 {
 struct DescriptorHeap
