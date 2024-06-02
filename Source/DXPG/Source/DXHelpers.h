@@ -4,6 +4,7 @@
 #include <iostream>
 #include <span>
 #include <unordered_map>
+#include <optional>
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER

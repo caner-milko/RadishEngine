@@ -99,7 +99,6 @@ std::unique_ptr<Shader> ShaderCompiler::CompileShader(std::wstring_view name, st
 
 	results->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&compiledBlob), 0);
 
-	std::unordered_map<std::string, D3D12_INPUT_ELEMENT_DESC> inputElements;
 	if (type == ShaderType::Vertex)
 	{
 
@@ -171,6 +170,9 @@ std::unique_ptr<Shader> ShaderCompiler::CompileShader(std::wstring_view name, st
 		case D3D_SIT_TEXTURE:
 		{
 			rootParameterIndexMap[shaderInputBindDesc.Name] = static_cast<uint32_t>(rootParameters.size());
+			CD3DX12_DESCRIPTOR_RANGE1 range{};
+			range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, shaderInputBindDesc.BindPoint, shaderInputBindDesc.Space, D3D12_DESCRIPTOR_RANGE_FLAG_NONE);
+			
 			const D3D12_ROOT_PARAMETER1 rootParameter
 			{
 				.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV,

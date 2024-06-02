@@ -126,7 +126,7 @@ namespace dxpg::dx12
         auto allocInfo = device->GetResourceAllocationInfo(0, _countof(descs), descs);
 
 
-        auto heapDesc = CD3DX12_HEAP_DESC(allocInfo.SizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_FLAG_NONE);
+        auto heapDesc = CD3DX12_HEAP_DESC(allocInfo.SizeInBytes, D3D12_HEAP_TYPE_DEFAULT, 0, D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES | D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES);
         device->CreateHeap(&heapDesc, IID_PPV_ARGS(&vertexData->Heap));
 
         device->CreatePlacedResource(vertexData->Heap.Get(), 0, &posDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&vertexData->PositionsBuffer));

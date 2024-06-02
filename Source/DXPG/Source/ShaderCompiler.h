@@ -5,18 +5,8 @@
 #include <dxcapi.h>
 #include <d3d12shader.h>
 
-
 namespace dxpg::dx12
 {
-
-struct Shader
-{
-	ComPtr<ID3D12ShaderReflection> Reflection;
-	ComPtr<ID3DBlob> Blob;
-	std::wstring EntryPoint;
-	std::wstring Name;
-	std::wstring Path;
-};
 
 struct ShaderCompiler
 {
