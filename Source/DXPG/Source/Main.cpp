@@ -20,6 +20,10 @@
 #include <tiny_obj_loader.h>
 #include <stb_image.h>
 
+#include "ShaderCompiler.h"
+#include "RootSignature.h"
+#include "PipelineState.h"
+
 namespace dxpg
 {
 
@@ -48,6 +52,8 @@ static ComPtr<IDXGISwapChain3> g_pSwapChain = nullptr;
 static HANDLE                       g_hSwapChainWaitableObject = nullptr;
 static ComPtr<ID3D12Resource> g_mainRenderTargetResource[NUM_BACK_BUFFERS] = {};
 static std::unique_ptr<dx12::RenderTargetView> g_mainRTV[NUM_BACK_BUFFERS] = {};
+
+static std::unique_ptr<dx12::ShaderCompiler> g_ShaderCompiler;
 
 static FrameContext FrameIndependentCtx = {};
 
@@ -102,14 +108,18 @@ struct MeshGroup
 
 std::vector<MeshGroup> g_LoadedMeshGroups;
 std::unordered_map<std::string, std::unique_ptr<dx12::D3D12Texture>> g_LoadedTextures;
+std::unordered_map<std::string, std::unique_ptr<dx12::Shader>> g_LoadedShaders;
 
 static HWND g_hWnd = nullptr;
 
 static ComPtr<ID3D12Resource> g_DepthBuffer;
 static std::unique_ptr<dx12::DepthStencilView> g_DSV;
 
-static ComPtr<ID3D12RootSignature> g_RootSignature;
-static ComPtr<ID3D12PipelineState> g_PipelineState;
+struct StaticMeshPipeline
+{
+	dx12::RootSignature RootSignature;
+	dx12::PipelineState PipelineState;
+} g_StaticMeshPipeline;
 
 static int g_Width = 1280;
 static int g_Height = 720;
@@ -219,14 +229,6 @@ void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12
 void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t width, size_t height, size_t componentCount, void* data);
 
 MeshGroup* LoadObjFile(const char* path);
-
-inline void ThrowIfFailed(HRESULT hr)
-{
-    if (FAILED(hr))
-    {
-        throw std::exception();
-    }
-}
 
 void CreateConsole()
 {
@@ -367,7 +369,7 @@ void RenderSubMeshes(FrameContext& frameCtx, MeshRenderData* meshes, size_t mesh
         g_pd3dCommandList->IASetVertexBuffers(0, 1, &mesh.IndexBufferView);
         DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.ModelMatrix, g_Cam.GetViewMatrix());
         mvpMatrix = XMMatrixMultiply(mvpMatrix, g_Cam.GetProjectionMatrix());
-        g_pd3dCommandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix4x4) / sizeof(uint32_t), &mvpMatrix, 0);
+        g_pd3dCommandList->SetGraphicsRoot32BitConstants(g_StaticMeshPipeline.RootSignature.NameToParameterIndices["ModelViewProjectionCB"], sizeof(Matrix4x4) / sizeof(uint32_t), &mvpMatrix, 0);
 
         ShaderMaterialInfo matInfo{};
 
@@ -375,12 +377,12 @@ void RenderSubMeshes(FrameContext& frameCtx, MeshRenderData* meshes, size_t mesh
         matInfo.Diffuse = { mesh.DiffuseColor.x, mesh.DiffuseColor.y, mesh.DiffuseColor.z, 1 };
 
         if (mesh.UseDiffuseTexture)
-            g_pd3dCommandList->SetGraphicsRootDescriptorTable(2, mesh.DiffuseSRV);
+            g_pd3dCommandList->SetGraphicsRootDescriptorTable(g_StaticMeshPipeline.RootSignature.NameToParameterIndices["DiffuseTexture"], mesh.DiffuseSRV);
 
         if (mesh.UseAlphaTexture)
-			g_pd3dCommandList->SetGraphicsRootDescriptorTable(3, mesh.AlphaSRV);
+			g_pd3dCommandList->SetGraphicsRootDescriptorTable(g_StaticMeshPipeline.RootSignature.NameToParameterIndices["AlphaTexture"], mesh.AlphaSRV); 
 
-		g_pd3dCommandList->SetGraphicsRoot32BitConstants(4, sizeof(ShaderMaterialInfo) / sizeof(uint32_t), &matInfo, 0);
+		g_pd3dCommandList->SetGraphicsRoot32BitConstants(g_StaticMeshPipeline.RootSignature.NameToParameterIndices["MaterialCB"], sizeof(ShaderMaterialInfo) / sizeof(uint32_t), &matInfo, 0);
 
         g_pd3dCommandList->DrawInstanced(mesh.IndexCount, 1, 0, 0);
     }
@@ -411,8 +413,8 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 
     g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 
-    g_pd3dCommandList->SetPipelineState(g_PipelineState.Get());
-    g_pd3dCommandList->SetGraphicsRootSignature(g_RootSignature.Get());
+    g_pd3dCommandList->SetPipelineState(g_StaticMeshPipeline.PipelineState.DXPipelineState.Get());
+    g_pd3dCommandList->SetGraphicsRootSignature(g_StaticMeshPipeline.RootSignature.DXSignature.Get());
     g_pd3dCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
@@ -441,10 +443,6 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 
     for (auto& group : g_LoadedMeshGroups)
     {
-        for (auto& [_, material] : group.Materials)
-            if (auto* srv = material.GPUMaterial->DiffuseSRV)
-                ;
-
         std::vector<MeshRenderData> meshesToRender;
         MeshRenderData renderData{};
         for (auto& mesh : group.Meshes)
@@ -464,7 +462,7 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
             meshesToRender.emplace_back(renderData);
         }
 
-        g_pd3dCommandList->SetGraphicsRootDescriptorTable(1, srvHeapPage->CopyFrom(group.GPUVertexData->VertexSRV.get())->GetGPUHandle());
+        g_pd3dCommandList->SetGraphicsRootDescriptorTable(g_StaticMeshPipeline.RootSignature.NameToParameterIndices["VertexSRV"], srvHeapPage->CopyFrom(group.GPUVertexData->VertexSRV.get())->GetGPUHandle());
         RenderSubMeshes(*frameCtx, meshesToRender.data(), meshesToRender.size());
 	}
 
@@ -521,6 +519,8 @@ bool CreateDeviceD3D()
     }
 #endif
 
+	g_ShaderCompiler = dx12::ShaderCompiler::Create();
+
     {
         dx12::g_CPUDescriptorAllocator = dx12::CPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get(), 1024);
         dx12::g_GPUDescriptorAllocator = dx12::GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get(), 2048, NUM_BACK_BUFFERS, 1);
@@ -562,6 +562,7 @@ bool CreateDeviceD3D()
 void CleanupDeviceD3D()
 {
     g_LoadedMeshGroups.clear();
+    g_LoadedTextures.clear();
     CleanupRenderTarget();
     if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain = nullptr; }
     if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
@@ -569,11 +570,12 @@ void CleanupDeviceD3D()
         g_frameContext[i].CommandAllocator = nullptr;
     FrameIndependentCtx.CommandAllocator = nullptr;
     g_DepthBuffer = nullptr;
-    g_RootSignature = nullptr;
-    g_PipelineState = nullptr;
+    g_StaticMeshPipeline = {};
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_fence = nullptr;
+    g_LoadedShaders.clear();
+    g_ShaderCompiler = nullptr;
     dx12::g_CPUDescriptorAllocator = nullptr;
     dx12::g_GPUDescriptorAllocator = nullptr;
     if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
@@ -727,30 +729,14 @@ void LoadSceneData()
     {
         // Create Root Signature
 
+        dx12::RootSignatureBuilder builder{};
+
         std::vector< CD3DX12_ROOT_PARAMETER1> rootParams;
-        CD3DX12_ROOT_PARAMETER1 rootParam = {};
-        rootParam.InitAsConstants(sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-        rootParams.push_back(rootParam);
-
-        std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
-        ranges.push_back(CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0));
-        ranges.push_back(CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3));
-        ranges.push_back(CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4));
-        rootParam = {};
-        rootParam.InitAsDescriptorTable(1, ranges.data(), D3D12_SHADER_VISIBILITY_VERTEX);
-        rootParams.push_back(rootParam);
-
-        rootParam = {};
-        rootParam.InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL);
-        rootParams.push_back(rootParam);
-
-        rootParam = {};
-        rootParam.InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL);
-        rootParams.push_back(rootParam);
-        
-        rootParam = {};
-        rootParam.InitAsConstants(sizeof(ShaderMaterialInfo) / 4, 1, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-        rootParams.push_back(rootParam);
+		builder.AddConstants("ModelViewProjectionCB", sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+        builder.AddDescriptorTable("VertexSRV", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0) } }, D3D12_SHADER_VISIBILITY_VERTEX);
+		builder.AddDescriptorTable("DiffuseTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3) } }, D3D12_SHADER_VISIBILITY_PIXEL);
+		builder.AddDescriptorTable("AlphaTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4) } }, D3D12_SHADER_VISIBILITY_PIXEL);
+        builder.AddConstants("MaterialCB", sizeof(ShaderMaterialInfo) / 4, 1, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
 
         D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
@@ -759,40 +745,18 @@ void LoadSceneData()
             D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
             D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
-
-        D3D12_STATIC_SAMPLER_DESC staticSampler = {};
+        CD3DX12_STATIC_SAMPLER_DESC staticSampler(0);
         staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-        staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-        staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-        staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-        staticSampler.MipLODBias = 0.0f;
-        staticSampler.MaxAnisotropy = 1;
+        staticSampler.MaxAnisotropy = 16;
         staticSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-        staticSampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
-        staticSampler.MinLOD = 0.0f;
-        staticSampler.MaxLOD = D3D12_FLOAT32_MAX;
-        staticSampler.ShaderRegister = 0;  // Register s0
-        staticSampler.RegisterSpace = 0;
-        staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // Visible to pixel shader
+        staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
+		builder.AddStaticSampler(staticSampler);
 
-        rootSignatureDesc.Init_1_1(
-            rootParams.size(),
-            rootParams.data(),
-            1,
-            &staticSampler,
-            rootSignatureFlags);
-
-        ComPtr<ID3DBlob> signature;
-        ComPtr<ID3DBlob> error;
-        D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signature, &error);
-
-        g_pd3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&g_RootSignature));
-
-        struct PipelineStateStream
+		g_StaticMeshPipeline.RootSignature = builder.Build("StaticMeshRS", g_pd3dDevice.Get(), rootSignatureFlags);
+        
+        struct PipelineStateStream : dx12::PipelineStateStreamBase
         {
-            CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
             CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
             CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
             CD3DX12_PIPELINE_STATE_STREAM_VS VS;
@@ -802,7 +766,6 @@ void LoadSceneData()
             CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
         } pipelineStateStream;
 
-        pipelineStateStream.pRootSignature = g_RootSignature.Get();
         D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
             { "POSINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
             { "NORMALINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -812,13 +775,11 @@ void LoadSceneData()
         pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
         pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-        ComPtr<ID3DBlob> vertexShaderBlob;
-        ThrowIfFailed(D3DReadFileToBlob(L"Triangle.vs.cso", &vertexShaderBlob));
-        ComPtr<ID3DBlob> pixelShaderBlob;
-        ThrowIfFailed(D3DReadFileToBlob(L"Triangle.ps.cso", &pixelShaderBlob));
+		auto& vertexShader = g_LoadedShaders["Trianle.vs"] = g_ShaderCompiler->CompileShader(L"Triangle.vs", DXPG_SHADERS_DIR L"Vertex/Triangle.vs.hlsl", dx12::ShaderCompiler::ShaderType::Vertex);
+		auto& pixelShader = g_LoadedShaders["Triangle.ps"] = g_ShaderCompiler->CompileShader(L"Triangle.ps", DXPG_SHADERS_DIR L"Pixel/Triangle.ps.hlsl", dx12::ShaderCompiler::ShaderType::Pixel);
 
-        pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShaderBlob.Get());
-        pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShaderBlob.Get());
+        pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
+        pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
 
         pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
         D3D12_RT_FORMAT_ARRAY rtvFormats = {};
@@ -828,11 +789,7 @@ void LoadSceneData()
 
         pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-        D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc = {
-            sizeof(PipelineStateStream), &pipelineStateStream
-        };
-
-        g_pd3dDevice->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&g_PipelineState));
+		g_StaticMeshPipeline.PipelineState = dx12::PipelineState::Create("StaticMeshPipeline", g_pd3dDevice.Get(), pipelineStateStream, &g_StaticMeshPipeline.RootSignature);
     }
 
     ClearFrame(FrameIndependentCtx);

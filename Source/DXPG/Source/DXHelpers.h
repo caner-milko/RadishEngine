@@ -4,6 +4,7 @@
 #include <iostream>
 #include <span>
 #include <unordered_map>
+#include <optional>
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
@@ -25,6 +26,14 @@ using Vector3 = DirectX::XMFLOAT3;
 using Vector2 = DirectX::XMFLOAT2;
 #include <directx/d3dx12.h>
 #include <d3dcompiler.h>
+
+inline void ThrowIfFailed(HRESULT hr)
+{
+    if (FAILED(hr))
+    {
+        throw std::exception();
+    }
+}
 
 namespace dxpg::dx12
 {
