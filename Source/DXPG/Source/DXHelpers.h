@@ -192,8 +192,11 @@ template<bool CPU>
 struct DescriptorHeapAllocator
 {
     std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, std::unique_ptr<DescriptorHeapPageCollection>> Heaps;
+	ID3D12Device* Device;
 
-    static std::unique_ptr<DescriptorHeapAllocator> Create(ID3D12Device* dev, size_t numDescriptors, uint32_t pageCount = 0, size_t staticPageSize = 0);
+    static std::unique_ptr<DescriptorHeapAllocator> Create(ID3D12Device* dev);
+
+    void CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, size_t numDescriptors, uint32_t pageCount = 0, size_t staticPageSize = 0);
 
     std::unique_ptr<DescriptorAllocation> AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t size)
     {
@@ -311,8 +314,6 @@ private:
 struct D3D12Texture
 {
 	static std::unique_ptr<D3D12Texture> Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height);
-
-
 
 	ComPtr<ID3D12Resource> Resource;
 	std::unique_ptr<ShaderResourceView> SRV;

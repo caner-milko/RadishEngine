@@ -20,4 +20,32 @@ inline std::string ws2s(const std::wstring& wstr)
 
     return converterX.to_bytes(wstr);
 }
+
+template<typename T>
+struct Singleton
+{
+	static void Create()
+	{
+		if (Instance == nullptr)
+			Instance = std::make_unique<T>();
+		else
+		{
+			assert(false);
+		}
+	}
+
+	static void Destroy()
+	{
+		if (Instance != nullptr)
+			Instance.reset();
+	}
+
+	static T& Get()
+	{
+		assert(Instance);
+		return *Instance;
+	}
+
+	static std::unique_ptr<T> Instance;
+};
 }

@@ -1,23 +1,26 @@
-#include "ShaderCompiler.h"
+#include "ShaderManager.h"
 
 #include <unordered_map>
 #include "DXPGCommon.h"
 
+namespace dxpg
+{
+	std::unique_ptr<dx12::ShaderManager> dx12::ShaderManager::Instance = nullptr;
+}
+
 namespace dxpg::dx12
 {
-std::unique_ptr<ShaderCompiler> ShaderCompiler::Create()
+ShaderManager::ShaderManager()
 {
-	auto compiler = new ShaderCompiler();
-	ThrowIfFailed(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&compiler->Utils)));
-	ThrowIfFailed(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler->Compiler)));
-	ThrowIfFailed(compiler->Utils->CreateDefaultIncludeHandler(&compiler->IncludeHandler));
-
-	return std::unique_ptr<ShaderCompiler>(compiler);
+	ThrowIfFailed(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&Utils)));
+	ThrowIfFailed(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&Compiler)));
+	ThrowIfFailed(Utils->CreateDefaultIncludeHandler(&IncludeHandler));
 }
-std::unique_ptr<Shader> ShaderCompiler::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint, std::span<std::wstring_view> includeFolders)
+
+Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint, std::span<std::wstring_view> includeFolders)
 {
 	LPCWSTR shaderType = nullptr;
-	switch(type)
+	switch (type)
 	{
 	case ShaderType::Vertex:
 		shaderType = L"vs_6_0";
@@ -38,7 +41,7 @@ std::unique_ptr<Shader> ShaderCompiler::CompileShader(std::wstring_view name, st
 		DXC_ARG_WARNINGS_ARE_ERRORS,
 		DXC_ARG_ALL_RESOURCES_BOUND,
 	};
-	
+
 	for (auto& includeFolder : includeFolders)
 	{
 		compilationArgs.push_back(L"-I");
@@ -83,13 +86,14 @@ std::unique_ptr<Shader> ShaderCompiler::CompileShader(std::wstring_view name, st
 
 	results->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&compiledBlob), 0);
 
-	auto shader = std::make_unique<Shader>();
+	auto& shader = LoadedShaders[std::wstring(name)] = std::make_unique<Shader>();
 
 	shader->EntryPoint = entryPoint;
 	shader->Path = shaderPath;
 	shader->Name = name;
 	shader->Blob = compiledBlob;
-    return shader;
+	shader->Type = type;
+	return shader.get();
 }
 
 }

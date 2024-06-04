@@ -37,31 +37,42 @@ namespace dxpg::dx12
 
 
     template<bool CPU>
-    std::unique_ptr<DescriptorHeapAllocator<CPU>> DescriptorHeapAllocator<CPU>::Create(ID3D12Device* dev, size_t numDescriptors, uint32_t pageCount, size_t staticPageSize)
+    std::unique_ptr<DescriptorHeapAllocator<CPU>> DescriptorHeapAllocator<CPU>::Create(ID3D12Device* dev)
     {
         auto allocator = std::make_unique<DescriptorHeapAllocator>();
-        D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = numDescriptors;
-        if constexpr (CPU)
-        {
+        allocator->Device = dev;
+        //D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+        //desc.NumDescriptors = numDescriptors;
+        //if constexpr (CPU)
+        //{
 
-            for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; i++)
-            {
-                desc.Type = (D3D12_DESCRIPTOR_HEAP_TYPE)i;
-                allocator->Heaps[(D3D12_DESCRIPTOR_HEAP_TYPE)i] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
-            }
-        }
-        else
-        {
-            desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        //    for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; i++)
+        //    {
+        //        desc.Type = (D3D12_DESCRIPTOR_HEAP_TYPE)i;
+        //        allocator->Heaps[(D3D12_DESCRIPTOR_HEAP_TYPE)i] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
+        //    }
+        //}
+        //else
+        //{
+        //    desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
-            desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-            allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
-            desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-            allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
-        }
+        //    desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        //    allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
+        //    desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+        //    allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
+        //}
 
         return allocator;
+    }
+    template<bool CPU>
+    void DescriptorHeapAllocator<CPU>::CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, size_t numDescriptors, uint32_t pageCount, size_t staticPageSize)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+		desc.NumDescriptors = numDescriptors;
+		desc.Type = type;
+		if constexpr (!CPU)
+			desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		Heaps[type] = DescriptorHeapPageCollection::Create(desc, Device, pageCount, staticPageSize);
     }
     template class DescriptorHeapAllocator<true>;
     template class DescriptorHeapAllocator<false>;
