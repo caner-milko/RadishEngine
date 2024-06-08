@@ -17,19 +17,19 @@ ShaderManager::ShaderManager()
 	ThrowIfFailed(Utils->CreateDefaultIncludeHandler(&IncludeHandler));
 }
 
-Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint, std::span<std::wstring_view> includeFolders)
+Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
 {
 	LPCWSTR shaderType = nullptr;
 	switch (type)
 	{
 	case ShaderType::Vertex:
-		shaderType = L"vs_6_0";
+		shaderType = L"vs_6_2";
 		break;
 	case ShaderType::Pixel:
-		shaderType = L"ps_6_0";
+		shaderType = L"ps_6_2";
 		break;
 	case ShaderType::Compute:
-		shaderType = L"cs_6_0";
+		shaderType = L"cs_6_2";
 		break;
 	}
 
@@ -38,7 +38,7 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 		name.data(),                  // Optional shader source file name for error reporting and for PIX shader source view.  
 		L"-E", entryPoint.data(),              // Entry point.
 		L"-T", shaderType,            // Target.
-		DXC_ARG_WARNINGS_ARE_ERRORS,
+		//DXC_ARG_WARNINGS_ARE_ERRORS,
 		DXC_ARG_ALL_RESOURCES_BOUND,
 	};
 

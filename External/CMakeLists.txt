@@ -51,4 +51,18 @@ add_subdirectory(SDL)
 
 add_subdirectory(DirectX-Headers)
 
+set(FIDELITYFX_SPD_SHADERS	
+FidelityFX-SPD/ffx-spd/ffx_a.h
+FidelityFX-SPD/ffx-spd/ffx_spd.h
+)
+
+add_library(FidelityFX-SPD INTERFACE ${FIDELITYFX_SPD_SHADERS})
+target_compile_definitions(FidelityFX-SPD INTERFACE FIDELITYFX_SPD_SHADER_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/FidelityFX-SPD/ffx-spd")
+
+target_include_directories(FidelityFX-SPD INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/FidelityFX-SPD/ffx-spd)
+
+foreach(SHADER ${FIDELITYFX_SPD_SHADERS})
+	set_source_files_properties(${SHADER} PROPERTIES VS_TOOL_OVERRIDE "Text")
+endforeach()
+
 set_folder_all_targets(${CMAKE_CURRENT_SOURCE_DIR} "External")

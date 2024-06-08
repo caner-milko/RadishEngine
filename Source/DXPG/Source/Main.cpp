@@ -37,7 +37,7 @@ static int const                    NUM_BACK_BUFFERS = 3;
 static ComPtr<ID3D12Device2> g_pd3dDevice = nullptr;
 
 static ComPtr<ID3D12CommandQueue> g_pd3dCommandQueue = nullptr;
-static ComPtr<ID3D12GraphicsCommandList> g_pd3dCommandList = nullptr;
+static ComPtr<ID3D12GraphicsCommandList2> g_pd3dCommandList = nullptr;
 static ComPtr<ID3D12Fence> g_fence = nullptr;
 static HANDLE                       g_fenceEvent = nullptr;
 static UINT64                       g_fenceLastSignaledValue = 0;
@@ -344,10 +344,6 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 
     g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 
-    g_pd3dCommandList->SetPipelineState(g_StaticMeshPipeline.PipelineState.DXPipelineState.Get());
-    g_pd3dCommandList->SetGraphicsRootSignature(g_StaticMeshPipeline.RootSignature.DXSignature.Get());
-    g_pd3dCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
     g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
     g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
 
@@ -497,6 +493,7 @@ void CleanupDeviceD3D()
     FrameIndependentCtx.CommandAllocator = nullptr;
     g_DepthBuffer = nullptr;
     g_StaticMeshPipeline = {};
+	g_GenerateMipsPipeline = {};
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_fence = nullptr;
@@ -567,10 +564,10 @@ void CreateSwapchainRTVDSV(bool resized)
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 		rtvDesc.Texture2D.MipSlice = 0;
-        g_mainRTV[i] = dx12::RenderTargetView::Create(g_pd3dDevice.Get(), { dx12::ResourceViewToDesc<dx12::ViewTypes::RenderTargetView>{.Desc = &rtvDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
+        g_mainRTV[i] = dx12::RenderTargetView::Create({ dx12::ResourceViewToDesc<dx12::ViewTypes::RenderTargetView>{.Desc = &rtvDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
 		auto srgbDesc = rtvDesc;
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		g_mainRTVSRGB[i] = dx12::RenderTargetView::Create(g_pd3dDevice.Get(), { dx12::ResourceViewToDesc<dx12::ViewTypes::RenderTargetView>{.Desc = &srgbDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
+		g_mainRTVSRGB[i] = dx12::RenderTargetView::Create({ dx12::ResourceViewToDesc<dx12::ViewTypes::RenderTargetView>{.Desc = &srgbDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
     }
     // Create the depth buffer
     CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, g_Width, g_Height);
@@ -597,7 +594,7 @@ void CreateSwapchainRTVDSV(bool resized)
     dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvViewDesc.Flags = D3D12_DSV_FLAG_NONE;
     dsvViewDesc.Texture2D.MipSlice = 0;
-    g_DSV = dx12::DepthStencilView::Create(g_pd3dDevice.Get(), { dx12::ResourceViewToDesc<dx12::ViewTypes::DepthStencilView>{.Desc = &dsvViewDesc, .Resource = g_DepthBuffer.Get()} });
+    g_DSV = dx12::DepthStencilView::Create({ dx12::ResourceViewToDesc<dx12::ViewTypes::DepthStencilView>{.Desc = &dsvViewDesc, .Resource = g_DepthBuffer.Get()} });
 }
 
 void CleanupRenderTarget()
@@ -658,6 +655,7 @@ FrameContext* WaitForNextFrameResources()
 void LoadSceneData()
 {
 	g_StaticMeshPipeline.Setup(g_pd3dDevice.Get());
+	g_GenerateMipsPipeline.Setup(g_pd3dDevice.Get());
 
     ClearFrame(FrameIndependentCtx);
     BeginFrame(FrameIndependentCtx);
@@ -690,11 +688,15 @@ void LoadSceneData()
         UploadToBuffer(g_pd3dCommandList.Get(), mesh.GPUMesh->Indices.Get(), &intermediateBuffers.emplace_back(), mesh.Indicies.size() * sizeof(tinyobj::index_t), mesh.Indicies.data());
     }
 
+    auto heaps = dx12::g_GPUDescriptorAllocator->GetHeaps();
+
+    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
+
     for (auto& [_, mat] : group->Materials)
     {
         auto gpuMat = mat.GPUMaterial = std::make_shared<dx12::D3D12Material>();
 
-        constexpr auto loadTex = [](dx12::ShaderResourceView*& srvToFill, std::optional<std::string> const& textureName, bool alphaOnly, decltype(intermediateBuffers)& intermediateBufs)
+        constexpr auto loadTex = [](FrameContext& frameCtx, dx12::ShaderResourceView*& srvToFill, std::optional<std::string> const& textureName, bool alphaOnly, decltype(intermediateBuffers)& intermediateBufs)
             {
                 if (textureName)
                 {
@@ -712,7 +714,9 @@ void LoadSceneData()
                             return;
 
                         // Create the texture
-                        auto& tex = g_LoadedTextures[*textureName] = dx12::D3D12Texture::Create(g_pd3dDevice.Get(), alphaOnly ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, width, height);
+                        auto& tex = g_LoadedTextures[*textureName] = dx12::D3D12Texture::Create(g_pd3dDevice.Get(), alphaOnly ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, width, height, 0);
+
+						tex->Resource->SetName(std::wstring(textureName->begin(), textureName->end()).c_str());
 
                         //Copy the texture data
                         auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -724,6 +728,8 @@ void LoadSceneData()
                         CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(tex->Resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
                         g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
+                        g_GenerateMipsPipeline.GenerateMips(frameCtx, g_pd3dCommandList.Get(), tex->Resource.Get(), &intermediateBufs.emplace_back(), width, height, 1);
+
                         stbi_image_free(data);
 
                         srvToFill = tex->SRV.get();
@@ -731,8 +737,8 @@ void LoadSceneData()
                 }
             };
 
-		loadTex(gpuMat->DiffuseSRV, mat.DiffuseTextureName, false, intermediateBuffers);
-		loadTex(gpuMat->AlphaSRV, mat.AlphaTextureName, true, intermediateBuffers);
+		loadTex(FrameIndependentCtx, gpuMat->DiffuseSRV, mat.DiffuseTextureName, false, intermediateBuffers);
+		loadTex(FrameIndependentCtx, gpuMat->AlphaSRV, mat.AlphaTextureName, true, intermediateBuffers);
     }
 
 

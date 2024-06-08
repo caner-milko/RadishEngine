@@ -79,9 +79,10 @@ namespace dxpg::dx12
 
 
     template<ViewTypes type>
-    std::unique_ptr<ResourceView<type>> ResourceView<type>::Create(ID3D12Device * device, std::span<typename ResourceViewToDesc<type>> descs)
+    std::unique_ptr<ResourceView<type>> ResourceView<type>::Create(std::span<typename ResourceViewToDesc<type>> descs)
     {
         using ViewToDesc = ResourceViewToDesc<type>;
+		auto* device = g_CPUDescriptorAllocator->Device;
         auto* view = g_CPUDescriptorAllocator->AllocateFromStatic(ViewToDesc::HeapType, descs.size()).release();
         for (size_t i = 0; i < descs.size(); i++)
         {
@@ -90,8 +91,7 @@ namespace dxpg::dx12
                 device->CreateShaderResourceView(desc.Resource, desc.Desc, view->GetCPUHandle(i));
             else if constexpr (type == ViewTypes::UnorderedAccessView)
             {
-                assert(false);
-                //device->CreateUnorderedAccessView(resourcesXDescs[i].first, resourcesXDescs[i].second, view->Allocation->GetCPUHandle(i));
+                device->CreateUnorderedAccessView(desc.Resource, nullptr, desc.Desc, view->GetCPUHandle(i));
             }
             else if constexpr (type == ViewTypes::ConstantBufferView)
                 device->CreateConstantBufferView(desc.Desc, view->GetCPUHandle(i));
@@ -163,7 +163,7 @@ namespace dxpg::dx12
 		texCoordsViewDesc.Buffer.NumElements = texCoordsCount;
 		resources[2] = { &texCoordsViewDesc, vertexData->TexCoordsBuffer.Get() };
 
-		vertexData->VertexSRV = ShaderResourceView::Create(device, std::span{ resources });
+		vertexData->VertexSRV = ShaderResourceView::Create(std::span{ resources });
 		return vertexData;
     }
 
@@ -181,11 +181,11 @@ namespace dxpg::dx12
 		return mesh;
     }
 
-    std::unique_ptr<D3D12Texture> D3D12Texture::Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height)
+    std::unique_ptr<D3D12Texture> D3D12Texture::Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height, size_t mipLevels)
     {
 		auto texture = std::unique_ptr<D3D12Texture>(new D3D12Texture());
         // Create the texture
-        auto desc = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height);
+        auto desc = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, mipLevels, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
         device->CreateCommittedResource(
             &heapProp,
@@ -200,8 +200,8 @@ namespace dxpg::dx12
 		srvDesc.Format = format;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Texture2D.MipLevels = 1;
-		texture->SRV = ShaderResourceView::Create(device, { ResourceViewToDesc<ViewTypes::ShaderResourceView>{ &srvDesc, texture->Resource.Get() } });
+		srvDesc.Texture2D.MipLevels = -1;
+		texture->SRV = ShaderResourceView::Create({ ResourceViewToDesc<ViewTypes::ShaderResourceView>{ &srvDesc, texture->Resource.Get() } });
 
         return texture;
     }

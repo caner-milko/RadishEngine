@@ -44,7 +44,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE DXPG_SPONZA_DIR="${EXTERNAL_D
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
-    d3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader
+    d3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader FidelityFX-SPD
 )
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

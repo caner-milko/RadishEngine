@@ -81,6 +81,9 @@ bool StaticMeshPipeline::Setup(ID3D12Device2* dev)
 
 bool StaticMeshPipeline::Run(ID3D12GraphicsCommandList* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
 {
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	cmd->SetPipelineState(PipelineState.DXPipelineState.Get());
+	cmd->SetGraphicsRootSignature(RootSignature.DXSignature.Get());
 	for (auto& group : scene.MeshGroups)
 	{
 		cmd->SetGraphicsRootDescriptorTable(RootSignature.NameToParameterIndices["VertexSRV"], group.VertexSRV);

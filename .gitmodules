@@ -19,3 +19,6 @@
 [submodule "External/stb"]
 	path = External/stb
 	url = https://github.com/nothings/stb.git
+[submodule "External/FidelityFX-SPD"]
+	path = External/FidelityFX-SPD
+	url = https://github.com/GPUOpen-Effects/FidelityFX-SPD.git

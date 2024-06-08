@@ -232,41 +232,41 @@ struct ResourceViewToDesc;
 
 template<> struct ResourceViewToDesc<ViewTypes::ShaderResourceView> {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	D3D12_SHADER_RESOURCE_VIEW_DESC* Desc;
+	const D3D12_SHADER_RESOURCE_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
 template<> struct ResourceViewToDesc<ViewTypes::UnorderedAccessView> {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	D3D12_UNORDERED_ACCESS_VIEW_DESC* Desc;
+	const D3D12_UNORDERED_ACCESS_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
 template<> struct ResourceViewToDesc<ViewTypes::ConstantBufferView> {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	D3D12_CONSTANT_BUFFER_VIEW_DESC* Desc;
+	const D3D12_CONSTANT_BUFFER_VIEW_DESC* Desc;
 };
 template<> struct ResourceViewToDesc<ViewTypes::Sampler> {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-	D3D12_SAMPLER_DESC* Desc;
+	const D3D12_SAMPLER_DESC* Desc;
 };
 template<> struct ResourceViewToDesc<ViewTypes::RenderTargetView> {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-	D3D12_RENDER_TARGET_VIEW_DESC* Desc;
+	const D3D12_RENDER_TARGET_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
 template<> struct ResourceViewToDesc<ViewTypes::DepthStencilView> {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-	D3D12_DEPTH_STENCIL_VIEW_DESC* Desc;
+	const D3D12_DEPTH_STENCIL_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
 
 template<ViewTypes type>
 struct ResourceView : DescriptorAllocation
 {
-    static std::unique_ptr<ResourceView<type>> Create(ID3D12Device* device, typename ResourceViewToDesc<type> descs)
+    static std::unique_ptr<ResourceView<type>> Create(typename ResourceViewToDesc<type> descs)
     {
-		return Create(device, std::span{ &descs, 1 });
+		return Create(std::span{ &descs, 1 });
 	}
-    static std::unique_ptr<ResourceView<type>> Create(ID3D12Device* device, std::span<typename ResourceViewToDesc<type>> descs);
+    static std::unique_ptr<ResourceView<type>> Create(std::span<typename ResourceViewToDesc<type>> descs);
 };
 
 using ShaderResourceView = ResourceView<ViewTypes::ShaderResourceView>;
@@ -275,6 +275,18 @@ using ConstantBufferView = ResourceView<ViewTypes::ConstantBufferView>;
 using Sampler = ResourceView<ViewTypes::Sampler>;
 using RenderTargetView = ResourceView<ViewTypes::RenderTargetView>;
 using DepthStencilView = ResourceView<ViewTypes::DepthStencilView>;
+
+struct Buffer
+{
+	static std::unique_ptr<Buffer> Create(ID3D12Device* device, size_t size, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initialState);
+    
+	ComPtr<ID3D12Resource> Resource;
+	size_t Size;
+	D3D12_HEAP_TYPE HeapType;
+	D3D12_RESOURCE_FLAGS Flags;
+	D3D12_RESOURCE_STATES InitialState;
+	std::unique_ptr<ConstantBufferView> CBV;
+};
 
 
 struct VertexData
@@ -313,7 +325,7 @@ private:
 
 struct D3D12Texture
 {
-	static std::unique_ptr<D3D12Texture> Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height);
+	static std::unique_ptr<D3D12Texture> Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height, size_t mipLevels);
 
 	ComPtr<ID3D12Resource> Resource;
 	std::unique_ptr<ShaderResourceView> SRV;

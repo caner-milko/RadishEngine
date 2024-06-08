@@ -16,7 +16,7 @@ struct ShaderManager : Singleton<ShaderManager>
 {
 	ShaderManager();
 	
-	Shader* CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint = L"main", std::span<std::wstring_view> includeFolders = {});
+	Shader* CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint = L"main", std::span<const std::wstring_view> includeFolders = {});
 
 	std::unordered_map<std::wstring, std::unique_ptr<Shader>> LoadedShaders;
 
