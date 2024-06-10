@@ -7,10 +7,8 @@
 #include <dxcapi.h>
 #include <d3d12shader.h>
 
-namespace dxpg::dx12
+namespace dxpg
 {
-
-
 
 struct ShaderManager : Singleton<ShaderManager>
 {

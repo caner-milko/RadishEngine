@@ -15,7 +15,7 @@ struct ShaderMaterialInfo
 bool StaticMeshPipeline::Setup(ID3D12Device2* dev)
 {
 	// Create Root Signature
-	dx12::RootSignatureBuilder builder{};
+	RootSignatureBuilder builder{};
 
 	std::vector< CD3DX12_ROOT_PARAMETER1> rootParams;
 	builder.AddConstants("ModelViewProjectionCB", sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
@@ -41,7 +41,7 @@ bool StaticMeshPipeline::Setup(ID3D12Device2* dev)
 
 	RootSignature = builder.Build("StaticMeshRS", dev, rootSignatureFlags);
 
-	struct PipelineStateStream : dx12::PipelineStateStreamBase
+	struct PipelineStateStream : PipelineStateStreamBase
 	{
 		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
 		CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
@@ -61,8 +61,8 @@ bool StaticMeshPipeline::Setup(ID3D12Device2* dev)
 	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-	auto* vertexShader = dx12::ShaderManager::Get().CompileShader(L"Triangle.vs", DXPG_SHADERS_DIR L"Vertex/Triangle.vs.hlsl", dx12::ShaderType::Vertex);
-	auto* pixelShader = dx12::ShaderManager::Get().CompileShader(L"Triangle.ps", DXPG_SHADERS_DIR L"Pixel/Triangle.ps.hlsl", dx12::ShaderType::Pixel);
+	auto* vertexShader = ShaderManager::Get().CompileShader(L"Triangle.vs", DXPG_SHADERS_DIR L"Vertex/Triangle.vs.hlsl", ShaderType::Vertex);
+	auto* pixelShader = ShaderManager::Get().CompileShader(L"Triangle.ps", DXPG_SHADERS_DIR L"Pixel/Triangle.ps.hlsl", ShaderType::Pixel);
 
 	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
@@ -75,7 +75,7 @@ bool StaticMeshPipeline::Setup(ID3D12Device2* dev)
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	PipelineState = dx12::PipelineState::Create("StaticMeshPipeline", dev, pipelineStateStream, &RootSignature);
+	PipelineState = PipelineState::Create("StaticMeshPipeline", dev, pipelineStateStream, &RootSignature);
 	return true;
 }
 

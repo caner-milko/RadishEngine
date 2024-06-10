@@ -4,7 +4,7 @@
 
 #include "RootSignature.h"
 
-namespace dxpg::dx12
+namespace dxpg
 {
 
 struct PipelineStateStreamBase

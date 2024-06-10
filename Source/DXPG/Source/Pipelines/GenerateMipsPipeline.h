@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DXPGCommon.h"
+
 #include "RootSignature.h"
 #include "PipelineState.h"
 
@@ -13,14 +15,14 @@ struct GenerateMipsPipeline
 {
 	bool Setup(ID3D12Device2* dev);
 
-	void GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, ID3D12Resource* src, ID3D12Resource** outConstantBuffer, uint32_t width, uint32_t height, uint32_t arraySize = 1);
+	void GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, struct DXTexture& texture, uint32_t width, uint32_t height, uint32_t arraySize = 1);
 
 	ID3D12Device2* Device = nullptr;
-	dx12::RootSignature RootSignature;
-	dx12::PipelineState PipelineState;
+	RootSignature RootSignature;
+	PipelineState PipelineState;
 
-	ComPtr<ID3D12Resource> GlobalCounterBuffer;
-	std::unique_ptr<dx12::UnorderedAccessView> GlobalCounterUAV;
+	std::unique_ptr<DXBuffer> GlobalCounterBuffer;
+	std::unique_ptr<UnorderedAccessView> GlobalCounterUAV;
 };
 
 }

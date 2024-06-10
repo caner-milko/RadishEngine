@@ -20,10 +20,12 @@ struct FrameContext
     bool Ready = false;
     ComPtr<ID3D12CommandAllocator> CommandAllocator;
     UINT64                  FenceValue;
-    std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, dx12::DescriptorHeapPage*> GPUHeapPages = {};
-    std::unordered_map<dx12::DescriptorAllocation*, std::unique_ptr<dx12::DescriptorAllocation>> CPUViewsToGPUViews = {};
+    std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, DescriptorHeapPage*> GPUHeapPages = {};
+    std::unordered_map<DescriptorAllocation*, std::unique_ptr<DescriptorAllocation>> CPUViewsToGPUViews = {};
 
-    dx12::DescriptorAllocation* GetGPUAllocation(dx12::DescriptorAllocation* cpuAllocation)
+	std::vector<ComPtr<ID3D12Resource>> IntermediateResources;
+
+    DescriptorAllocation* GetGPUAllocation(DescriptorAllocation* cpuAllocation)
     {
         assert(cpuAllocation);
         auto it = CPUViewsToGPUViews.find(cpuAllocation);

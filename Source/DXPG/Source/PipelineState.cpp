@@ -2,10 +2,10 @@
 
 #include "DXPGCommon.h"
 
-namespace dxpg::dx12
+namespace dxpg
 {
 
-PipelineState PipelineState::Create(std::string_view name, ID3D12Device2* device, D3D12_PIPELINE_STATE_STREAM_DESC const& pssd, dx12::RootSignature* rs)
+PipelineState PipelineState::Create(std::string_view name, ID3D12Device2* device, D3D12_PIPELINE_STATE_STREAM_DESC const& pssd, dxpg::RootSignature* rs)
 {
 	PipelineState ps{};
 	ps.Name = name;

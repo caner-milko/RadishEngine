@@ -1,7 +1,7 @@
 #include "RootSignature.h"
 
 #include "DXPGCommon.h"
-namespace dxpg::dx12
+namespace dxpg
 {
 
 RootSignatureBuilder& RootSignatureBuilder::AddDescriptorTable(std::string_view name, std::span<const CD3DX12_DESCRIPTOR_RANGE1> ranges, D3D12_SHADER_VISIBILITY shaderVisibility)

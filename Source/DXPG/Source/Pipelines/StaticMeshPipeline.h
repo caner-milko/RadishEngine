@@ -14,8 +14,8 @@ struct StaticMeshPipeline
 	
 	bool Run(ID3D12GraphicsCommandList* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx);
 
-	dx12::RootSignature RootSignature;
-	dx12::PipelineState PipelineState;
+	RootSignature RootSignature;
+	PipelineState PipelineState;
 };
 
 }

@@ -2,7 +2,7 @@
 
 #include "DXHelpers.h"
 
-namespace dxpg::dx12
+namespace dxpg
 {
 enum class ShaderType {
 	Vertex,

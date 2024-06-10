@@ -3,8 +3,22 @@
 #include <string>
 #include <locale>
 #include <codecvt>
+#include <memory>
+#include <cassert>
+
 namespace dxpg
 {
+
+//Forward declarations
+struct DXResource;
+struct DXTexture;
+struct DXBuffer;
+struct DXPipelineState;
+struct DXRootSignature;
+struct DXDescriptorHeap;
+
+
+
 inline std::wstring s2ws(const std::string& str)
 {
     using convert_typeX = std::codecvt_utf8<wchar_t>;
@@ -48,4 +62,9 @@ struct Singleton
 
 	static std::unique_ptr<T> Instance;
 };
+
 }
+
+#define DXPG_ID_STRUCT_U32(name_space, name) \
+namespace name_space { struct name { uint32_t Id; bool operator==(name const& other) const { return Id == other.Id;}};} \
+namespace std { template<> struct hash<name_space::name> { size_t operator()(name_space::name const& id) const { return hash<uint32_t>()(id.Id); }}; }

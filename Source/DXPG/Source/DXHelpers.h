@@ -35,7 +35,7 @@ inline void ThrowIfFailed(HRESULT hr)
     }
 }
 
-namespace dxpg::dx12
+namespace dxpg
 {
 struct DescriptorHeap
 {
@@ -55,19 +55,29 @@ struct DescriptorHeap
         assert(GetSize() >= Top);
         return old;
     }
-    D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(size_t index)
+    inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(size_t index)
     {
         D3D12_CPU_DESCRIPTOR_HANDLE handle = Heap->GetCPUDescriptorHandleForHeapStart();
         handle.ptr += index * Increment;
         return handle;
     }
-    D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(size_t index)
+    inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(size_t index)
     {
         D3D12_GPU_DESCRIPTOR_HANDLE handle = Heap->GetGPUDescriptorHandleForHeapStart();
         handle.ptr += index * Increment;
         return handle;
     }
     size_t GetSize() const { return Desc.NumDescriptors; }
+};
+
+struct DescriptorAllocationView
+{
+    struct DescriptorAllocation* Base;
+    size_t Offset;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle();
+
+    D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle();
 };
 
 struct DescriptorAllocation
@@ -79,17 +89,33 @@ struct DescriptorAllocation
 	size_t Index;
 	size_t Size;
 
-    D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(size_t offset = 0)
+    inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(size_t offset = 0)
 	{
 		return Heap->GetCPUHandle(Index + offset);
 	}
-	D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(size_t offset = 0)
+	inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(size_t offset = 0)
 	{
 		return Heap->GetGPUHandle(Index + offset);
 	}
+
+	inline DescriptorAllocationView GetView(size_t offset = 0)
+	{
+		return { this, offset };
+	}
+
 private:
     DescriptorAllocation() = default;
 };
+
+inline D3D12_CPU_DESCRIPTOR_HANDLE DescriptorAllocationView::GetCPUHandle()
+{
+	return Base->GetCPUHandle(Offset);
+}
+
+inline D3D12_GPU_DESCRIPTOR_HANDLE DescriptorAllocationView::GetGPUHandle()
+{
+	return Base->GetGPUHandle(Offset);
+}
 
 struct DescriptorHeapPage
 {
@@ -276,67 +302,6 @@ using Sampler = ResourceView<ViewTypes::Sampler>;
 using RenderTargetView = ResourceView<ViewTypes::RenderTargetView>;
 using DepthStencilView = ResourceView<ViewTypes::DepthStencilView>;
 
-struct Buffer
-{
-	static std::unique_ptr<Buffer> Create(ID3D12Device* device, size_t size, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initialState);
-    
-	ComPtr<ID3D12Resource> Resource;
-	size_t Size;
-	D3D12_HEAP_TYPE HeapType;
-	D3D12_RESOURCE_FLAGS Flags;
-	D3D12_RESOURCE_STATES InitialState;
-	std::unique_ptr<ConstantBufferView> CBV;
-};
 
-
-struct VertexData
-{
-    static std::unique_ptr<VertexData> Create(ID3D12Device* device, size_t positionsCount, size_t normalsCount, size_t texCoordsCount);
-    ComPtr<ID3D12Heap> Heap;
-    ComPtr<ID3D12Resource> PositionsBuffer;
-    ComPtr<ID3D12Resource> NormalsBuffer;
-    ComPtr<ID3D12Resource> TexCoordsBuffer;
-    
-    std::unique_ptr<ShaderResourceView> VertexSRV;
-};
-
-struct D3D12Mesh
-{
-    static std::unique_ptr<D3D12Mesh> Create(ID3D12Device* device, VertexData* vertexData, size_t indicesCount, size_t indexSize);
-    VertexData* VertexData = nullptr;
-    ComPtr<ID3D12Resource> Indices;
-    D3D12_VERTEX_BUFFER_VIEW IndicesView{};
-    size_t IndicesCount = 0;
-
-    Vector4 Position = { 0, 0, 0, 1 };
-    Vector4 Rotation = { 0, 0, 0, 0 };
-    Vector4 Scale = { 1, 1, 1, 0 };
-
-    Matrix4x4 GetWorldMatrix()
-    {
-        Matrix4x4 translation = DirectX::XMMatrixTranslationFromVector(Position);
-        Matrix4x4 rotation = DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
-        Matrix4x4 scale = DirectX::XMMatrixScalingFromVector(Scale);
-        return scale * rotation * translation;
-    }
-private:
-    D3D12Mesh() = default;
-};
-
-struct D3D12Texture
-{
-	static std::unique_ptr<D3D12Texture> Create(ID3D12Device* device, DXGI_FORMAT format, size_t width, size_t height, size_t mipLevels);
-
-	ComPtr<ID3D12Resource> Resource;
-	std::unique_ptr<ShaderResourceView> SRV;
-private:
-	D3D12Texture() = default;
-};
-
-struct D3D12Material
-{
-    ShaderResourceView* DiffuseSRV = nullptr;
-	ShaderResourceView* AlphaSRV = nullptr;
-};
 
 }

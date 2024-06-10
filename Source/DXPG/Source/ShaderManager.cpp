@@ -5,11 +5,7 @@
 
 namespace dxpg
 {
-	std::unique_ptr<dx12::ShaderManager> dx12::ShaderManager::Instance = nullptr;
-}
-
-namespace dxpg::dx12
-{
+std::unique_ptr<ShaderManager> ShaderManager::Instance = nullptr;
 ShaderManager::ShaderManager()
 {
 	ThrowIfFailed(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&Utils)));

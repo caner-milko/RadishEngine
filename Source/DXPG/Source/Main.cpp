@@ -14,16 +14,16 @@
 #include <filesystem>
 #include <variant>
 
-#include "DXHelpers.h"
+#include "DXMesh.h"
+#include "DXResource.h"
 #include <Shlwapi.h>
 
 #include <tiny_obj_loader.h>
-#include <stb_image.h>
 
 #include "RendererCommon.h"
 #include "Pipelines/StaticMeshPipeline.h"
-#include "Pipelines/GenerateMipsPipeline.h"
 #include "ShaderManager.h"
+#include "TextureManager.h"
 
 namespace dxpg
 {
@@ -44,8 +44,8 @@ static UINT64                       g_fenceLastSignaledValue = 0;
 static ComPtr<IDXGISwapChain3> g_pSwapChain = nullptr;
 static HANDLE                       g_hSwapChainWaitableObject = nullptr;
 static ComPtr<ID3D12Resource> g_mainRenderTargetResource[NUM_BACK_BUFFERS] = {};
-static std::unique_ptr<dx12::RenderTargetView> g_mainRTV[NUM_BACK_BUFFERS] = {};
-static std::unique_ptr<dx12::RenderTargetView> g_mainRTVSRGB[NUM_BACK_BUFFERS] = {};
+static std::unique_ptr<RenderTargetView> g_mainRTV[NUM_BACK_BUFFERS] = {};
+static std::unique_ptr<RenderTargetView> g_mainRTVSRGB[NUM_BACK_BUFFERS] = {};
 
 static FrameContext FrameIndependentCtx = {};
 
@@ -57,14 +57,14 @@ struct Material
 
     Vector3 DiffuseColor = { 1, 1, 1 };
 
-    std::shared_ptr<dx12::D3D12Material> GPUMaterial;
+    std::shared_ptr<D3D12Material> GPUMaterial;
 };
 
 struct MeshAsset
 {
 	std::vector<tinyobj::index_t> Indicies;
     std::string Name;
-    std::shared_ptr<dxpg::dx12::D3D12Mesh> GPUMesh;
+    std::shared_ptr<dxpg::D3D12Mesh> GPUMesh;
 	std::string Material;
 };
 
@@ -73,21 +73,19 @@ struct MeshGroup
     std::vector<float> Positions;
     std::vector<float> Normals;
     std::vector<float> TexCoords;
-    std::unique_ptr<dx12::VertexData> GPUVertexData;
+    std::unique_ptr<VertexData> GPUVertexData;
     std::vector<MeshAsset> Meshes;
     std::unordered_map<std::string, Material> Materials;
 };
 
 std::vector<MeshGroup> g_LoadedMeshGroups;
-std::unordered_map<std::string, std::unique_ptr<dx12::D3D12Texture>> g_LoadedTextures;
 
 static HWND g_hWnd = nullptr;
 
 static ComPtr<ID3D12Resource> g_DepthBuffer;
-static std::unique_ptr<dx12::DepthStencilView> g_DSV;
+static std::unique_ptr<DepthStencilView> g_DSV;
 
 StaticMeshPipeline g_StaticMeshPipeline;
-GenerateMipsPipeline g_GenerateMipsPipeline;
 
 static int g_Width = 1280;
 static int g_Height = 720;
@@ -236,8 +234,8 @@ void CreateConsole()
 
 void BeginFrame(FrameContext& frameCtx)
 {
-    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = dx12::g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
-    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = dx12::g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
+    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
+    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
     g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
     frameCtx.Ready = true;
 }
@@ -251,10 +249,11 @@ void ClearFrame(FrameContext& frameCtx)
 {
     for (auto& [type, heapPage] : frameCtx.GPUHeapPages)
     {
-        dx12::g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
+        g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
     }
 	frameCtx.GPUHeapPages.clear();
     frameCtx.CommandAllocator->Reset();
+	frameCtx.IntermediateResources.clear();
 }
 
 void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
@@ -340,7 +339,7 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     g_pd3dCommandList->ClearRenderTargetView(g_mainRTVSRGB[backBufferIdx]->GetCPUHandle(), clear_color_with_alpha, 0, nullptr);
     g_pd3dCommandList->ClearDepthStencilView(g_DSV->GetCPUHandle(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-    auto heaps = dx12::g_GPUDescriptorAllocator->GetHeaps();
+    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
 
     g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 
@@ -370,7 +369,7 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
             if (mat.GPUMaterial->DiffuseSRV)
             {
                 meshView.UseDiffuseTexture = true;
-                meshView.DiffuseSRV = frameCtx->GetGPUAllocation(mat.GPUMaterial->DiffuseSRV)->GetGPUHandle();
+                meshView.DiffuseSRV = frameCtx->GetGPUAllocation(mat.GPUMaterial->DiffuseSRV.get())->GetGPUHandle();
             }
             meshView.DiffuseColor = mat.DiffuseColor;
         }
@@ -434,19 +433,21 @@ bool CreateDeviceD3D()
     }
 #endif
 
-    dx12::ShaderManager::Create();
-
+    ShaderManager::Create();
     {
-        dx12::g_CPUDescriptorAllocator = dx12::CPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
-		dx12::g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1024);
-		dx12::g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024);
-		dx12::g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1024);
-		dx12::g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
+        g_CPUDescriptorAllocator = CPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
+		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1024);
+		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024);
+		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1024);
+		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
 
-        dx12::g_GPUDescriptorAllocator = dx12::GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
-		dx12::g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048*4, NUM_BACK_BUFFERS, 1);
-		dx12::g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024, NUM_BACK_BUFFERS);
+        g_GPUDescriptorAllocator = GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
+		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048*4, NUM_BACK_BUFFERS, 1);
+		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024, NUM_BACK_BUFFERS);
     }
+
+    TextureManager::Create();
+    TextureManager::Get().Init(g_pd3dDevice.Get());
 
     {
         D3D12_COMMAND_QUEUE_DESC desc = {};
@@ -484,7 +485,7 @@ bool CreateDeviceD3D()
 void CleanupDeviceD3D()
 {
     g_LoadedMeshGroups.clear();
-    g_LoadedTextures.clear();
+    TextureManager::Destroy();
     CleanupRenderTarget();
     if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain = nullptr; }
     if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
@@ -493,14 +494,13 @@ void CleanupDeviceD3D()
     FrameIndependentCtx.CommandAllocator = nullptr;
     g_DepthBuffer = nullptr;
     g_StaticMeshPipeline = {};
-	g_GenerateMipsPipeline = {};
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_fence = nullptr;
-    dx12::g_CPUDescriptorAllocator = nullptr;
-    dx12::g_GPUDescriptorAllocator = nullptr;
+    g_CPUDescriptorAllocator = nullptr;
+    g_GPUDescriptorAllocator = nullptr;
     if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
-	dx12::ShaderManager::Destroy();
+	ShaderManager::Destroy();
     g_pd3dDevice = nullptr;
 
 
@@ -547,7 +547,7 @@ void CreateSwapchainRTVDSV(bool resized)
         for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
             g_mainRenderTargetResource[i] = nullptr;
 
-        dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
+        g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
         
         g_DepthBuffer = nullptr;
         DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
@@ -556,7 +556,7 @@ void CreateSwapchainRTVDSV(bool resized)
             swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
     }
 
-    dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
+    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
     {
         g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&g_mainRenderTargetResource[i]));
@@ -564,10 +564,10 @@ void CreateSwapchainRTVDSV(bool resized)
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 		rtvDesc.Texture2D.MipSlice = 0;
-        g_mainRTV[i] = dx12::RenderTargetView::Create({ dx12::ResourceViewToDesc<dx12::ViewTypes::RenderTargetView>{.Desc = &rtvDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
+        g_mainRTV[i] = RenderTargetView::Create({ ResourceViewToDesc<ViewTypes::RenderTargetView>{.Desc = &rtvDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
 		auto srgbDesc = rtvDesc;
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		g_mainRTVSRGB[i] = dx12::RenderTargetView::Create({ dx12::ResourceViewToDesc<dx12::ViewTypes::RenderTargetView>{.Desc = &srgbDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
+		g_mainRTVSRGB[i] = RenderTargetView::Create({ ResourceViewToDesc<ViewTypes::RenderTargetView>{.Desc = &srgbDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
     }
     // Create the depth buffer
     CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, g_Width, g_Height);
@@ -588,13 +588,13 @@ void CreateSwapchainRTVDSV(bool resized)
         &depthOptimizedClearValue,
         IID_PPV_ARGS(&g_DepthBuffer));
 
-    dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
+    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDesc = {};
     dsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
     dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvViewDesc.Flags = D3D12_DSV_FLAG_NONE;
     dsvViewDesc.Texture2D.MipSlice = 0;
-    g_DSV = dx12::DepthStencilView::Create({ dx12::ResourceViewToDesc<dx12::ViewTypes::DepthStencilView>{.Desc = &dsvViewDesc, .Resource = g_DepthBuffer.Get()} });
+    g_DSV = DepthStencilView::Create({ ResourceViewToDesc<ViewTypes::DepthStencilView>{.Desc = &dsvViewDesc, .Resource = g_DepthBuffer.Get()} });
 }
 
 void CleanupRenderTarget()
@@ -605,8 +605,8 @@ void CleanupRenderTarget()
         g_mainRenderTargetResource[i] = nullptr;
     g_DepthBuffer = nullptr;
 
-    dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
-    dx12::g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
+    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
+    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
 }
 
 void WaitForLastSubmittedFrame()
@@ -655,13 +655,12 @@ FrameContext* WaitForNextFrameResources()
 void LoadSceneData()
 {
 	g_StaticMeshPipeline.Setup(g_pd3dDevice.Get());
-	g_GenerateMipsPipeline.Setup(g_pd3dDevice.Get());
 
     ClearFrame(FrameIndependentCtx);
     BeginFrame(FrameIndependentCtx);
 
     auto group = LoadObjFile(DXPG_SPONZA_DIR "sponza.obj");
-    auto& vertexData = (group->GPUVertexData = dx12::VertexData::Create(g_pd3dDevice.Get(), group->Positions.size() / 3, group->Normals.size() / 3, group->TexCoords.size() / 2));
+    auto& vertexData = (group->GPUVertexData = VertexData::Create(g_pd3dDevice.Get(), group->Positions.size() / 3, group->Normals.size() / 3, group->TexCoords.size() / 2));
 
     const auto createAndUploadBuf = [](ComPtr<ID3D12Resource>& buf, ComPtr<ID3D12Resource>& uploadBuf, D3D12_HEAP_PROPERTIES heapProps, void* data, size_t size)
         {
@@ -684,65 +683,41 @@ void LoadSceneData()
 
     for (auto& mesh : group->Meshes)
     {
-        mesh.GPUMesh = dx12::D3D12Mesh::Create(g_pd3dDevice.Get(), group->GPUVertexData.get(), mesh.Indicies.size(), sizeof(tinyobj::index_t));
+        mesh.GPUMesh = D3D12Mesh::Create(g_pd3dDevice.Get(), group->GPUVertexData.get(), mesh.Indicies.size(), sizeof(tinyobj::index_t));
         UploadToBuffer(g_pd3dCommandList.Get(), mesh.GPUMesh->Indices.Get(), &intermediateBuffers.emplace_back(), mesh.Indicies.size() * sizeof(tinyobj::index_t), mesh.Indicies.data());
     }
 
-    auto heaps = dx12::g_GPUDescriptorAllocator->GetHeaps();
+    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
 
     g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 
     for (auto& [_, mat] : group->Materials)
     {
-        auto gpuMat = mat.GPUMaterial = std::make_shared<dx12::D3D12Material>();
+        auto gpuMat = mat.GPUMaterial = std::make_shared<D3D12Material>();
 
-        constexpr auto loadTex = [](FrameContext& frameCtx, dx12::ShaderResourceView*& srvToFill, std::optional<std::string> const& textureName, bool alphaOnly, decltype(intermediateBuffers)& intermediateBufs)
+        constexpr auto loadTex = [](FrameContext& frameCtx, std::unique_ptr<ShaderResourceView>& srvToFill, std::optional<std::string> const& textureName, bool alphaOnly)
             {
                 if (textureName)
                 {
-                    if (auto it = g_LoadedTextures.find(*textureName); it != g_LoadedTextures.end())
-                    {
-                        srvToFill = it->second->SRV.get();
-                    }
-                    else
-                    {
-                        // Load the texture
-                        int width, height, channels;
-                        stbi_set_flip_vertically_on_load(true);
-                        auto data = stbi_load(textureName->c_str(), &width, &height, &channels, alphaOnly ? STBI_grey : STBI_rgb_alpha);
-                        if (!data)
-                            return;
-
-                        // Create the texture
-                        auto& tex = g_LoadedTextures[*textureName] = dx12::D3D12Texture::Create(g_pd3dDevice.Get(), alphaOnly ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, width, height, 0);
-
-						tex->Resource->SetName(std::wstring(textureName->begin(), textureName->end()).c_str());
-
-                        //Copy the texture data
-                        auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-                        auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width * height * (alphaOnly ? 1 : 4));
-
-                        UploadToTexture(g_pd3dCommandList.Get(), tex->Resource.Get(), &intermediateBufs.emplace_back(), width, height, 4, data);
-
-                        // transition to shader resource
-                        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(tex->Resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                        g_pd3dCommandList->ResourceBarrier(1, &barrier);
-
-                        g_GenerateMipsPipeline.GenerateMips(frameCtx, g_pd3dCommandList.Get(), tex->Resource.Get(), &intermediateBufs.emplace_back(), width, height, 1);
-
-                        stbi_image_free(data);
-
-                        srvToFill = tex->SRV.get();
-                    }
+                    auto* tex = TextureManager::Get().LoadTexture(std::filesystem::path(*textureName), {.AlphaOnly = alphaOnly}, frameCtx, g_pd3dCommandList.Get(), true);
+                    if (!tex)
+                        return;
+                    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+					srvDesc.Format = alphaOnly ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+					srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+					srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                    srvDesc.Texture2D.MipLevels = -1;
+                    srvToFill = tex->CreateSRV(&srvDesc);
                 }
             };
 
-		loadTex(FrameIndependentCtx, gpuMat->DiffuseSRV, mat.DiffuseTextureName, false, intermediateBuffers);
-		loadTex(FrameIndependentCtx, gpuMat->AlphaSRV, mat.AlphaTextureName, true, intermediateBuffers);
+		loadTex(FrameIndependentCtx, gpuMat->DiffuseSRV, mat.DiffuseTextureName, false);
+		loadTex(FrameIndependentCtx, gpuMat->AlphaSRV, mat.AlphaTextureName, true);
     }
 
 
     //Execute and flush
+    EndFrame(FrameIndependentCtx);
     g_pd3dCommandList->Close();
     ID3D12CommandList* ppCommandLists[] = { g_pd3dCommandList.Get() };
     g_pd3dCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
@@ -754,7 +729,6 @@ void LoadSceneData()
     fence->SetEventOnCompletion(1, fenceEvent);
     WaitForSingleObject(fenceEvent, INFINITE);
 	CloseHandle(fenceEvent);
-    EndFrame(FrameIndependentCtx);
     ClearFrame(FrameIndependentCtx);
 }
 
@@ -913,7 +887,7 @@ int main(int argv, char** args)
 
     // Setup Platform/Renderer backends
     ImGui_ImplSDL2_InitForD3D(window);
-    auto fontAllocation = dx12::g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+    auto fontAllocation = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
     ImGui_ImplDX12_Init(g_pd3dDevice.Get(), NUM_FRAMES_IN_FLIGHT,
         DXGI_FORMAT_R8G8B8A8_UNORM, fontAllocation->Heap->Heap.Get(),
         fontAllocation->GetCPUHandle(),

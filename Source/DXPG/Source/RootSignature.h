@@ -3,7 +3,7 @@
 #include "DXHelpers.h"
 #include "Shader.h"
 
-namespace dxpg::dx12
+namespace dxpg
 {
 struct RootSignature
 {
