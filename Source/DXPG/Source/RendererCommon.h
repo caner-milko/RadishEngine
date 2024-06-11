@@ -35,28 +35,5 @@ struct FrameContext
     }
 };
 
-struct MeshGroupView
-{
-    struct MeshView
-    {
-        D3D12_VERTEX_BUFFER_VIEW IndexBufferView;
-        size_t IndexCount;
-        Matrix4x4 ModelMatrix;
-
-        bool UseDiffuseTexture = false;
-        Vector3 DiffuseColor{};
-        D3D12_GPU_DESCRIPTOR_HANDLE DiffuseSRV{};
-
-        bool UseAlphaTexture = false;
-        D3D12_GPU_DESCRIPTOR_HANDLE AlphaSRV{};
-    };
-    D3D12_GPU_DESCRIPTOR_HANDLE VertexSRV;
-	std::vector<MeshView> Meshes;
-};
-
-struct SceneDataView
-{
-    std::vector<MeshGroupView> MeshGroups;
-};
 
 }

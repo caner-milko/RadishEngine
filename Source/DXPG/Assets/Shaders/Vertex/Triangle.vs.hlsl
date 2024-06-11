@@ -1,6 +1,7 @@
 struct ModelViewProjection
 {
     matrix MVP;
+    matrix Normal;
 };
 
 ConstantBuffer<ModelViewProjection> ModelViewProjectionCB : register(b0);
@@ -27,7 +28,7 @@ VSOut main(VSIn IN)
 {
     VSOut output;
     output.Pos = mul(ModelViewProjectionCB.MVP, float4(Positions[IN.PosIndex], 1.0));
-    output.Normal = mul(ModelViewProjectionCB.MVP, float4(Normals[IN.NormalIndex], 0.0)).xyz;
+    output.Normal = mul(ModelViewProjectionCB.Normal, float4(Normals[IN.NormalIndex], 0.0)).xyz;
     output.TexCoord = TexCoords[IN.TexCoordIndex];
     return output;
 }

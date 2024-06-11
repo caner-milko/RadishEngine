@@ -27,7 +27,7 @@ bool GenerateMipsPipeline::Setup(ID3D12Device2* dev)
 	Device = dev;
 	auto* shader = ShaderManager::Get().CompileShader(L"SPDImpl.cs", DXPG_SHADERS_DIR L"Compute/SPDImpl.cs.hlsl", ShaderType::Compute, L"main", { {FIDELITYFX_SPD_SHADER_INCLUDE_DIR L""} });
 	RootSignatureBuilder rsBuilder;
-	rsBuilder.AddConstantBufferView("spdConstants", 0, D3D12_SHADER_VISIBILITY_ALL);
+	rsBuilder.AddConstantBufferView("spdConstants", { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_ALL });
 	rsBuilder.AddDescriptorTable("spdGlobalAtomic", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1)}});
 	rsBuilder.AddDescriptorTable("imgDst6", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2)} });
 	rsBuilder.AddDescriptorTable("imgDst", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, SPD_MAX_MIP_LEVELS + 1, 3)} });
@@ -113,7 +113,7 @@ void GenerateMipsPipeline::GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCo
 	D3D12_WRITEBUFFERIMMEDIATE_PARAMETER pParams[6];
 	for (int i = 0; i < 6; i++)
 		pParams[i] = { GlobalCounterBuffer->GPUAddress(sizeof(uint32_t) * i), 0 };
-	cmdList->WriteBufferImmediate(6, pParams, NULL); // 6 counter per slice, each initialized to 0
+	cmdList->WriteBufferImmediate(6, pParams, nullptr); // 6 counter per slice, each initialized to 0
 
 	D3D12_RESOURCE_BARRIER resourceBarriers[2] = {
 		GlobalCounterBuffer->Transition(D3D12_RESOURCE_STATE_UNORDERED_ACCESS),

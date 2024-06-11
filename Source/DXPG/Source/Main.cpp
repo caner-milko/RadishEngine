@@ -141,8 +141,8 @@ struct Camera
 {
     float MoveSpeed = 1000.0f;
     float RotSpeed = 2.0f;
-    Vector4 Position = { 0, 0, -10, 1 };
-    Vector4 Rotation = { 0, 0, 0, 0 };
+    Vector4 Position = { 600, 250, -150, 1 };
+    Vector4 Rotation = { 0, -3.f * XM_PIDIV4/2.f, 0, 0 };
     float FoV = 45.0f;
     
 	Matrix4x4 GetRotationMatrix()
@@ -188,6 +188,41 @@ struct Camera
     }
 
 } g_Cam = {};
+
+struct DirectionalLight
+{
+	// In degrees
+	float Yaw = 300.0f;
+	float Pitch = 45.0f;
+    Vector3 Color = { 1.0f, 1.0f, 1.0f };
+    float Intensity = 1.0f;
+	Vector3 AmbientColor = { 0.1f, 0.1f, 0.1f };
+
+    Vector3 GetDirection()
+    {
+		float yawRad = XMConvertToRadians(Yaw);
+		float pitchRad = XMConvertToRadians(Pitch);
+        return { cos(yawRad) * cos(pitchRad), sin(pitchRad), sin(yawRad) * cos(pitchRad) };
+    }
+
+	LightData ToLightData()
+	{
+		return LightData
+		{
+			.Directional =
+				{
+					.Direction = GetDirection()
+				},
+			.Color = Color,
+			.Intensity = Intensity,
+			.AmbientColor = AmbientColor
+		};
+	}
+
+} g_DirectionalLight = {};
+
+
+
 // Forward declarations of helper functions
 bool CreateDeviceD3D();
 void CleanupDeviceD3D();
@@ -262,25 +297,31 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
     ImGui::NewFrame();
 
     {
-        ImGui::Begin("Camera");                          // Create a window called "Hello, world!" and append into it.
+        ImGui::Begin("Scene");
+        //Camera
+        if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::InputFloat3("Position", &g_Cam.Position.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
+            ImGui::InputFloat3("Rotation", &g_Cam.Rotation.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
+            ImGui::InputFloat("FoV", &g_Cam.FoV, 0.1f, 1.0f, "%.3f", ImGuiInputTextFlags_ReadOnly);
 
-        ImGui::InputFloat3("Position", &g_Cam.Position.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputFloat3("Rotation", &g_Cam.Rotation.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputFloat("FoV", &g_Cam.FoV, 0.1f, 1.0f, "%.3f", ImGuiInputTextFlags_ReadOnly);
+            ImGui::SliderFloat("Move Speed", &g_Cam.MoveSpeed, 0.0f, 10000.0f);
+            ImGui::SliderFloat("Rotation Speed", &g_Cam.RotSpeed, 0.1f, 10.0f);
+        }
 
-        ImGui::SliderFloat("Move Speed", &g_Cam.MoveSpeed, 0.0f, 10000.0f);
-        ImGui::SliderFloat("Rotation Speed", &g_Cam.RotSpeed, 0.1f, 10.0f);
-        
-        ImGui::End();
-    }
+		//Light
+		if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::ColorEdit3("Color", &g_DirectionalLight.Color.x);
+			ImGui::SliderFloat("Intensity", &g_DirectionalLight.Intensity, 0.0f, 10.0f);
+			ImGui::ColorEdit3("Ambient Color", &g_DirectionalLight.AmbientColor.x);
 
-    // 3. Show another simple window.
-    if (showAnotherWindow)
-    {
-        ImGui::Begin("Another Window", &showAnotherWindow);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text("Hello from another window!");
-        if (ImGui::Button("Close Me"))
-            showAnotherWindow = false;
+			ImGui::SliderFloat("Yaw", &g_DirectionalLight.Yaw, 0.0f, 360.0f, "%.3f", ImGuiSliderFlags_NoInput);
+			ImGui::SliderFloat("Pitch", &g_DirectionalLight.Pitch, -90.0f, 90.0f, "%.3f", ImGuiSliderFlags_NoInput);
+			auto dir = g_DirectionalLight.GetDirection();
+			ImGui::SliderFloat3("Direction", &dir.x, -1.0f, 1.0f, "%.3f", ImGuiSliderFlags_NoInput);
+        }
+
         ImGui::End();
     }
 
@@ -351,7 +392,7 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 
     g_pd3dCommandList->OMSetRenderTargets(1, &rtvHandles, FALSE, &dsvHandle);
     
-    SceneDataView sceneDataView{};
+    SceneDataView sceneDataView{.Light = g_DirectionalLight.ToLightData()};
 
     for (auto& group : g_LoadedMeshGroups)
     {

@@ -20,7 +20,7 @@ struct DXResource
 	}
 
 protected:
-	DXResource(std::wstring name, ComPtr<ID3D12Resource> resource, D3D12_RESOURCE_STATES startState) noexcept : Resource(resource), State(startState) {}
+	DXResource(std::wstring name, ComPtr<ID3D12Resource> resource, D3D12_RESOURCE_STATES startState) noexcept : Resource(resource), State(startState) {if(Resource) Resource->SetName(name.c_str());}
 };
 
 struct DXTexture : DXResource

@@ -26,31 +26,31 @@ RootSignatureBuilder& RootSignatureBuilder::AddRootParameter(std::string_view na
     return *this;
 }
 
-RootSignatureBuilder& RootSignatureBuilder::AddConstants(std::string_view name, UINT num32BitValues, UINT shaderRegister, UINT registerSpace, D3D12_SHADER_VISIBILITY shaderVisibility)
+RootSignatureBuilder& RootSignatureBuilder::AddConstants(std::string_view name, UINT num32BitValues, RootParamDesc desc)
 {
 	CD3DX12_ROOT_PARAMETER1 parameter;
-	parameter.InitAsConstants(num32BitValues, shaderRegister, registerSpace, shaderVisibility);
+	parameter.InitAsConstants(num32BitValues, desc.ShaderRegister, desc.RegisterSpace, desc.Visibility);
 	return AddRootParameter(name, parameter);
 }
 
-RootSignatureBuilder& RootSignatureBuilder::AddConstantBufferView(std::string_view name, UINT shaderRegister, UINT registerSpace, D3D12_SHADER_VISIBILITY shaderVisibility)
+RootSignatureBuilder& RootSignatureBuilder::AddConstantBufferView(std::string_view name, RootParamDesc desc)
 {
 	CD3DX12_ROOT_PARAMETER1 parameter;
-	parameter.InitAsConstantBufferView(shaderRegister, registerSpace, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC, shaderVisibility);
+	parameter.InitAsConstantBufferView(desc.ShaderRegister, desc.RegisterSpace, desc.DescFlags, desc.Visibility);
 	return AddRootParameter(name, parameter);
 }
 
-RootSignatureBuilder& RootSignatureBuilder::AddShaderResourceView(std::string_view name, UINT shaderRegister, UINT registerSpace, D3D12_SHADER_VISIBILITY shaderVisibility)
+RootSignatureBuilder& RootSignatureBuilder::AddShaderResourceView(std::string_view name, RootParamDesc desc)
 {
 	CD3DX12_ROOT_PARAMETER1 parameter;
-	parameter.InitAsShaderResourceView(shaderRegister, registerSpace, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC, shaderVisibility);
+	parameter.InitAsShaderResourceView(desc.ShaderRegister, desc.RegisterSpace, desc.DescFlags, desc.Visibility);
 	return AddRootParameter(name, parameter);
 }
 
-RootSignatureBuilder& RootSignatureBuilder::AddUnorderedAccessView(std::string_view name, UINT shaderRegister, UINT registerSpace, D3D12_SHADER_VISIBILITY shaderVisibility)
+RootSignatureBuilder& RootSignatureBuilder::AddUnorderedAccessView(std::string_view name, RootParamDesc desc)
 {
 	CD3DX12_ROOT_PARAMETER1 parameter;
-	parameter.InitAsUnorderedAccessView(shaderRegister, registerSpace, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC, shaderVisibility);
+	parameter.InitAsUnorderedAccessView(desc.ShaderRegister, desc.RegisterSpace, desc.DescFlags, desc.Visibility);
 	return AddRootParameter(name, parameter);
 }
 

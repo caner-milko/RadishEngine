@@ -12,18 +12,24 @@ struct ShaderMaterialInfo
 	int UseAlphaTexture;
 };
 
+struct ModelViewProjectionCB
+{
+	Matrix4x4 ModelViewProjection;
+	Matrix4x4 NormalMatrix;
+};
+
 bool StaticMeshPipeline::Setup(ID3D12Device2* dev)
 {
 	// Create Root Signature
 	RootSignatureBuilder builder{};
 
 	std::vector< CD3DX12_ROOT_PARAMETER1> rootParams;
-	builder.AddConstants("ModelViewProjectionCB", sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+	builder.AddConstants("ModelViewProjectionCB", sizeof(ModelViewProjectionCB) / 4, { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_VERTEX });
 	builder.AddDescriptorTable("VertexSRV", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0) } }, D3D12_SHADER_VISIBILITY_VERTEX);
 	builder.AddDescriptorTable("DiffuseTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3) } }, D3D12_SHADER_VISIBILITY_PIXEL);
-	builder.AddDescriptorTable("AlphaTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4) } }, D3D12_SHADER_VISIBILITY_PIXEL);
-	builder.AddConstants("MaterialCB", sizeof(ShaderMaterialInfo) / 4, 1, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-
+	builder.AddDescriptorTable("AlphaTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4) } }, D3D12_SHADER_VISIBILITY_PIXEL );
+	builder.AddConstants("MaterialCB", sizeof(ShaderMaterialInfo) / 4, { .ShaderRegister = 1, .Visibility = D3D12_SHADER_VISIBILITY_PIXEL });
+	builder.AddConstantBufferView("LightCB", { .ShaderRegister = 2, .Visibility = D3D12_SHADER_VISIBILITY_PIXEL, .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC_WHILE_SET_AT_EXECUTE});
 
 	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -76,14 +82,34 @@ bool StaticMeshPipeline::Setup(ID3D12Device2* dev)
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
 	PipelineState = PipelineState::Create("StaticMeshPipeline", dev, pipelineStateStream, &RootSignature);
+
+	LightBuffer = std::make_unique<DXBuffer>(DXBuffer::Create(dev, L"LightBuffer", sizeof(LightData), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS));
+
 	return true;
 }
 
-bool StaticMeshPipeline::Run(ID3D12GraphicsCommandList* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
+bool StaticMeshPipeline::Run(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
 {
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	cmd->SetPipelineState(PipelineState.DXPipelineState.Get());
 	cmd->SetGraphicsRootSignature(RootSignature.DXSignature.Get());
+
+	auto resBar = LightBuffer->Transition(D3D12_RESOURCE_STATE_COPY_DEST);
+	cmd->ResourceBarrier(1, &resBar);
+	// Update Light Buffer
+	constexpr size_t paramCount = sizeof(LightData) / sizeof(UINT);
+	D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+	for (size_t i = 0; i < paramCount; i++)
+	{
+		params[i].Dest = LightBuffer->GPUAddress(i * sizeof(UINT));
+		params[i].Value = reinterpret_cast<const UINT*>(&scene.Light)[i];
+	}
+	cmd->WriteBufferImmediate(paramCount, params, nullptr);
+	resBar = LightBuffer->Transition(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	cmd->ResourceBarrier(1, &resBar);
+	cmd->SetGraphicsRootConstantBufferView(RootSignature.NameToParameterIndices["LightCB"], LightBuffer->GPUAddress());
+
+
 	for (auto& group : scene.MeshGroups)
 	{
 		cmd->SetGraphicsRootDescriptorTable(RootSignature.NameToParameterIndices["VertexSRV"], group.VertexSRV);
@@ -93,8 +119,10 @@ bool StaticMeshPipeline::Run(ID3D12GraphicsCommandList* cmd, ViewData const& vie
 		{
 			auto& mesh = group.Meshes[i];
 			cmd->IASetVertexBuffers(0, 1, &mesh.IndexBufferView);
-			DirectX::XMMATRIX mvpMatrix = XMMatrixMultiply(mesh.ModelMatrix, viewData.ViewProjection);
-			cmd->SetGraphicsRoot32BitConstants(RootSignature.NameToParameterIndices["ModelViewProjectionCB"], sizeof(Matrix4x4) / sizeof(uint32_t), &mvpMatrix, 0);
+			ModelViewProjectionCB mvp{};
+			mvp.ModelViewProjection = XMMatrixMultiply(mesh.ModelMatrix, viewData.ViewProjection);
+			mvp.NormalMatrix = DirectX::XMMatrixTranspose(DirectX::XMMatrixInverse(nullptr, mesh.ModelMatrix));
+			cmd->SetGraphicsRoot32BitConstants(RootSignature.NameToParameterIndices["ModelViewProjectionCB"], sizeof(ModelViewProjectionCB) / sizeof(uint32_t), &mvp, 0);
 
 			ShaderMaterialInfo matInfo{};
 
