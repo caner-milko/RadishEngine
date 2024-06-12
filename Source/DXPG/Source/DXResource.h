@@ -14,6 +14,7 @@ struct DXResource
 	// Remove this with multi threaded rendering
 	D3D12_RESOURCE_BARRIER Transition(D3D12_RESOURCE_STATES newState)
 	{
+		assert(State != newState && "Resource already in requested state");
 		CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(Resource.Get(), State, newState);
 		State = newState;
 		return barrier;

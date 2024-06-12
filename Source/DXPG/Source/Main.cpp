@@ -21,7 +21,7 @@
 #include <tiny_obj_loader.h>
 
 #include "RendererCommon.h"
-#include "Pipelines/StaticMeshPipeline.h"
+#include "Pipelines/DeferredRenderingPipeline.h"
 #include "ShaderManager.h"
 #include "TextureManager.h"
 
@@ -82,13 +82,10 @@ std::vector<MeshGroup> g_LoadedMeshGroups;
 
 static HWND g_hWnd = nullptr;
 
-static ComPtr<ID3D12Resource> g_DepthBuffer;
-static std::unique_ptr<DepthStencilView> g_DSV;
+DeferredRenderingPipeline g_DeferredRenderingPipeline;
 
-StaticMeshPipeline g_StaticMeshPipeline;
-
-static int g_Width = 1280;
-static int g_Height = 720;
+static int g_Width = 1920;
+static int g_Height = 1080;
 
 struct IO
 {
@@ -336,6 +333,12 @@ void InitGame()
 
 void UpdateGame(float deltaTime)
 {
+    if (g_IO.IsKeyPressed(SDL_SCANCODE_ESCAPE))
+	{
+		SDL_Event quitEvent;
+		quitEvent.type = SDL_QUIT;
+		SDL_PushEvent(&quitEvent);
+	}
     if (g_IO.IsKeyPressed(SDL_SCANCODE_E))
     {
         SDL_SetRelativeMouseMode((SDL_bool)g_IO.CursorEnabled);
@@ -346,12 +349,16 @@ void UpdateGame(float deltaTime)
         g_Cam = {};
     }
     g_Cam.SetFoV(g_Cam.FoV - g_IO.Immediate.MouseWheelDelta * 2.0f);
-    Vector4 moveDir = { int32_t(g_IO.IsKeyDown(SDL_SCANCODE_D)) - int32_t(g_IO.IsKeyDown(SDL_SCANCODE_A))
-        , int32_t(g_IO.IsKeyDown(SDL_SCANCODE_SPACE)) - int32_t(g_IO.IsKeyDown(SDL_SCANCODE_LCTRL))
-        , int32_t(g_IO.IsKeyDown(SDL_SCANCODE_W)) - int32_t(g_IO.IsKeyDown(SDL_SCANCODE_S)), 0 };
-    moveDir = XMVector4Normalize(moveDir);
+    Vector4 moveDir = { float(g_IO.IsKeyDown(SDL_SCANCODE_D)) - float(g_IO.IsKeyDown(SDL_SCANCODE_A)), 0
+        , float(g_IO.IsKeyDown(SDL_SCANCODE_W)) - float(g_IO.IsKeyDown(SDL_SCANCODE_S)), 0 };
         
-    g_Cam.Position = g_Cam.Position + XMVector4Transform(moveDir, g_Cam.GetRotationMatrix()) * deltaTime * g_Cam.MoveSpeed;
+	Vector4 moveVec = XMVector4Transform(XMVector4Normalize(moveDir), g_Cam.GetRotationMatrix());
+
+    moveVec.m128_f32[1] += float(g_IO.IsKeyDown(SDL_SCANCODE_SPACE)) - float(g_IO.IsKeyDown(SDL_SCANCODE_LCTRL));
+    
+    moveVec = XMVector4Normalize(moveVec);
+
+    g_Cam.Position = g_Cam.Position + moveVec * deltaTime * g_Cam.MoveSpeed;
         
     if(!g_IO.CursorEnabled)
     {
@@ -366,19 +373,6 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
 
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-    barrier.Transition.pResource = g_mainRenderTargetResource[backBufferIdx].Get();
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    g_pd3dCommandList->ResourceBarrier(1, &barrier);
-
-    // Render Dear ImGui graphics
-    const float clear_color_with_alpha[4] = { clearCol.x * clearCol.w, clearCol.y * clearCol.w, clearCol.z * clearCol.w, clearCol.w };
-    g_pd3dCommandList->ClearRenderTargetView(g_mainRTVSRGB[backBufferIdx]->GetCPUHandle(), clear_color_with_alpha, 0, nullptr);
-    g_pd3dCommandList->ClearDepthStencilView(g_DSV->GetCPUHandle(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     auto heaps = g_GPUDescriptorAllocator->GetHeaps();
 
@@ -386,11 +380,6 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 
     g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
     g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
-
-    auto rtvHandles = g_mainRTVSRGB[g_pSwapChain->GetCurrentBackBufferIndex()]->GetCPUHandle();
-    auto dsvHandle = g_DSV->GetCPUHandle();
-
-    g_pd3dCommandList->OMSetRenderTargets(1, &rtvHandles, FALSE, &dsvHandle);
     
     SceneDataView sceneDataView{.Light = g_DirectionalLight.ToLightData()};
 
@@ -416,7 +405,29 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
         }
     }
 
-	g_StaticMeshPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
+	auto outBuf = g_DeferredRenderingPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
+
+    {
+        D3D12_RESOURCE_BARRIER barrier = {};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        barrier.Transition.pResource = g_mainRenderTargetResource[backBufferIdx].Get();
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+        g_pd3dCommandList->ResourceBarrier(1, &barrier);
+
+		g_pd3dCommandList->CopyResource(g_mainRenderTargetResource[backBufferIdx].Get(), outBuf.Resource.Get());
+    }
+
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    barrier.Transition.pResource = g_mainRenderTargetResource[backBufferIdx].Get();
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
     // ImGui
     {
@@ -483,7 +494,7 @@ bool CreateDeviceD3D()
 		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
 
         g_GPUDescriptorAllocator = GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
-		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048*4, NUM_BACK_BUFFERS, 1);
+		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048*4, NUM_BACK_BUFFERS, 10);
 		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024, NUM_BACK_BUFFERS);
     }
 
@@ -517,7 +528,7 @@ bool CreateDeviceD3D()
     if (g_fenceEvent == nullptr)
         return false;
 
-   
+    g_DeferredRenderingPipeline.Setup(g_pd3dDevice.Get(), g_Width, g_Height);
 
     CreateSwapchainRTVDSV(false);
     return true;
@@ -533,8 +544,7 @@ void CleanupDeviceD3D()
     for (UINT i = 0; i < NUM_FRAMES_IN_FLIGHT; i++)
         g_frameContext[i].CommandAllocator = nullptr;
     FrameIndependentCtx.CommandAllocator = nullptr;
-    g_DepthBuffer = nullptr;
-    g_StaticMeshPipeline = {};
+    g_DeferredRenderingPipeline = {};
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_fence = nullptr;
@@ -588,16 +598,13 @@ void CreateSwapchainRTVDSV(bool resized)
         for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
             g_mainRenderTargetResource[i] = nullptr;
 
-        g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
-        
-        g_DepthBuffer = nullptr;
         DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
         ThrowIfFailed(g_pSwapChain->GetDesc(&swapChainDesc));
         ThrowIfFailed(g_pSwapChain->ResizeBuffers(NUM_BACK_BUFFERS, g_Width, g_Height,
             swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
     }
 
-    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
+    //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
     {
         g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&g_mainRenderTargetResource[i]));
@@ -610,32 +617,7 @@ void CreateSwapchainRTVDSV(bool resized)
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 		g_mainRTVSRGB[i] = RenderTargetView::Create({ ResourceViewToDesc<ViewTypes::RenderTargetView>{.Desc = &srgbDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
     }
-    // Create the depth buffer
-    CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, g_Width, g_Height);
-    depthTexDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-    D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
-    depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-    depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
-    depthOptimizedClearValue.DepthStencil.Stencil = 0;
-
-    auto dsvHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-
-    g_pd3dDevice->CreateCommittedResource(
-        &dsvHeapProp,
-        D3D12_HEAP_FLAG_NONE,
-        &depthTexDesc,
-        D3D12_RESOURCE_STATE_DEPTH_WRITE,
-        &depthOptimizedClearValue,
-        IID_PPV_ARGS(&g_DepthBuffer));
-
-    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDesc = {};
-    dsvViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
-    dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    dsvViewDesc.Flags = D3D12_DSV_FLAG_NONE;
-    dsvViewDesc.Texture2D.MipSlice = 0;
-    g_DSV = DepthStencilView::Create({ ResourceViewToDesc<ViewTypes::DepthStencilView>{.Desc = &dsvViewDesc, .Resource = g_DepthBuffer.Get()} });
+    //g_DeferredRenderingPipeline.OnResize(g_Width, g_Height);
 }
 
 void CleanupRenderTarget()
@@ -644,10 +626,9 @@ void CleanupRenderTarget()
 
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
         g_mainRenderTargetResource[i] = nullptr;
-    g_DepthBuffer = nullptr;
 
-    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
-    g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
+    //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
+    //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
 }
 
 void WaitForLastSubmittedFrame()
@@ -695,7 +676,6 @@ FrameContext* WaitForNextFrameResources()
 
 void LoadSceneData()
 {
-	g_StaticMeshPipeline.Setup(g_pd3dDevice.Get());
 
     ClearFrame(FrameIndependentCtx);
     BeginFrame(FrameIndependentCtx);

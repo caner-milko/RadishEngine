@@ -8,8 +8,6 @@ DXTexture DXTexture::Create(ID3D12Device* device, std::wstring name, TextureCrea
 	auto desc = CD3DX12_RESOURCE_DESC::Tex2D(info.Format, info.Width, info.Height, info.DepthOrArraySize * (info.IsCubeMap ? 6 : 1), info.MipLevels, info.SampleDesc.Count, info.SampleDesc.Quality, info.Flags, info.Layout, info.Alignment);
 	auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 
-	bool isDepthOrRT = (info.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) || (info.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-
 	ComPtr<ID3D12Resource> resource;
 
 	device->CreateCommittedResource(
