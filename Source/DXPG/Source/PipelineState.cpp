@@ -18,4 +18,10 @@ PipelineState PipelineState::Create(std::string_view name, ID3D12Device2* device
 	return ps;
 }
 
+void PipelineState::Bind(ID3D12GraphicsCommandList* cmdList) const
+{
+	cmdList->SetPipelineState(DXPipelineState.Get());
+	cmdList->SetGraphicsRootSignature(RootSignature->DXSignature.Get());
+}
+
 }

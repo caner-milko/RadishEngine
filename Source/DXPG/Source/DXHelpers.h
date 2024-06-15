@@ -302,6 +302,17 @@ using Sampler = ResourceView<ViewTypes::Sampler>;
 using RenderTargetView = ResourceView<ViewTypes::RenderTargetView>;
 using DepthStencilView = ResourceView<ViewTypes::DepthStencilView>;
 
+struct TransitionVec : std::vector<D3D12_RESOURCE_BARRIER>
+{
+	using std::vector<D3D12_RESOURCE_BARRIER>::vector;
+    TransitionVec(struct DXResource& res, D3D12_RESOURCE_STATES after)
+    {
+		Add(res, after);
+    }
 
+    TransitionVec& Add(struct DXResource& res, D3D12_RESOURCE_STATES after);
+    TransitionVec& Add(ID3D12Resource* res, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
+	void Execute(ID3D12GraphicsCommandList* cmdList);
+};
 
 }

@@ -1,5 +1,7 @@
 #include "DXHelpers.h"
 
+#include "DXResource.h"
+
 namespace dxpg
 {
     std::unique_ptr<CPUDescriptorHeapAllocator> g_CPUDescriptorAllocator = nullptr;
@@ -115,6 +117,28 @@ namespace dxpg
     template class ResourceView<ViewTypes::RenderTargetView>;
     template class ResourceView<ViewTypes::DepthStencilView>;
 
+
+
+    TransitionVec& TransitionVec::Add(DXResource& res, D3D12_RESOURCE_STATES after)
+    {
+		if (res.State != after)
+			push_back(res.Transition(after));
+        return *this;
+    }
+
+    TransitionVec& TransitionVec::Add(ID3D12Resource* res, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
+    {
+		if (before != after)
+			push_back(D3D12_RESOURCE_BARRIER{ .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, .Transition = { res, 0, before, after } });
+		return *this;
+    }
+
+    void TransitionVec::Execute(ID3D12GraphicsCommandList* cmdList)
+    {
+        if (size() == 0)
+            return;
+		cmdList->ResourceBarrier(size(), data());
+    }
 
 
 }

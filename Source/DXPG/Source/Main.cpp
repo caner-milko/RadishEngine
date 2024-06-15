@@ -22,6 +22,7 @@
 
 #include "RendererCommon.h"
 #include "Pipelines/DeferredRenderingPipeline.h"
+#include "Pipelines/BlitPipeline.h"
 #include "ShaderManager.h"
 #include "TextureManager.h"
 
@@ -43,7 +44,7 @@ static HANDLE                       g_fenceEvent = nullptr;
 static UINT64                       g_fenceLastSignaledValue = 0;
 static ComPtr<IDXGISwapChain3> g_pSwapChain = nullptr;
 static HANDLE                       g_hSwapChainWaitableObject = nullptr;
-static ComPtr<ID3D12Resource> g_mainRenderTargetResource[NUM_BACK_BUFFERS] = {};
+static std::unique_ptr<DXTexture> g_mainRenderTargetResource[NUM_BACK_BUFFERS];
 static std::unique_ptr<RenderTargetView> g_mainRTV[NUM_BACK_BUFFERS] = {};
 static std::unique_ptr<RenderTargetView> g_mainRTVSRGB[NUM_BACK_BUFFERS] = {};
 
@@ -83,6 +84,7 @@ std::vector<MeshGroup> g_LoadedMeshGroups;
 static HWND g_hWnd = nullptr;
 
 DeferredRenderingPipeline g_DeferredRenderingPipeline;
+BlitPipeline g_BlitPipeline;
 
 static int g_Width = 1920;
 static int g_Height = 1080;
@@ -131,33 +133,65 @@ struct IO
 
 
 
-static D3D12_VIEWPORT g_Viewport;
-static D3D12_RECT g_ScissorRect;
 
-struct Camera
+struct ViewPoint
 {
-    float MoveSpeed = 1000.0f;
-    float RotSpeed = 2.0f;
-    Vector4 Position = { 600, 250, -150, 1 };
-    Vector4 Rotation = { 0, -3.f * XM_PIDIV4/2.f, 0, 0 };
-    float FoV = 45.0f;
-    
+	float MoveSpeed = 10.0f;
+	float RotSpeed = 2.0f;
+    Vector4 Position = { };
+    Vector4 Rotation = { };
+
+    ViewPoint()
+    {
+    }
+
 	Matrix4x4 GetRotationMatrix()
 	{
 		return DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
 	}
+    Vector4 GetDirection()
+    {
+        return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 0, 1, 0), GetRotationMatrix());
+    }
+    Vector4 GetRight()
+    {
+        return DirectX::XMVector4Transform(DirectX::XMVectorSet(1, 0, 0, 0), GetRotationMatrix());
+    }
+    Vector4 GetUp()
+    {
+        return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 1, 0, 0), GetRotationMatrix());
+    }
 
-	Vector4 GetDirection()
+    Matrix4x4 GetViewMatrix()
+    {
+        const Vector4 upDirection = { 0, 1, 0, 0 };
+        return DirectX::XMMatrixLookToLH(Position, GetDirection(), upDirection);
+    }
+
+    virtual Matrix4x4 GetProjectionMatrix() = 0;
+    virtual void Reset() = 0;
+
+    ViewData ToViewData()
+    {
+        auto view = GetViewMatrix();
+        auto proj = GetProjectionMatrix();
+        return { view, proj, XMMatrixMultiply(view, proj), Position, GetDirection() };
+    }
+
+};
+
+struct Camera : ViewPoint
+{
+    float FoV = 45.0f;
+    
+    Camera()
+    {
+        Reset();
+    }
+    
+	Matrix4x4 GetRotationMatrix()
 	{
-		return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 0, 1, 0), GetRotationMatrix());
-	}
-	Vector4 GetRight()
-	{
-		return DirectX::XMVector4Transform(DirectX::XMVectorSet(1, 0, 0, 0), GetRotationMatrix());
-	}
-	Vector4 GetUp()
-	{
-		return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 1, 0, 0), GetRotationMatrix());
+		return DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
 	}
 
     void SetFoV(float fov)
@@ -165,41 +199,43 @@ struct Camera
 		FoV = std::clamp(fov, 30.0f, 90.0f);
 	}
 
-	Matrix4x4 GetViewMatrix()
-	{
-		const Vector4 upDirection = { 0, 1, 0, 0 };
-		return DirectX::XMMatrixLookToLH(Position, GetDirection(), upDirection);
-	}
-
-	Matrix4x4 GetProjectionMatrix()
+	Matrix4x4 GetProjectionMatrix() override
 	{
 		float aspectRatio = static_cast<float>(g_Width) / static_cast<float>(g_Height);
-		return DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(FoV), aspectRatio, 0.1f, 10000.0f);
+		return DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(FoV), aspectRatio, 0.1f, 100.0f);
 	}
 
-    ViewData ToViewData()
-    {
-		auto view = GetViewMatrix();
-		auto proj = GetProjectionMatrix();
-		return { view, proj, XMMatrixMultiply(view, proj), Position, GetDirection(), FoV };
-    }
-
+	void Reset() override
+	{
+		Position = { 6, 2.50f, -1.50f, 1 };
+		Rotation = { 0, -3.f * XM_PIDIV4 / 2.f, 0, 0 };
+		FoV = 45.0f;
+	}
 } g_Cam = {};
 
-struct DirectionalLight
+struct DirectionalLight : ViewPoint
 {
 	// In degrees
-	float Yaw = 300.0f;
-	float Pitch = 45.0f;
     Vector3 Color = { 1.0f, 1.0f, 1.0f };
     float Intensity = 1.0f;
 	Vector3 AmbientColor = { 0.1f, 0.1f, 0.1f };
+	float InverseZoom = 1.0f;
 
-    Vector3 GetDirection()
+    DirectionalLight()
     {
-		float yawRad = XMConvertToRadians(Yaw);
-		float pitchRad = XMConvertToRadians(Pitch);
-        return { cos(yawRad) * cos(pitchRad), sin(pitchRad), sin(yawRad) * cos(pitchRad) };
+        Reset();
+    }
+
+    Matrix4x4 GetProjectionMatrix() override
+    {
+        return DirectX::XMMatrixOrthographicLH(InverseZoom, InverseZoom, 0.1f, 100.0f);
+    }
+
+	void Reset() override
+	{
+        Position = { 0, 23.2, -1.8 };
+		Rotation = { 1.127, -0.964f, 0.218f };
+        InverseZoom = 46.0f;
     }
 
 	LightData ToLightData()
@@ -208,7 +244,7 @@ struct DirectionalLight
 		{
 			.Directional =
 				{
-					.Direction = GetDirection()
+					.Direction = Vector3(GetDirection().m128_f32)
 				},
 			.Color = Color,
 			.Intensity = Intensity,
@@ -216,8 +252,14 @@ struct DirectionalLight
 		};
 	}
 
-} g_DirectionalLight = {};
+	void SetInverseZoom(float zoom)
+	{
+		InverseZoom = max(0.1f, zoom);
+	}
 
+
+} g_DirectionalLight = {};
+ViewPoint* g_Controlled = &g_Cam;
 
 
 // Forward declarations of helper functions
@@ -298,25 +340,44 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
         //Camera
         if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
         {
+			ImGui::PushID("Camera");
             ImGui::InputFloat3("Position", &g_Cam.Position.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
             ImGui::InputFloat3("Rotation", &g_Cam.Rotation.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
-            ImGui::InputFloat("FoV", &g_Cam.FoV, 0.1f, 1.0f, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			auto dir = g_Cam.GetDirection();
+			ImGui::InputFloat3("Direction", dir.m128_f32, "%.3f", ImGuiInputTextFlags_ReadOnly);
+            ImGui::InputFloat("FoV", &g_Cam.FoV, 0.f, 0.f, "%.3f", ImGuiInputTextFlags_ReadOnly);
 
             ImGui::SliderFloat("Move Speed", &g_Cam.MoveSpeed, 0.0f, 10000.0f);
             ImGui::SliderFloat("Rotation Speed", &g_Cam.RotSpeed, 0.1f, 10.0f);
+			if (ImGui::Button("Reset"))
+				g_Cam.Reset();
+			ImGui::PopID();
         }
 
 		//Light
 		if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			ImGui::ColorEdit3("Color", &g_DirectionalLight.Color.x);
+			ImGui::PushID("Light");
+			ImGui::InputFloat3("Position", &g_DirectionalLight.Position.m128_f32[0], "%.3f");
+			ImGui::InputFloat3("Rotation", &g_DirectionalLight.Rotation.m128_f32[0], "%.3f");
+            auto dir = g_DirectionalLight.GetDirection();
+			ImGui::InputFloat3("Direction", dir.m128_f32, "%.3f", ImGuiSliderFlags_NoInput);
+			ImGui::InputFloat("Inverse Zoom", &g_DirectionalLight.InverseZoom, 1.0f, 100.0f, "%.3f");
+            ImGui::ColorEdit3("Color", &g_DirectionalLight.Color.x);
 			ImGui::SliderFloat("Intensity", &g_DirectionalLight.Intensity, 0.0f, 10.0f);
 			ImGui::ColorEdit3("Ambient Color", &g_DirectionalLight.AmbientColor.x);
 
-			ImGui::SliderFloat("Yaw", &g_DirectionalLight.Yaw, 0.0f, 360.0f, "%.3f", ImGuiSliderFlags_NoInput);
-			ImGui::SliderFloat("Pitch", &g_DirectionalLight.Pitch, -90.0f, 90.0f, "%.3f", ImGuiSliderFlags_NoInput);
-			auto dir = g_DirectionalLight.GetDirection();
-			ImGui::SliderFloat3("Direction", &dir.x, -1.0f, 1.0f, "%.3f", ImGuiSliderFlags_NoInput);
+
+
+            float yawDegrees = XMConvertToDegrees(g_DirectionalLight.Rotation.m128_f32[0]);
+            ImGui::SliderFloat("Yaw", &yawDegrees, 0.0f, 360.0f, "%.3f", ImGuiSliderFlags_NoInput);
+			g_DirectionalLight.Rotation.m128_f32[0] = XMConvertToRadians(yawDegrees);
+            float pitchDegress = XMConvertToDegrees(g_DirectionalLight.Rotation.m128_f32[1]);
+			ImGui::SliderFloat("Pitch", &pitchDegress, -90.0f, 90.0f, "%.3f", ImGuiSliderFlags_NoInput);
+			g_DirectionalLight.Rotation.m128_f32[1] = XMConvertToRadians(pitchDegress);
+			if (ImGui::Button("Reset"))
+				g_DirectionalLight.Reset();
+            ImGui::PopID();
         }
 
         ImGui::End();
@@ -341,29 +402,55 @@ void UpdateGame(float deltaTime)
 	}
     if (g_IO.IsKeyPressed(SDL_SCANCODE_E))
     {
+		//Disable imgui navigation
+		ImGui::GetIO().ConfigFlags ^= ImGuiConfigFlags_NavEnableKeyboard;
         SDL_SetRelativeMouseMode((SDL_bool)g_IO.CursorEnabled);
         g_IO.CursorEnabled = !g_IO.CursorEnabled;
     }
-    if (g_IO.IsKeyPressed(SDL_SCANCODE_R))
+    if (g_IO.CursorEnabled)
+        return;
+    // Switch controlled object on Tab
+	if (g_IO.IsKeyPressed(SDL_SCANCODE_TAB))
+	{
+        if (g_Controlled == &g_Cam)
+            g_Controlled = &g_DirectionalLight;
+        else
+            g_Controlled = &g_Cam;
+	}
+
+	if (g_IO.IsKeyPressed(SDL_SCANCODE_L))
     {
-        g_Cam = {};
+		g_DirectionalLight.Position = g_Cam.Position;
+		g_DirectionalLight.Rotation = g_Cam.Rotation;
     }
-    g_Cam.SetFoV(g_Cam.FoV - g_IO.Immediate.MouseWheelDelta * 2.0f);
+    
+    auto& controlled = *g_Controlled;
+    if (g_IO.IsKeyPressed(SDL_SCANCODE_R))
+        controlled.Reset();
+    if (g_Controlled == &g_Cam)
+    {
+		auto& cam = static_cast<Camera&>(*g_Controlled);
+		cam.SetFoV(cam.FoV - g_IO.Immediate.MouseWheelDelta * 2.0f);
+    }
+    else
+    {
+		g_DirectionalLight.SetInverseZoom(g_DirectionalLight.InverseZoom - g_IO.Immediate.MouseWheelDelta * 2.0f);
+    }
     Vector4 moveDir = { float(g_IO.IsKeyDown(SDL_SCANCODE_D)) - float(g_IO.IsKeyDown(SDL_SCANCODE_A)), 0
         , float(g_IO.IsKeyDown(SDL_SCANCODE_W)) - float(g_IO.IsKeyDown(SDL_SCANCODE_S)), 0 };
         
-	Vector4 moveVec = XMVector4Transform(XMVector4Normalize(moveDir), g_Cam.GetRotationMatrix());
+	Vector4 moveVec = XMVector4Transform(XMVector4Normalize(moveDir), controlled.GetRotationMatrix());
 
     moveVec.m128_f32[1] += float(g_IO.IsKeyDown(SDL_SCANCODE_SPACE)) - float(g_IO.IsKeyDown(SDL_SCANCODE_LCTRL));
     
     moveVec = XMVector4Normalize(moveVec);
 
-    g_Cam.Position = g_Cam.Position + moveVec * deltaTime * g_Cam.MoveSpeed;
+    controlled.Position = controlled.Position + moveVec * deltaTime * controlled.MoveSpeed;
         
     if(!g_IO.CursorEnabled)
     {
-        g_Cam.Rotation = g_Cam.Rotation + XMVectorSet(g_IO.Immediate.MouseDelta.y, g_IO.Immediate.MouseDelta.x, 0, 0) * g_Cam.RotSpeed * deltaTime;
-        g_Cam.Rotation = XMVectorSetX(g_Cam.Rotation, std::clamp(XMVectorGetX(g_Cam.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
+        controlled.Rotation = controlled.Rotation + XMVectorSet(g_IO.Immediate.MouseDelta.y, g_IO.Immediate.MouseDelta.x, 0, 0) * controlled.RotSpeed * deltaTime;
+        controlled.Rotation = XMVectorSetX(controlled.Rotation, std::clamp(XMVectorGetX(controlled.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
     }
 }
 
@@ -373,15 +460,12 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
 
-
     auto heaps = g_GPUDescriptorAllocator->GetHeaps();
 
     g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 
-    g_pd3dCommandList->RSSetViewports(1, &g_Viewport);
-    g_pd3dCommandList->RSSetScissorRects(1, &g_ScissorRect);
     
-    SceneDataView sceneDataView{.Light = g_DirectionalLight.ToLightData()};
+    SceneDataView sceneDataView{.Light = g_DirectionalLight.ToLightData(), .LightView = g_DirectionalLight.ToViewData()};
 
     for (auto& group : g_LoadedMeshGroups)
     {
@@ -405,29 +489,29 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
         }
     }
 
-	auto outBuf = g_DeferredRenderingPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
+	g_DeferredRenderingPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
 
+    DXTexture* selectedView = nullptr;
+	DescriptorAllocation* selectedSRV = nullptr;
     {
-        D3D12_RESOURCE_BARRIER barrier = {};
-        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        barrier.Transition.pResource = g_mainRenderTargetResource[backBufferIdx].Get();
-        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
-        g_pd3dCommandList->ResourceBarrier(1, &barrier);
-
-		g_pd3dCommandList->CopyResource(g_mainRenderTargetResource[backBufferIdx].Get(), outBuf.Resource.Get());
+        if (g_Controlled == &g_Cam)
+        {
+            selectedView = g_DeferredRenderingPipeline.GetOutputBuffer();
+			selectedSRV = g_DeferredRenderingPipeline.GetOutputBufferSRV();
+        }
+        else
+        {
+			selectedView = g_DeferredRenderingPipeline.GetShadowMap();
+			selectedSRV = g_DeferredRenderingPipeline.GetShadowMapSRV();
+        }
     }
 
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-    barrier.Transition.pResource = g_mainRenderTargetResource[backBufferIdx].Get();
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    g_pd3dCommandList->ResourceBarrier(1, &barrier);
+    {
+        g_BlitPipeline.Blit(g_pd3dCommandList.Get(), g_mainRenderTargetResource[backBufferIdx].get(),
+            selectedView, g_mainRTVSRGB[backBufferIdx].get(), selectedSRV);
+    }
+	TransitionVec(*g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Execute(g_pd3dCommandList.Get());
 
     // ImGui
     {
@@ -437,9 +521,8 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());
     }
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-    g_pd3dCommandList->ResourceBarrier(1, &barrier);
+	TransitionVec(*g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_PRESENT)
+		.Execute(g_pd3dCommandList.Get());
     g_pd3dCommandList->Close();
 
     ID3D12CommandList* ppCommandLists[] = { g_pd3dCommandList.Get() };
@@ -529,6 +612,7 @@ bool CreateDeviceD3D()
         return false;
 
     g_DeferredRenderingPipeline.Setup(g_pd3dDevice.Get(), g_Width, g_Height);
+	g_BlitPipeline.Setup(g_pd3dDevice.Get());
 
     CreateSwapchainRTVDSV(false);
     return true;
@@ -595,8 +679,8 @@ void CreateSwapchainRTVDSV(bool resized)
     }
     else
     {
-        for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
-            g_mainRenderTargetResource[i] = nullptr;
+		for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
+			g_mainRenderTargetResource[i] = nullptr;
 
         DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
         ThrowIfFailed(g_pSwapChain->GetDesc(&swapChainDesc));
@@ -607,15 +691,24 @@ void CreateSwapchainRTVDSV(bool resized)
     //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
     {
-        g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&g_mainRenderTargetResource[i]));
+        ComPtr<ID3D12Resource> res;
+        g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&res));
+		DXTexture::TextureCreateInfo info = {};
+		info.Width = g_Width;
+		info.Height = g_Height;
+		info.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		info.MipLevels = 1;
+
+		auto& swapchainTex = g_mainRenderTargetResource[i] = std::make_unique<DXTexture>(DXTexture::FromExisting(g_pd3dDevice.Get(), L"Swapchain_" + std::to_wstring(i), res, info));
+
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 		rtvDesc.Texture2D.MipSlice = 0;
-        g_mainRTV[i] = RenderTargetView::Create({ ResourceViewToDesc<ViewTypes::RenderTargetView>{.Desc = &rtvDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
+		g_mainRTV[i] = swapchainTex->CreateRTV(&rtvDesc);
 		auto srgbDesc = rtvDesc;
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		g_mainRTVSRGB[i] = RenderTargetView::Create({ ResourceViewToDesc<ViewTypes::RenderTargetView>{.Desc = &srgbDesc, .Resource = g_mainRenderTargetResource[i].Get()} });
+		g_mainRTVSRGB[i] = swapchainTex->CreateRTV(&srgbDesc);
     }
     //g_DeferredRenderingPipeline.OnResize(g_Width, g_Height);
 }
@@ -860,8 +953,6 @@ int main(int argv, char** args)
             SetCurrentDirectoryW(path);
         }
     }
-    g_ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
 
     CreateConsole();
     // Setup SDL
@@ -892,8 +983,6 @@ int main(int argv, char** args)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 
@@ -956,7 +1045,6 @@ int main(int argv, char** args)
             {
                 g_Width = sdlEvent.window.data1;
                 g_Height = sdlEvent.window.data2;
-                g_Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(g_Width), static_cast<float>(g_Height));
                 // Release all outstanding references to the swap chain's buffers before resizing.
                 CleanupRenderTarget();
                 CreateSwapchainRTVDSV(true);

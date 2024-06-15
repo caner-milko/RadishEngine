@@ -21,6 +21,11 @@ DXTexture DXTexture::Create(ID3D12Device* device, std::wstring name, TextureCrea
 	return DXTexture(name, resource, startState, info);
 }
 
+DXTexture DXTexture::FromExisting(ID3D12Device* device, std::wstring name, ComPtr<ID3D12Resource> resource, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState)
+{
+	return DXTexture(name, resource, startState, info);
+}
+
 std::unique_ptr<ShaderResourceView> DXTexture::CreateSRV(D3D12_SHADER_RESOURCE_VIEW_DESC const* srvDesc)
 {
 	return ShaderResourceView::Create({ ResourceViewToDesc<ViewTypes::ShaderResourceView>{ srvDesc, Resource.Get() } });

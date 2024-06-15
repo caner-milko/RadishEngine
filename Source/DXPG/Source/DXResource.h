@@ -50,6 +50,8 @@ struct DXTexture : DXResource
 	};
 
 	static DXTexture Create(ID3D12Device* device, std::wstring name, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState = D3D12_RESOURCE_STATE_COMMON);
+	static DXTexture FromExisting(ID3D12Device* device, std::wstring name, ComPtr<ID3D12Resource> resource, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState = D3D12_RESOURCE_STATE_COMMON);
+
 
 	std::unique_ptr<ShaderResourceView> CreateSRV(D3D12_SHADER_RESOURCE_VIEW_DESC const* srvDesc);
 	std::unique_ptr<UnorderedAccessView> CreateUAV(D3D12_UNORDERED_ACCESS_VIEW_DESC const* uavDesc);

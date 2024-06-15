@@ -12,7 +12,6 @@ struct ViewData
 	Matrix4x4 ViewProjection;
 	Vector4 Position;
 	Vector4 Direction;
-    float FoV;
 };
 
 struct FrameContext

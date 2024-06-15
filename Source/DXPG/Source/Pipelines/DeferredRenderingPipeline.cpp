@@ -12,128 +12,38 @@ struct ShaderMaterialInfo
 	int UseAlphaTexture;
 };
 
-struct ModelViewProjectionCB
+struct MVP_NORMAL_CB
 {
 	Matrix4x4 ModelViewProjection;
 	Matrix4x4 NormalMatrix;
 };
 
+struct MVP_CB
+{
+	Matrix4x4 ModelViewProjection;
+};
+
+namespace LightingPipelineConsts
+{
+	struct TransformationMatrices
+	{
+		Matrix4x4 LightViewProjection;
+		Matrix4x4 CamInverseView;
+		Matrix4x4 CamInverseProjection;
+	};
+	constexpr const char* LightCB = "LightCB";
+	constexpr const char* TransformationMatricesSTR = "TransformationMatrices";
+	constexpr const char* GBuffers = "GBuffers";
+	constexpr const char* ShadowMap = "ShadowMap";
+}
+
 bool DeferredRenderingPipeline::Setup(ID3D12Device2* dev, uint32_t width, uint32_t height)
 {
 	Device = dev;
-	// Create Static Mesh Pipeline
-	{
-		RootSignatureBuilder builder{};
-
-		std::vector< CD3DX12_ROOT_PARAMETER1> rootParams;
-		builder.AddConstants("ModelViewProjectionCB", sizeof(ModelViewProjectionCB) / 4, { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_VERTEX });
-		builder.AddDescriptorTable("VertexSRV", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0) } }, D3D12_SHADER_VISIBILITY_VERTEX);
-		builder.AddDescriptorTable("DiffuseTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3) } }, D3D12_SHADER_VISIBILITY_PIXEL);
-		builder.AddDescriptorTable("AlphaTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4) } }, D3D12_SHADER_VISIBILITY_PIXEL);
-		builder.AddConstants("MaterialCB", sizeof(ShaderMaterialInfo) / 4, { .ShaderRegister = 1, .Visibility = D3D12_SHADER_VISIBILITY_PIXEL });
-
-		D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
-			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-			D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-			D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-			D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
-
-		CD3DX12_STATIC_SAMPLER_DESC staticSampler(0);
-		staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-		staticSampler.MaxAnisotropy = 16;
-		staticSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		builder.AddStaticSampler(staticSampler);
-
-		StaticMeshRootSignature = builder.Build("StaticMeshRS", dev, rootSignatureFlags);
-
-		struct StaticMeshPipelineStateStream : PipelineStateStreamBase
-		{
-			CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
-			CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
-			CD3DX12_PIPELINE_STATE_STREAM_VS VS;
-			CD3DX12_PIPELINE_STATE_STREAM_PS PS;
-			CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
-			CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
-			CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
-		} pipelineStateStream;
-
-		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-			{ "POSINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "NORMALINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "TEXCOORDINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		};
-
-		pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
-		pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
-		auto* vertexShader = ShaderManager::Get().CompileShader(L"Triangle.vs", DXPG_SHADERS_DIR L"Vertex/StaticMesh.vs.hlsl", ShaderType::Vertex);
-		auto* pixelShader = ShaderManager::Get().CompileShader(L"Triangle.ps", DXPG_SHADERS_DIR L"Pixel/StaticMesh.ps.hlsl", ShaderType::Pixel);
-
-		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
-		pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
-
-		pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-		D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-		rtvFormats.NumRenderTargets = 2;
-		rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		rtvFormats.RTFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
-		pipelineStateStream.RTVFormats = rtvFormats;
-
-		pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-
-		StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", dev, pipelineStateStream, &StaticMeshRootSignature);
-	}
-
-	// Create Lighting Pipeline
-	{
-		RootSignatureBuilder builder{};
-		builder.AddDescriptorTable("GBuffers", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0) } }, D3D12_SHADER_VISIBILITY_PIXEL);
-		builder.AddConstantBufferView("LightCB", { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_PIXEL, .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC_WHILE_SET_AT_EXECUTE });
-
-		CD3DX12_STATIC_SAMPLER_DESC staticSampler(0);
-		staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-		staticSampler.MaxAnisotropy = 0;
-		staticSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		builder.AddStaticSampler(staticSampler);
-
-		LightingRootSignature = builder.Build("LightingRS", dev, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-		struct LightingPipelineStateStream : PipelineStateStreamBase
-		{
-			CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
-			CD3DX12_PIPELINE_STATE_STREAM_VS VS;
-			CD3DX12_PIPELINE_STATE_STREAM_PS PS;
-			CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
-			CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
-		} pipelineStateStream;
-
-		pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
-		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(ShaderManager::Get().CompileShader(L"Lighting.vs", DXPG_SHADERS_DIR L"Vertex/Lighting.vs.hlsl", ShaderType::Vertex)->Blob.Get());
-		pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(ShaderManager::Get().CompileShader(L"Lighting.ps", DXPG_SHADERS_DIR L"Pixel/Lighting.ps.hlsl", ShaderType::Pixel)->Blob.Get());
-
-		D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-		rtvFormats.NumRenderTargets = 1;
-		rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		pipelineStateStream.RTVFormats = rtvFormats;
-
-		pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-
-		LightingPipelineState = PipelineState::Create("LightingPipeline", dev, pipelineStateStream, &LightingRootSignature);
-	}
-
-	LightBuffer = std::make_unique<DXBuffer>(DXBuffer::Create(dev, L"LightBuffer", sizeof(LightData), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS));
-
-	DepthBufferDSV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
-	AlbedoBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
-	NormalBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
-	OutputBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
-	GBuffersSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2);
-
+	ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+	SetupStaticMeshPipeline();
+	SetupShadowMapPipeline();
+	SetupLightingPipeline();
 
 	OnResize(width, height);
 
@@ -142,6 +52,7 @@ bool DeferredRenderingPipeline::Setup(ID3D12Device2* dev, uint32_t width, uint32
 
 void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 {
+	Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
 	DXTexture::TextureCreateInfo depthBufferInfo
 	{
 		.Width = width,
@@ -200,31 +111,219 @@ void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	OutputBuffer->CreatePlacedRTV(OutputBufferRTV->GetView(), &rtvDesc);
-
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 	srvDesc = {};
 	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Texture2D.MipLevels = 1;
+	OutputBuffer->CreatePlacedSRV(OutputBufferSRV->GetView(), &srvDesc);
 	AlbedoBuffer->CreatePlacedSRV(GBuffersSRV->GetView(), &srvDesc);
 	srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-	NormalBuffer->CreatePlacedSRV(GBuffersSRV->GetView(1), &srvDesc );
+	NormalBuffer->CreatePlacedSRV(GBuffersSRV->GetView(1), &srvDesc);
+	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	DepthBuffer->CreatePlacedSRV(GBuffersSRV->GetView(2), &srvDesc);
 }
 
-DXTexture& DeferredRenderingPipeline::Run(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
+void DeferredRenderingPipeline::Run(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
 {
 	RunStaticMeshPipeline(cmd, viewData, scene);
-	RunLightingPipeline(cmd, viewData, scene, frameCtx);
-
-	return *OutputBuffer;
+	RunShadowMapPipeline(cmd, scene);
+	RunLightingPipeline(cmd, viewData, scene, frameCtx); 
 }
+bool DeferredRenderingPipeline::SetupStaticMeshPipeline()
+{
+	RootSignatureBuilder builder{};
+
+	std::vector< CD3DX12_ROOT_PARAMETER1> rootParams;
+	builder.AddConstants("ModelViewProjectionCB", sizeof(MVP_NORMAL_CB) / 4, { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_VERTEX });
+	builder.AddDescriptorTable("VertexSRV", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0) } }, D3D12_SHADER_VISIBILITY_VERTEX);
+	builder.AddDescriptorTable("DiffuseTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3) } }, D3D12_SHADER_VISIBILITY_PIXEL);
+	builder.AddDescriptorTable("AlphaTexture", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4) } }, D3D12_SHADER_VISIBILITY_PIXEL);
+	builder.AddConstants("MaterialCB", sizeof(ShaderMaterialInfo) / 4, { .ShaderRegister = 1, .Visibility = D3D12_SHADER_VISIBILITY_PIXEL });
+
+	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+
+	CD3DX12_STATIC_SAMPLER_DESC staticSampler(0);
+	staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	staticSampler.MaxAnisotropy = 16;
+	staticSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+	builder.AddStaticSampler(staticSampler);
+
+	StaticMeshRootSignature = builder.Build("StaticMeshRS", Device, rootSignatureFlags);
+
+	struct StaticMeshPipelineStateStream : PipelineStateStreamBase
+	{
+		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+		CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+		CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+		CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+		CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+		CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+		CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
+	} pipelineStateStream;
+
+	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+		{ "POSINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMALINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORDINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+
+	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+	auto* vertexShader = ShaderManager::Get().CompileShader(L"Triangle.vs", DXPG_SHADERS_DIR L"Vertex/StaticMesh.vs.hlsl", ShaderType::Vertex);
+	auto* pixelShader = ShaderManager::Get().CompileShader(L"Triangle.ps", DXPG_SHADERS_DIR L"Pixel/StaticMesh.ps.hlsl", ShaderType::Pixel);
+
+	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
+	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
+
+	pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+	D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+	rtvFormats.NumRenderTargets = 2;
+	rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	rtvFormats.RTFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	pipelineStateStream.RTVFormats = rtvFormats;
+
+	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+	StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", Device, pipelineStateStream, &StaticMeshRootSignature);
+	return true;
+}
+
+bool DeferredRenderingPipeline::SetupShadowMapPipeline()
+{
+	RootSignatureBuilder builder{};
+	builder.AddConstants("ModelViewProjectionCB", sizeof(MVP_CB) / 4, { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_VERTEX });
+	builder.AddDescriptorTable("VertexSRV", { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0) } }, D3D12_SHADER_VISIBILITY_VERTEX);
+	ShadowMapRootSignature = builder.Build("ShadowMapRS", Device, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	struct ShadowMapPipelineStateStream : PipelineStateStreamBase
+	{
+		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+		CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+		CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+		CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+	} pipelineStateStream;
+
+	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+		{ "POSINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMALINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORDINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+
+	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(ShaderManager::Get().CompileShader(L"ShadowMap.vs", DXPG_SHADERS_DIR L"Vertex/ShadowMap.vs.hlsl", ShaderType::Vertex)->Blob.Get());
+
+	pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+
+	ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", Device, pipelineStateStream, &ShadowMapRootSignature);
+	ShadowMap = std::make_unique<DXTexture>(DXTexture::Create(Device, L"ShadowMap", {
+		.Width = 1024,
+		.Height = 1024,
+		.MipLevels = 1,
+		.Format = DXGI_FORMAT_D32_FLOAT,
+		.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
+		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_D32_FLOAT, .DepthStencil = {.Depth = 1.0f}}
+		}));
+	ShadowMapViewport = CD3DX12_VIEWPORT(0.0f, 0.0f, ShadowMap->Info.Width, ShadowMap->Info.Height);
+	ShadowMapDSV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
+	ShadowMapSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+	ShadowMap->CreatePlacedDSV(ShadowMapDSV->GetView(), &dsvDesc);
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Texture2D.MipLevels = 1;
+	ShadowMap->CreatePlacedSRV(ShadowMapSRV->GetView(), &srvDesc);
+	return true;
+}
+
+
+
+bool DeferredRenderingPipeline::SetupLightingPipeline()
+{
+	RootSignatureBuilder builder{};
+	builder.AddDescriptorTable(LightingPipelineConsts::GBuffers, { {CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0)} }, D3D12_SHADER_VISIBILITY_PIXEL);
+	builder.AddConstantBufferView(LightingPipelineConsts::LightCB, { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_PIXEL, .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC_WHILE_SET_AT_EXECUTE });
+	builder.AddConstantBufferView(LightingPipelineConsts::TransformationMatricesSTR, { .ShaderRegister = 1, .Visibility = D3D12_SHADER_VISIBILITY_PIXEL, .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC_WHILE_SET_AT_EXECUTE });
+	builder.AddDescriptorTable(LightingPipelineConsts::ShadowMap, { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3) } }, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	CD3DX12_STATIC_SAMPLER_DESC staticSampler(0);
+	staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+	staticSampler.MaxAnisotropy = 0;
+	staticSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+	builder.AddStaticSampler(staticSampler);
+	CD3DX12_STATIC_SAMPLER_DESC shadowSampler(1);
+	shadowSampler.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+	shadowSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
+	shadowSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	shadowSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	shadowSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	builder.AddStaticSampler(shadowSampler);
+
+	LightingRootSignature = builder.Build("LightingRS", Device, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	struct LightingPipelineStateStream : PipelineStateStreamBase
+	{
+		CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+		CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+		CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+		CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+		CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
+	} pipelineStateStream;
+
+	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(ShaderManager::Get().CompileShader(L"Fullscreen.vs", DXPG_SHADERS_DIR L"Vertex/Fullscreen.vs.hlsl", ShaderType::Vertex)->Blob.Get());
+	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(ShaderManager::Get().CompileShader(L"Lighting.ps", DXPG_SHADERS_DIR L"Pixel/Lighting.ps.hlsl", ShaderType::Pixel)->Blob.Get());
+
+	D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+	rtvFormats.NumRenderTargets = 1;
+	rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	pipelineStateStream.RTVFormats = rtvFormats;
+
+	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+	LightingPipelineState = PipelineState::Create("LightingPipeline", Device, pipelineStateStream, &LightingRootSignature);
+
+	LightBuffer = std::make_unique<DXBuffer>(DXBuffer::Create(Device, L"LightBuffer", sizeof(LightData), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+	LightTransformationMatricesBuffer = std::make_unique<DXBuffer>(DXBuffer::Create(Device, L"LightTransformationMatricesBuffer", sizeof(LightingPipelineConsts::TransformationMatrices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+
+	DepthBufferDSV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
+	AlbedoBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
+	NormalBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
+	OutputBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
+	GBuffersSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 3);
+	OutputBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	return true;
+}
+
 void DeferredRenderingPipeline::RunStaticMeshPipeline(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene)
 {
 	// Transition Resources
+	cmd->RSSetViewports(1, &Viewport);
+	cmd->RSSetScissorRects(1, &ScissorRect);
 	{
-		D3D12_RESOURCE_BARRIER resBar[2] = {AlbedoBuffer->Transition(D3D12_RESOURCE_STATE_RENDER_TARGET), NormalBuffer->Transition(D3D12_RESOURCE_STATE_RENDER_TARGET) };
-		cmd->ResourceBarrier(_countof(resBar), resBar);
+		TransitionVec(*AlbedoBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+			.Add(*NormalBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+			.Add(*DepthBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE)
+			.Execute(cmd);
+
 		// Clear Render Targets
 		auto rtv = AlbedoBufferRTV->GetCPUHandle();
 		auto dsv = DepthBufferDSV->GetCPUHandle();
@@ -257,10 +356,10 @@ void DeferredRenderingPipeline::RunStaticMeshPipeline(ID3D12GraphicsCommandList2
 		{
 			auto& mesh = group.Meshes[i];
 			cmd->IASetVertexBuffers(0, 1, &mesh.IndexBufferView);
-			ModelViewProjectionCB mvp{};
+			MVP_NORMAL_CB mvp{};
 			mvp.ModelViewProjection = XMMatrixMultiply(mesh.ModelMatrix, viewData.ViewProjection);
 			mvp.NormalMatrix = DirectX::XMMatrixTranspose(DirectX::XMMatrixInverse(nullptr, mesh.ModelMatrix));
-			cmd->SetGraphicsRoot32BitConstants(StaticMeshPipelineState.RootSignature->NameToParameterIndices["ModelViewProjectionCB"], sizeof(ModelViewProjectionCB) / sizeof(uint32_t), &mvp, 0);
+			cmd->SetGraphicsRoot32BitConstants(StaticMeshPipelineState.RootSignature->NameToParameterIndices["ModelViewProjectionCB"], sizeof(MVP_NORMAL_CB) / sizeof(uint32_t), &mvp, 0);
 
 			ShaderMaterialInfo matInfo{};
 
@@ -279,13 +378,53 @@ void DeferredRenderingPipeline::RunStaticMeshPipeline(ID3D12GraphicsCommandList2
 		}
 	}
 }
-void DeferredRenderingPipeline::RunLightingPipeline(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
+void DeferredRenderingPipeline::RunShadowMapPipeline(ID3D12GraphicsCommandList2* cmd, SceneDataView const& scene)
 {
 	// Transition Resources
+	cmd->RSSetViewports(1, &ShadowMapViewport);
+	TransitionVec(*ShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE).Execute(cmd);
+
+	// Clear Render Targets
 	{
-		D3D12_RESOURCE_BARRIER resBar[3] = { AlbedoBuffer->Transition(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE), NormalBuffer->Transition(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE), OutputBuffer->Transition(D3D12_RESOURCE_STATE_RENDER_TARGET) };
-		cmd->ResourceBarrier(_countof(resBar), resBar);
+		auto dsv = ShadowMapDSV->GetCPUHandle();
+		cmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	}
+
+	// Set Render Targets
+	{
+		auto dsv = ShadowMapDSV->GetCPUHandle();
+		cmd->OMSetRenderTargets(0, nullptr, FALSE, &dsv);
+	}
+
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	cmd->SetPipelineState(ShadowMapPipelineState.DXPipelineState.Get());
+	cmd->SetGraphicsRootSignature(ShadowMapPipelineState.RootSignature->DXSignature.Get());
+
+	for (auto& group : scene.MeshGroups)
+	{
+		cmd->SetGraphicsRootDescriptorTable(ShadowMapPipelineState.RootSignature->NameToParameterIndices["VertexSRV"], group.VertexSRV);
+
+		for (int i = 0; i < group.Meshes.size(); i++)
+		{
+			auto& mesh = group.Meshes[i];
+			cmd->IASetVertexBuffers(0, 1, &mesh.IndexBufferView);
+			MVP_CB mvp{};
+			mvp.ModelViewProjection = XMMatrixMultiply(mesh.ModelMatrix, scene.LightView.ViewProjection);
+			cmd->SetGraphicsRoot32BitConstants(ShadowMapPipelineState.RootSignature->NameToParameterIndices["ModelViewProjectionCB"], sizeof(MVP_CB) / sizeof(uint32_t), &mvp, 0);
+			cmd->DrawInstanced(mesh.IndexCount, 1, 0, 0);
+		}
+	}
+}
+void DeferredRenderingPipeline::RunLightingPipeline(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
+{
+	cmd->RSSetViewports(1, &Viewport);
+
+	TransitionVec{}.Add(*AlbedoBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(*DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(*NormalBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(*ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(*OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Execute(cmd);
 
 	// Set Render Targets
 	{
@@ -294,32 +433,46 @@ void DeferredRenderingPipeline::RunLightingPipeline(ID3D12GraphicsCommandList2* 
 	}
 
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	cmd->SetPipelineState(LightingPipelineState.DXPipelineState.Get());
-	cmd->SetGraphicsRootSignature(LightingPipelineState.RootSignature->DXSignature.Get());
+	LightingPipelineState.Bind(cmd);
 
-	auto resBar = LightBuffer->Transition(D3D12_RESOURCE_STATE_COPY_DEST);
-	cmd->ResourceBarrier(1, &resBar);
-	// Update Light Buffer
-	constexpr size_t paramCount = sizeof(LightData) / sizeof(UINT);
-	D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
-	for (size_t i = 0; i < paramCount; i++)
+	// Update Light Data
 	{
-		params[i].Dest = LightBuffer->GPUAddress(i * sizeof(UINT));
-		params[i].Value = reinterpret_cast<const UINT*>(&scene.Light)[i];
+		TransitionVec(*LightBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmd);
+		// Update Light Buffer
+		constexpr size_t paramCount = sizeof(LightData) / sizeof(UINT);
+		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+		for (size_t i = 0; i < paramCount; i++)
+		{
+			params[i].Dest = LightBuffer->GPUAddress(i * sizeof(UINT));
+			params[i].Value = reinterpret_cast<const UINT*>(&scene.Light)[i];
+		}
+		cmd->WriteBufferImmediate(paramCount, params, nullptr);
+		TransitionVec(*LightBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmd);
 	}
-	cmd->WriteBufferImmediate(paramCount, params, nullptr);
-	resBar = LightBuffer->Transition(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-	cmd->ResourceBarrier(1, &resBar);
-	cmd->SetGraphicsRootConstantBufferView(LightingPipelineState.RootSignature->NameToParameterIndices["LightCB"], LightBuffer->GPUAddress());
-	
-	cmd->SetGraphicsRootDescriptorTable(LightingPipelineState.RootSignature->NameToParameterIndices["GBuffers"], GBuffersSRV->GetGPUHandle());
+	cmd->SetGraphicsRootConstantBufferView(LightingPipelineState.RootSignature->NameToParameterIndices[LightingPipelineConsts::LightCB], LightBuffer->GPUAddress());
+	// Update Light Transformation Matrices
+	{
+		TransitionVec(*LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmd);
+		LightingPipelineConsts::TransformationMatrices matrices{};
+		matrices.LightViewProjection = scene.LightView.ViewProjection;
+		matrices.CamInverseView = DirectX::XMMatrixInverse(nullptr, viewData.View);
+		matrices.CamInverseProjection = DirectX::XMMatrixInverse(nullptr, viewData.Projection);
+
+		// Update Light Buffer
+		constexpr size_t paramCount = sizeof(matrices) / sizeof(UINT);
+		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+		for (size_t i = 0; i < paramCount; i++)
+		{
+			params[i].Dest = LightTransformationMatricesBuffer->GPUAddress(i * sizeof(UINT));
+			params[i].Value = reinterpret_cast<const UINT*>(&matrices)[i];
+		}
+		cmd->WriteBufferImmediate(paramCount, params, nullptr);
+		TransitionVec(*LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmd);
+	}
+	cmd->SetGraphicsRootConstantBufferView(LightingPipelineState.RootSignature->NameToParameterIndices[LightingPipelineConsts::TransformationMatricesSTR], LightTransformationMatricesBuffer->GPUAddress());
+	cmd->SetGraphicsRootDescriptorTable(LightingPipelineState.RootSignature->NameToParameterIndices[LightingPipelineConsts::GBuffers], GBuffersSRV->GetGPUHandle());
+	cmd->SetGraphicsRootDescriptorTable(LightingPipelineState.RootSignature->NameToParameterIndices[LightingPipelineConsts::ShadowMap], ShadowMapSRV->GetGPUHandle());
 
 	cmd->DrawInstanced(4, 1, 0, 0);
-
-	// Transition out to copy src
-	{
-		D3D12_RESOURCE_BARRIER resBar = OutputBuffer->Transition(D3D12_RESOURCE_STATE_COPY_SOURCE);
-		cmd->ResourceBarrier(1, &resBar);
-	}
 }
 }

@@ -27,7 +27,7 @@ struct VSOut
 VSOut main(VSIn IN)
 {
     VSOut output;
-    output.Pos = mul(ModelViewProjectionCB.MVP, float4(Positions[IN.PosIndex], 1.0));
+    output.Pos = mul(ModelViewProjectionCB.MVP, float4(Positions[IN.PosIndex]/100, 1.0));
     output.Normal = mul(ModelViewProjectionCB.Normal, float4(Normals[IN.NormalIndex], 0.0)).xyz;
     output.TexCoord = TexCoords[IN.TexCoordIndex];
     return output;

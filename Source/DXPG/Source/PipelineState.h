@@ -28,6 +28,8 @@ struct PipelineState
 	
 	static PipelineState Create(std::string_view name, ID3D12Device2* device, D3D12_PIPELINE_STATE_STREAM_DESC const& pssd, RootSignature* rs);
 
+	void Bind(ID3D12GraphicsCommandList* cmdList) const;
+
 	std::string Name;
 
 	ComPtr<ID3D12PipelineState> DXPipelineState;
