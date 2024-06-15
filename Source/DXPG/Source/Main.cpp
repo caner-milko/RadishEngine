@@ -611,7 +611,7 @@ bool CreateDeviceD3D()
     if (g_fenceEvent == nullptr)
         return false;
 
-    g_DeferredRenderingPipeline.Setup(g_pd3dDevice.Get(), g_Width, g_Height);
+    g_DeferredRenderingPipeline.Setup(g_pd3dDevice.Get());
 	g_BlitPipeline.Setup(g_pd3dDevice.Get());
 
     CreateSwapchainRTVDSV(false);
@@ -629,6 +629,7 @@ void CleanupDeviceD3D()
         g_frameContext[i].CommandAllocator = nullptr;
     FrameIndependentCtx.CommandAllocator = nullptr;
     g_DeferredRenderingPipeline = {};
+	g_BlitPipeline = {};
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_fence = nullptr;
@@ -710,7 +711,7 @@ void CreateSwapchainRTVDSV(bool resized)
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 		g_mainRTVSRGB[i] = swapchainTex->CreateRTV(&srgbDesc);
     }
-    //g_DeferredRenderingPipeline.OnResize(g_Width, g_Height);
+    g_DeferredRenderingPipeline.OnResize(g_Width, g_Height);
 }
 
 void CleanupRenderTarget()

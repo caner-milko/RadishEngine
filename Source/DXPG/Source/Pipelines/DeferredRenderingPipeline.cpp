@@ -37,15 +37,13 @@ namespace LightingPipelineConsts
 	constexpr const char* ShadowMap = "ShadowMap";
 }
 
-bool DeferredRenderingPipeline::Setup(ID3D12Device2* dev, uint32_t width, uint32_t height)
+bool DeferredRenderingPipeline::Setup(ID3D12Device2* dev)
 {
 	Device = dev;
 	ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
 	SetupStaticMeshPipeline();
 	SetupShadowMapPipeline();
 	SetupLightingPipeline();
-
-	OnResize(width, height);
 
 	return true;
 }

@@ -57,7 +57,7 @@ struct SceneDataView
 
 struct DeferredRenderingPipeline
 {
-	bool Setup(ID3D12Device2* dev, uint32_t width, uint32_t height);
+	bool Setup(ID3D12Device2* dev);
 	void OnResize(uint32_t width, uint32_t height);
 
 	void Run(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx);
