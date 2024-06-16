@@ -19,21 +19,21 @@ namespace dxpg
         return heap;
     }
 
-    std::unique_ptr<DescriptorAllocation> DescriptorAllocation::Create(DescriptorHeap* heap, uint32_t size)
+    DescriptorAllocation DescriptorAllocation::Create(DescriptorHeap* heap, uint32_t size)
     {
-        auto alloc = std::unique_ptr<DescriptorAllocation>(new DescriptorAllocation());
-        alloc->Heap = heap;
-        alloc->Index = heap->Allocate(size);
-        alloc->Size = size;
+        DescriptorAllocation alloc{};
+        alloc.Heap = heap;
+        alloc.Index = heap->Allocate(size);
+        alloc.Size = size;
         return alloc;
     }
 
-    std::unique_ptr<DescriptorAllocation> DescriptorAllocation::CreatePreAllocated(DescriptorHeap* heap, size_t index, size_t size)
+    DescriptorAllocation DescriptorAllocation::CreatePreAllocated(DescriptorHeap* heap, size_t index, size_t size)
     {
-        auto alloc = std::unique_ptr<DescriptorAllocation>(new DescriptorAllocation());
-        alloc->Heap = heap;
-        alloc->Index = index;
-        alloc->Size = size;
+        DescriptorAllocation alloc{};
+        alloc.Heap = heap;
+        alloc.Index = index;
+        alloc.Size = size;
     	return alloc;
     }
 
@@ -81,34 +81,34 @@ namespace dxpg
 
 
     template<ViewTypes type>
-    std::unique_ptr<ResourceView<type>> ResourceView<type>::Create(std::span<typename ResourceViewToDesc<type>> descs)
+    ResourceView<type> ResourceView<type>::Create(std::span<typename ResourceViewToDesc<type>> descs)
     {
         using ViewToDesc = ResourceViewToDesc<type>;
 		auto* device = g_CPUDescriptorAllocator->Device;
-        auto* view = g_CPUDescriptorAllocator->AllocateFromStatic(ViewToDesc::HeapType, descs.size()).release();
+        auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(ViewToDesc::HeapType, descs.size());
         for (size_t i = 0; i < descs.size(); i++)
         {
 			auto& desc = descs[i];
             if constexpr (type == ViewTypes::ShaderResourceView)
-                device->CreateShaderResourceView(desc.Resource, desc.Desc, view->GetCPUHandle(i));
+                device->CreateShaderResourceView(desc.Resource, desc.Desc, alloc.GetCPUHandle(i));
             else if constexpr (type == ViewTypes::UnorderedAccessView)
             {
-                device->CreateUnorderedAccessView(desc.Resource, nullptr, desc.Desc, view->GetCPUHandle(i));
+                device->CreateUnorderedAccessView(desc.Resource, nullptr, desc.Desc, alloc.GetCPUHandle(i));
             }
             else if constexpr (type == ViewTypes::ConstantBufferView)
-                device->CreateConstantBufferView(desc.Desc, view->GetCPUHandle(i));
+                device->CreateConstantBufferView(desc.Desc, alloc.GetCPUHandle(i));
             else if constexpr (type == ViewTypes::Sampler)
-                device->CreateSampler(desc.Desc, view->GetCPUHandle(i));
+                device->CreateSampler(desc.Desc, alloc.GetCPUHandle(i));
             else if constexpr (type == ViewTypes::RenderTargetView)
-                device->CreateRenderTargetView(desc.Resource, desc.Desc, view->GetCPUHandle(i));
+                device->CreateRenderTargetView(desc.Resource, desc.Desc, alloc.GetCPUHandle(i));
             else if constexpr (type == ViewTypes::DepthStencilView)
-                device->CreateDepthStencilView(desc.Resource, desc.Desc, view->GetCPUHandle(i));
+                device->CreateDepthStencilView(desc.Resource, desc.Desc, alloc.GetCPUHandle(i));
             else
             {
                 assert(false);
             }
         }
-        return std::unique_ptr<ResourceView<type>>(reinterpret_cast<ResourceView<type>*>(view));
+        return static_cast<ResourceView<type>>(alloc);
     }
     template class ResourceView<ViewTypes::ShaderResourceView>;
     template class ResourceView<ViewTypes::UnorderedAccessView>;

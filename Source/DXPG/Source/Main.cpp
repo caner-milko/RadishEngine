@@ -14,7 +14,6 @@
 #include <filesystem>
 #include <variant>
 
-#include "DXMesh.h"
 #include "DXResource.h"
 #include <Shlwapi.h>
 
@@ -25,6 +24,9 @@
 #include "Pipelines/BlitPipeline.h"
 #include "ShaderManager.h"
 #include "TextureManager.h"
+#include "ModelManager.h"
+
+#include "SceneTree.h"
 
 namespace dxpg
 {
@@ -44,47 +46,16 @@ static HANDLE                       g_fenceEvent = nullptr;
 static UINT64                       g_fenceLastSignaledValue = 0;
 static ComPtr<IDXGISwapChain3> g_pSwapChain = nullptr;
 static HANDLE                       g_hSwapChainWaitableObject = nullptr;
-static std::unique_ptr<DXTexture> g_mainRenderTargetResource[NUM_BACK_BUFFERS];
-static std::unique_ptr<RenderTargetView> g_mainRTV[NUM_BACK_BUFFERS] = {};
-static std::unique_ptr<RenderTargetView> g_mainRTVSRGB[NUM_BACK_BUFFERS] = {};
+static DXTexture g_mainRenderTargetResource[NUM_BACK_BUFFERS];
+static RenderTargetView g_mainRTVs = {};
+static RenderTargetView g_mainRTVSRGBs = {};
 
 static FrameContext FrameIndependentCtx = {};
-
-struct Material
-{
-    std::string Name;
-    std::optional<std::string> DiffuseTextureName;
-    std::optional<std::string> AlphaTextureName;
-
-    Vector3 DiffuseColor = { 1, 1, 1 };
-
-    std::shared_ptr<D3D12Material> GPUMaterial;
-};
-
-struct MeshAsset
-{
-	std::vector<tinyobj::index_t> Indicies;
-    std::string Name;
-    std::shared_ptr<dxpg::D3D12Mesh> GPUMesh;
-	std::string Material;
-};
-
-struct MeshGroup
-{
-    std::vector<float> Positions;
-    std::vector<float> Normals;
-    std::vector<float> TexCoords;
-    std::unique_ptr<VertexData> GPUVertexData;
-    std::vector<MeshAsset> Meshes;
-    std::unordered_map<std::string, Material> Materials;
-};
-
-std::vector<MeshGroup> g_LoadedMeshGroups;
-
 static HWND g_hWnd = nullptr;
 
 DeferredRenderingPipeline g_DeferredRenderingPipeline;
 BlitPipeline g_BlitPipeline;
+SceneTree g_SceneTree;
 
 static int g_Width = 1920;
 static int g_Height = 1080;
@@ -130,9 +101,6 @@ struct IO
     }
 
 } static g_IO;
-
-
-
 
 struct ViewPoint
 {
@@ -274,8 +242,6 @@ void LoadSceneData();
 void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t size, void* data);
 void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t width, size_t height, size_t componentCount, void* data);
 
-MeshGroup* LoadObjFile(const char* path);
-
 void CreateConsole()
 {
     if (!AllocConsole()) {
@@ -312,6 +278,8 @@ void BeginFrame(FrameContext& frameCtx)
     frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
     g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
     frameCtx.Ready = true;
+    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
+    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 }
 
 void EndFrame(FrameContext& frameCtx)
@@ -328,6 +296,27 @@ void ClearFrame(FrameContext& frameCtx)
 	frameCtx.GPUHeapPages.clear();
     frameCtx.CommandAllocator->Reset();
 	frameCtx.IntermediateResources.clear();
+}
+
+void UIDrawMeshTree(MeshObject* object)
+{
+    ImGui::PushID(object->Name.c_str());
+
+	if (ImGui::TreeNodeEx(object->Name.c_str(), ImGuiTreeNodeFlags_Framed))
+    {
+		ImGui::InputFloat3("Position", &object->Position.m128_f32[0], "%.3f");
+		ImGui::InputFloat3("Rotation", &object->Rotation.m128_f32[0], "%.3f");
+		ImGui::InputFloat3("Scale", &object->Scale.m128_f32[0], "%.3f");
+
+        ImGui::Checkbox("TransformOnly", &object->TransformOnly);
+	    for (auto& child : object->Children)
+        {
+		    UIDrawMeshTree(&child);
+	    }
+		ImGui::TreePop();
+	}   
+
+    ImGui::PopID();
 }
 
 void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
@@ -379,6 +368,8 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 				g_DirectionalLight.Reset();
             ImGui::PopID();
         }
+
+		UIDrawMeshTree(&g_SceneTree.Root);
 
         ImGui::End();
     }
@@ -459,36 +450,8 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     FrameContext* frameCtx = WaitForNextFrameResources();
     BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
-
-    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
-
-    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
-
     
-    SceneDataView sceneDataView{.Light = g_DirectionalLight.ToLightData(), .LightView = g_DirectionalLight.ToViewData()};
-
-    for (auto& group : g_LoadedMeshGroups)
-    {
-		auto& groupView = sceneDataView.MeshGroups.emplace_back();
-
-		groupView.VertexSRV = frameCtx->GetGPUAllocation(group.GPUVertexData->VertexSRV.get())->GetGPUHandle();
-        for (auto& mesh : group.Meshes)
-        {
-            auto& meshView = groupView.Meshes.emplace_back();
-            meshView.IndexCount = mesh.Indicies.size();
-            meshView.IndexBufferView = mesh.GPUMesh->IndicesView;
-            meshView.ModelMatrix = mesh.GPUMesh->GetWorldMatrix();
-            auto& mat = group.Materials[mesh.Material];
-
-            if (mat.GPUMaterial->DiffuseSRV)
-            {
-                meshView.UseDiffuseTexture = true;
-                meshView.DiffuseSRV = frameCtx->GetGPUAllocation(mat.GPUMaterial->DiffuseSRV.get())->GetGPUHandle();
-            }
-            meshView.DiffuseColor = mat.DiffuseColor;
-        }
-    }
-
+    SceneDataView sceneDataView{.RenderableList = g_SceneTree.SceneToRenderableList(), .Light = g_DirectionalLight.ToLightData(), .LightView = g_DirectionalLight.ToViewData()};
 	g_DeferredRenderingPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
 
     DXTexture* selectedView = nullptr;
@@ -496,32 +459,30 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     {
         if (g_Controlled == &g_Cam)
         {
-            selectedView = g_DeferredRenderingPipeline.GetOutputBuffer();
-			selectedSRV = g_DeferredRenderingPipeline.GetOutputBufferSRV();
+            selectedView = &g_DeferredRenderingPipeline.GetOutputBuffer();
+			selectedSRV = &g_DeferredRenderingPipeline.GetOutputBufferSRV();
         }
         else
         {
-			selectedView = g_DeferredRenderingPipeline.GetShadowMap();
-			selectedSRV = g_DeferredRenderingPipeline.GetShadowMapSRV();
+			selectedView = &g_DeferredRenderingPipeline.GetShadowMap();
+			selectedSRV = &g_DeferredRenderingPipeline.GetShadowMapSRV();
         }
     }
 
-    {
-        g_BlitPipeline.Blit(g_pd3dCommandList.Get(), g_mainRenderTargetResource[backBufferIdx].get(),
-            selectedView, g_mainRTVSRGB[backBufferIdx].get(), selectedSRV);
-    }
-	TransitionVec(*g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_RENDER_TARGET)
+    g_BlitPipeline.Blit(g_pd3dCommandList.Get(), &g_mainRenderTargetResource[backBufferIdx],
+        selectedView, g_mainRTVSRGBs.GetCPUHandle(backBufferIdx), selectedSRV->GetGPUHandle());
+	
+    TransitionVec(g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_RENDER_TARGET)
 		.Execute(g_pd3dCommandList.Get());
-
     // ImGui
     {
-        auto rtvHandle = g_mainRTV[backBufferIdx]->GetCPUHandle();
+        auto rtvHandle = g_mainRTVs.GetCPUHandle(backBufferIdx);
 
         g_pd3dCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());
     }
-	TransitionVec(*g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_PRESENT)
+	TransitionVec(g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_PRESENT)
 		.Execute(g_pd3dCommandList.Get());
     g_pd3dCommandList->Close();
 
@@ -577,12 +538,16 @@ bool CreateDeviceD3D()
 		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
 
         g_GPUDescriptorAllocator = GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
-		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048*4, NUM_BACK_BUFFERS, 10);
+		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048*12, NUM_BACK_BUFFERS, 2048*8);
 		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024, NUM_BACK_BUFFERS);
+
     }
 
     TextureManager::Create();
     TextureManager::Get().Init(g_pd3dDevice.Get());
+
+	ModelManager::Create();
+	ModelManager::Get().Init(g_pd3dDevice.Get());
 
     {
         D3D12_COMMAND_QUEUE_DESC desc = {};
@@ -620,7 +585,7 @@ bool CreateDeviceD3D()
 
 void CleanupDeviceD3D()
 {
-    g_LoadedMeshGroups.clear();
+	ModelManager::Destroy();
     TextureManager::Destroy();
     CleanupRenderTarget();
     if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain = nullptr; }
@@ -653,6 +618,10 @@ void CleanupDeviceD3D()
 void CreateSwapchainRTVDSV(bool resized)
 {
     if(!resized){
+        //Allocate RTV, SRGB RTV
+		g_mainRTVs = static_cast<RenderTargetView>(g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, NUM_BACK_BUFFERS));
+		g_mainRTVSRGBs = static_cast<RenderTargetView>(g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, NUM_BACK_BUFFERS));
+
         // Setup swap chain
         DXGI_SWAP_CHAIN_DESC1 sd;
         {
@@ -681,7 +650,7 @@ void CreateSwapchainRTVDSV(bool resized)
     else
     {
 		for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
-			g_mainRenderTargetResource[i] = nullptr;
+            g_mainRenderTargetResource[i] = {};
 
         DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
         ThrowIfFailed(g_pSwapChain->GetDesc(&swapChainDesc));
@@ -700,16 +669,16 @@ void CreateSwapchainRTVDSV(bool resized)
 		info.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		info.MipLevels = 1;
 
-		auto& swapchainTex = g_mainRenderTargetResource[i] = std::make_unique<DXTexture>(DXTexture::FromExisting(g_pd3dDevice.Get(), L"Swapchain_" + std::to_wstring(i), res, info));
+		auto& swapchainTex = g_mainRenderTargetResource[i] = DXTexture::FromExisting(g_pd3dDevice.Get(), L"Swapchain_" + std::to_wstring(i), res, info);
 
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 		rtvDesc.Texture2D.MipSlice = 0;
-		g_mainRTV[i] = swapchainTex->CreateRTV(&rtvDesc);
+		swapchainTex.CreatePlacedRTV(g_mainRTVs.GetView(i), &rtvDesc);
 		auto srgbDesc = rtvDesc;
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		g_mainRTVSRGB[i] = swapchainTex->CreateRTV(&srgbDesc);
+        swapchainTex.CreatePlacedRTV(g_mainRTVSRGBs.GetView(i), &srgbDesc);
     }
     g_DeferredRenderingPipeline.OnResize(g_Width, g_Height);
 }
@@ -719,7 +688,7 @@ void CleanupRenderTarget()
     WaitForLastSubmittedFrame();
 
     for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
-        g_mainRenderTargetResource[i] = nullptr;
+        g_mainRenderTargetResource[i] = {};
 
     //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
     //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
@@ -774,62 +743,13 @@ void LoadSceneData()
     ClearFrame(FrameIndependentCtx);
     BeginFrame(FrameIndependentCtx);
 
-    auto group = LoadObjFile(DXPG_SPONZA_DIR "sponza.obj");
-    auto& vertexData = (group->GPUVertexData = VertexData::Create(g_pd3dDevice.Get(), group->Positions.size() / 3, group->Normals.size() / 3, group->TexCoords.size() / 2));
 
-    const auto createAndUploadBuf = [](ComPtr<ID3D12Resource>& buf, ComPtr<ID3D12Resource>& uploadBuf, D3D12_HEAP_PROPERTIES heapProps, void* data, size_t size)
-        {
-            auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
-            g_pd3dDevice->CreateCommittedResource(
-                &heapProps,
-                D3D12_HEAP_FLAG_NONE,
-                &desc,
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                nullptr,
-                IID_PPV_ARGS(&buf));
-            UploadToBuffer(g_pd3dCommandList.Get(), buf.Get(), &uploadBuf, size, data);
-        };
-
-    std::vector<ComPtr<ID3D12Resource>> intermediateBuffers;
-
-    UploadToBuffer(g_pd3dCommandList.Get(), vertexData->PositionsBuffer.Get(), &intermediateBuffers.emplace_back(), group->Positions.size() * 3 * sizeof(float), group->Positions.data());
-    UploadToBuffer(g_pd3dCommandList.Get(), vertexData->NormalsBuffer.Get(), &intermediateBuffers.emplace_back(), group->Normals.size() * 3 * sizeof(float), group->Normals.data());
-    UploadToBuffer(g_pd3dCommandList.Get(), vertexData->TexCoordsBuffer.Get(), &intermediateBuffers.emplace_back(), group->TexCoords.size() * 2 * sizeof(float), group->TexCoords.data());
-
-    for (auto& mesh : group->Meshes)
     {
-        mesh.GPUMesh = D3D12Mesh::Create(g_pd3dDevice.Get(), group->GPUVertexData.get(), mesh.Indicies.size(), sizeof(tinyobj::index_t));
-        UploadToBuffer(g_pd3dCommandList.Get(), mesh.GPUMesh->Indices.Get(), &intermediateBuffers.emplace_back(), mesh.Indicies.size() * sizeof(tinyobj::index_t), mesh.Indicies.data());
+        auto sponzaObj = ModelManager::Get().LoadModel(DXPG_SPONZA_DIR "sponza.obj", FrameIndependentCtx, g_pd3dCommandList.Get());
+        auto* sponzaRoot = g_SceneTree.AddObject(MeshObject("SponzaRoot"));
+        for (auto& [indexed, materialInfo] : sponzaObj->Objects)
+			auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed, materialInfo), sponzaRoot);
     }
-
-    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
-
-    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
-
-    for (auto& [_, mat] : group->Materials)
-    {
-        auto gpuMat = mat.GPUMaterial = std::make_shared<D3D12Material>();
-
-        constexpr auto loadTex = [](FrameContext& frameCtx, std::unique_ptr<ShaderResourceView>& srvToFill, std::optional<std::string> const& textureName, bool alphaOnly)
-            {
-                if (textureName)
-                {
-                    auto* tex = TextureManager::Get().LoadTexture(std::filesystem::path(*textureName), {.AlphaOnly = alphaOnly}, frameCtx, g_pd3dCommandList.Get(), true);
-                    if (!tex)
-                        return;
-                    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-					srvDesc.Format = alphaOnly ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-					srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-					srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-                    srvDesc.Texture2D.MipLevels = -1;
-                    srvToFill = tex->CreateSRV(&srvDesc);
-                }
-            };
-
-		loadTex(FrameIndependentCtx, gpuMat->DiffuseSRV, mat.DiffuseTextureName, false);
-		loadTex(FrameIndependentCtx, gpuMat->AlphaSRV, mat.AlphaTextureName, true);
-    }
-
 
     //Execute and flush
     EndFrame(FrameIndependentCtx);
@@ -888,55 +808,6 @@ void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D1
     subresourceData.SlicePitch = height * subresourceData.RowPitch;
 
     UpdateSubresources(cmd, dest, *intermediateBuf, 0, 0, 1, &subresourceData);
-}
-
-MeshGroup* LoadObjFile(const char* path)
-{
-    // Load the obj file using tinyobjloader
-    tinyobj::ObjReaderConfig readerConfig;
-    tinyobj::ObjReader reader;
-    reader.ParseFromFile(path, readerConfig);
-    assert(reader.Valid());
-    auto& attrib = reader.GetAttrib();
-    auto& shapes = reader.GetShapes();
-
-    auto& meshGroup = g_LoadedMeshGroups.emplace_back();
-    meshGroup.Positions = attrib.vertices;
-    meshGroup.Normals = attrib.normals;
-    meshGroup.TexCoords = attrib.texcoords;
-
-    meshGroup.Meshes.reserve(shapes.size());
-
-    for (auto& mat : reader.GetMaterials())
-    {
-        auto& material = meshGroup.Materials[mat.name];
-        material.Name = mat.name;
-
-        // Load the textures
-        if (!mat.diffuse_texname.empty())
-            material.DiffuseTextureName = std::filesystem::path(path).parent_path().string() + "/" + mat.diffuse_texname;
-        else
-			material.DiffuseColor = Vector3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
-
-		if (!mat.alpha_texname.empty())
-			material.AlphaTextureName = std::filesystem::path(path).parent_path().string() + "/" + mat.alpha_texname;
-    }
-
-    // Loop over shapes
-    for (auto& shape : shapes)
-    {
-        auto& mesh = meshGroup.Meshes.emplace_back();
-        mesh.Indicies = shape.mesh.indices;
-        mesh.Name = shape.name;
-
-        if (!shape.mesh.material_ids.empty())
-        {
-			auto& mat = reader.GetMaterials()[shape.mesh.material_ids[0]];
-			mesh.Material = mat.name;
-        }
-    }
-    
-    return &meshGroup;
 }
 }
 
@@ -1000,9 +871,9 @@ int main(int argv, char** args)
     ImGui_ImplSDL2_InitForD3D(window);
     auto fontAllocation = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
     ImGui_ImplDX12_Init(g_pd3dDevice.Get(), NUM_FRAMES_IN_FLIGHT,
-        DXGI_FORMAT_R8G8B8A8_UNORM, fontAllocation->Heap->Heap.Get(),
-        fontAllocation->GetCPUHandle(),
-        fontAllocation->GetGPUHandle());
+        DXGI_FORMAT_R8G8B8A8_UNORM, fontAllocation.Heap->Heap.Get(),
+        fontAllocation.GetCPUHandle(),
+        fontAllocation.GetGPUHandle());
     // Load Fonts
     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.

@@ -8,53 +8,6 @@
 
 namespace dxpg
 {
-struct LightData
-{
-    union
-    {
-        struct
-		{
-	        Vector3 Direction;
-	        float Padding;
-		} Directional;
-        struct
-		{
-			Vector3 Position;
-			float Padding;
-		} Point;
-    };
-	Vector3 Color;
-	float Intensity;
-	Vector3 AmbientColor;
-	int Type;
-};
-
-struct MeshGroupView
-{
-    struct MeshView
-    {
-        D3D12_VERTEX_BUFFER_VIEW IndexBufferView;
-        size_t IndexCount;
-        Matrix4x4 ModelMatrix;
-
-        bool UseDiffuseTexture = false;
-        Vector3 DiffuseColor{};
-        D3D12_GPU_DESCRIPTOR_HANDLE DiffuseSRV{};
-
-        bool UseAlphaTexture = false;
-        D3D12_GPU_DESCRIPTOR_HANDLE AlphaSRV{};
-    };
-    D3D12_GPU_DESCRIPTOR_HANDLE VertexSRV;
-    std::vector<MeshView> Meshes;
-};
-
-struct SceneDataView
-{
-    std::vector<MeshGroupView> MeshGroups;
-	LightData Light;
-	ViewData LightView;
-};
-
 struct DeferredRenderingPipeline
 {
 	bool Setup(ID3D12Device2* dev);
@@ -62,10 +15,10 @@ struct DeferredRenderingPipeline
 
 	void Run(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx);
 
-	DXTexture* GetOutputBuffer() { return OutputBuffer.get(); }
-	DescriptorAllocation* GetOutputBufferSRV() { return OutputBufferSRV.get(); }
-	DXTexture* GetShadowMap() { return ShadowMap.get(); }
-	DescriptorAllocation* GetShadowMapSRV() { return ShadowMapSRV.get(); }
+	DXTexture& GetOutputBuffer() { return OutputBuffer; }
+	DescriptorAllocation& GetOutputBufferSRV() { return OutputBufferSRV; }
+	DXTexture& GetShadowMap() { return ShadowMap; }
+	DescriptorAllocation& GetShadowMapSRV() { return ShadowMapSRV; }
 private:
 	bool SetupStaticMeshPipeline();
 	bool SetupLightingPipeline();
@@ -81,28 +34,28 @@ private:
 	RootSignature StaticMeshRootSignature;
 	PipelineState StaticMeshPipelineState;
 
-	std::unique_ptr<DXTexture> DepthBuffer;
-	std::unique_ptr<DXTexture> AlbedoBuffer;
-	std::unique_ptr<DXTexture> NormalBuffer;
+	DXTexture DepthBuffer;
+	DXTexture AlbedoBuffer;
+	DXTexture NormalBuffer;
 
-	std::unique_ptr<DescriptorAllocation> DepthBufferDSV;
-	std::unique_ptr<DescriptorAllocation> AlbedoBufferRTV;
-	std::unique_ptr<DescriptorAllocation> NormalBufferRTV;
-	std::unique_ptr<DescriptorAllocation> GBuffersSRV;
+	DescriptorAllocation DepthBufferDSV;
+	DescriptorAllocation AlbedoBufferRTV;
+	DescriptorAllocation NormalBufferRTV;
+	DescriptorAllocation GBuffersSRV;
 
 	RootSignature ShadowMapRootSignature;
 	PipelineState ShadowMapPipelineState;
-	std::unique_ptr<DXTexture> ShadowMap;
-	std::unique_ptr<DescriptorAllocation> ShadowMapDSV;
-	std::unique_ptr<DescriptorAllocation> ShadowMapSRV;
+	DXTexture ShadowMap;
+	DescriptorAllocation ShadowMapDSV;
+	DescriptorAllocation ShadowMapSRV;
 
-	std::unique_ptr<DXBuffer> LightBuffer;
-	std::unique_ptr<DXBuffer> LightTransformationMatricesBuffer;
+	DXBuffer LightBuffer;
+	DXBuffer LightTransformationMatricesBuffer;
 	RootSignature LightingRootSignature;
 	PipelineState LightingPipelineState;
-	std::unique_ptr<DXTexture> OutputBuffer;
-	std::unique_ptr<DescriptorAllocation> OutputBufferRTV;
-	std::unique_ptr<DescriptorAllocation> OutputBufferSRV;
+	DXTexture OutputBuffer;
+	DescriptorAllocation OutputBufferRTV;
+	DescriptorAllocation OutputBufferSRV;
 
 	D3D12_VIEWPORT ShadowMapViewport;
 	D3D12_VIEWPORT Viewport;

@@ -45,7 +45,7 @@ bool BlitPipeline::Setup(ID3D12Device2* dev)
 	return true;
 }
 
-void BlitPipeline::Blit(ID3D12GraphicsCommandList2* cmdList, struct DXTexture* dstTex, struct DXTexture* srcTex, DescriptorAllocation* dstRTV, DescriptorAllocation* srcSRV)
+void BlitPipeline::Blit(ID3D12GraphicsCommandList2* cmdList, struct DXTexture* dstTex, struct DXTexture* srcTex, D3D12_CPU_DESCRIPTOR_HANDLE dstRTV, D3D12_GPU_DESCRIPTOR_HANDLE srcSRV)
 {
 	D3D12_VIEWPORT viewport = {};
 	viewport.Width = static_cast<float>(dstTex->Info.Width);
@@ -57,13 +57,11 @@ void BlitPipeline::Blit(ID3D12GraphicsCommandList2* cmdList, struct DXTexture* d
 
 	PipelineState.Bind(cmdList);
 
-	auto rtv = dstRTV->GetCPUHandle();
-
-	cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+	cmdList->OMSetRenderTargets(1, &dstRTV, FALSE, nullptr);
 
 	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
-	cmdList->SetGraphicsRootDescriptorTable(0, srcSRV->GetGPUHandle());
+	cmdList->SetGraphicsRootDescriptorTable(0, srcSRV);
 
 	cmdList->DrawInstanced(4, 1, 0, 0);
 }

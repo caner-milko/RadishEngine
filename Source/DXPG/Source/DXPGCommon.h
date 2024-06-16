@@ -5,6 +5,7 @@
 #include <codecvt>
 #include <memory>
 #include <cassert>
+#include <stack>
 
 namespace dxpg
 {

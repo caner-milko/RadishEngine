@@ -82,8 +82,8 @@ struct DescriptorAllocationView
 
 struct DescriptorAllocation
 {
-    static std::unique_ptr<DescriptorAllocation> Create(DescriptorHeap* heap, uint32_t size);
-    static std::unique_ptr<DescriptorAllocation> CreatePreAllocated(DescriptorHeap* heap, size_t index, size_t size);
+    static DescriptorAllocation Create(DescriptorHeap* heap, uint32_t size);
+    static DescriptorAllocation CreatePreAllocated(DescriptorHeap* heap, size_t index, size_t size);
 	
     DescriptorHeap* Heap;
 	size_t Index;
@@ -103,7 +103,6 @@ struct DescriptorAllocation
 		return { this, offset };
 	}
 
-private:
     DescriptorAllocation() = default;
 };
 
@@ -133,7 +132,7 @@ struct DescriptorHeapPage
 		return page;
 	}
 
-    std::unique_ptr<DescriptorAllocation> Allocate(uint32_t count)
+    DescriptorAllocation Allocate(uint32_t count)
     {
 		size_t old = Top;
 		Top += count;
@@ -141,10 +140,10 @@ struct DescriptorHeapPage
 		return DescriptorAllocation::CreatePreAllocated(Heap, old + Offset, count);
     }
 
-    std::unique_ptr<DescriptorAllocation> CopyFrom(DescriptorAllocation* alloc)
+    DescriptorAllocation CopyFrom(DescriptorAllocation* alloc)
 	{
     	auto newAlloc = Allocate(alloc->Size);
-        Heap->Device->CopyDescriptorsSimple(alloc->Size, newAlloc->GetCPUHandle(), alloc->GetCPUHandle(), Heap->Desc.Type);
+        Heap->Device->CopyDescriptorsSimple(alloc->Size, newAlloc.GetCPUHandle(), alloc->GetCPUHandle(), Heap->Desc.Type);
         return newAlloc;
     }
 
@@ -207,7 +206,7 @@ struct DescriptorHeapPageCollection
         page->Reset();
 	}
 
-    std::unique_ptr<DescriptorAllocation> AllocateFromStatic(uint32_t count)
+    DescriptorAllocation AllocateFromStatic(uint32_t count = 1)
     {
         return StaticPage->Allocate(count);
 	}
@@ -224,7 +223,7 @@ struct DescriptorHeapAllocator
 
     void CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, size_t numDescriptors, uint32_t pageCount = 0, size_t staticPageSize = 0);
 
-    std::unique_ptr<DescriptorAllocation> AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t size)
+    DescriptorAllocation AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t size = 1)
     {
 		return Heaps[type]->AllocateFromStatic(size);
 	}
@@ -288,11 +287,11 @@ template<> struct ResourceViewToDesc<ViewTypes::DepthStencilView> {
 template<ViewTypes type>
 struct ResourceView : DescriptorAllocation
 {
-    static std::unique_ptr<ResourceView<type>> Create(typename ResourceViewToDesc<type> descs)
+    static ResourceView<type> Create(typename ResourceViewToDesc<type> descs)
     {
 		return Create(std::span{ &descs, 1 });
 	}
-    static std::unique_ptr<ResourceView<type>> Create(std::span<typename ResourceViewToDesc<type>> descs);
+    static ResourceView<type> Create(std::span<typename ResourceViewToDesc<type>> descs);
 };
 
 using ShaderResourceView = ResourceView<ViewTypes::ShaderResourceView>;
