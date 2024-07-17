@@ -20,15 +20,14 @@ struct MVP_CB
 namespace StaticPipelineConsts
 {
 	constexpr const char* ModelViewProjectionCB = "ModelViewProjectionCB";
-	constexpr const char* VertexSRV = "VertexSRV";
 	constexpr const char* MaterialInfo = "MaterialInfo";
 	constexpr const char* DiffuseSRV = "DiffuseSRV";
+	constexpr const char* NormalMapSRV = "NormalMapSRV";
 }
 
 namespace ShadowMapPipelineConsts
 {
 	constexpr const char* ModelViewProjectionCB = "ModelViewProjectionCB";
-	constexpr const char* VertexSRV = "VertexSRV";
 }
 
 namespace LightingPipelineConsts
@@ -143,9 +142,9 @@ bool DeferredRenderingPipeline::SetupStaticMeshPipeline()
 
 	std::vector< CD3DX12_ROOT_PARAMETER1> rootParams;
 	builder.AddConstants(StaticPipelineConsts::ModelViewProjectionCB, sizeof(MVP_NORMAL_CB) / 4, { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_VERTEX });
-	builder.AddDescriptorTable(StaticPipelineConsts::VertexSRV, { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0) } }, D3D12_SHADER_VISIBILITY_VERTEX);
 	builder.AddDescriptorTable(StaticPipelineConsts::MaterialInfo, { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1) } }, D3D12_SHADER_VISIBILITY_PIXEL);
-	builder.AddDescriptorTable(StaticPipelineConsts::DiffuseSRV, { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3) } }, D3D12_SHADER_VISIBILITY_PIXEL);
+	builder.AddDescriptorTable(StaticPipelineConsts::DiffuseSRV, { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0) } }, D3D12_SHADER_VISIBILITY_PIXEL);
+	builder.AddDescriptorTable(StaticPipelineConsts::NormalMapSRV, { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1) } }, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -175,9 +174,10 @@ bool DeferredRenderingPipeline::SetupStaticMeshPipeline()
 	} pipelineStateStream;
 
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-		{ "POSINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "NORMALINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORDINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 
 	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
@@ -206,7 +206,6 @@ bool DeferredRenderingPipeline::SetupShadowMapPipeline()
 {
 	RootSignatureBuilder builder{};
 	builder.AddConstants(ShadowMapPipelineConsts::ModelViewProjectionCB, sizeof(MVP_CB) / 4, { .ShaderRegister = 0, .Visibility = D3D12_SHADER_VISIBILITY_VERTEX });
-	builder.AddDescriptorTable(ShadowMapPipelineConsts::VertexSRV, { { CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0) } }, D3D12_SHADER_VISIBILITY_VERTEX);
 	ShadowMapRootSignature = builder.Build("ShadowMapRS", Device, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 	struct ShadowMapPipelineStateStream : PipelineStateStreamBase
@@ -218,9 +217,10 @@ bool DeferredRenderingPipeline::SetupShadowMapPipeline()
 	} pipelineStateStream;
 
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-		{ "POSINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "NORMALINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORDINDEX", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 
 	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
@@ -354,10 +354,10 @@ void DeferredRenderingPipeline::RunStaticMeshPipeline(ID3D12GraphicsCommandList2
 	Renderable lastRenderableCfg{};
 	for (auto& renderable : scene.RenderableList)
 	{
-		if (lastRenderableCfg.VertexSRV.ptr != renderable.VertexSRV.ptr)
+		if (lastRenderableCfg.VertexBufferView.BufferLocation != renderable.VertexBufferView.BufferLocation)
 		{
-			lastRenderableCfg.VertexSRV = renderable.VertexSRV;
-			cmd->SetGraphicsRootDescriptorTable(StaticMeshPipelineState.RootSignature->NameToParameterIndices[StaticPipelineConsts::VertexSRV], renderable.VertexSRV);
+			lastRenderableCfg.VertexBufferView = renderable.VertexBufferView;
+			cmd->IASetVertexBuffers(0, 1, &renderable.VertexBufferView);
 		}
 
 		if (lastRenderableCfg.MaterialInfo.ptr != renderable.MaterialInfo.ptr)
@@ -373,17 +373,25 @@ void DeferredRenderingPipeline::RunStaticMeshPipeline(ID3D12GraphicsCommandList2
 				cmd->SetGraphicsRootDescriptorTable(StaticMeshPipelineState.RootSignature->NameToParameterIndices[StaticPipelineConsts::DiffuseSRV], renderable.DiffuseTextureSRV);
 			}
 		}
-
-		if (lastRenderableCfg.IndicesView.BufferLocation != renderable.IndicesView.BufferLocation)
+		if (renderable.NormalMapTextureSRV.ptr != 0)
 		{
-			lastRenderableCfg.IndicesView = renderable.IndicesView;
-			cmd->IASetVertexBuffers(0, 1, &renderable.IndicesView);
+			if (lastRenderableCfg.NormalMapTextureSRV.ptr != renderable.NormalMapTextureSRV.ptr)
+			{
+				lastRenderableCfg.NormalMapTextureSRV = renderable.NormalMapTextureSRV;
+				cmd->SetGraphicsRootDescriptorTable(StaticMeshPipelineState.RootSignature->NameToParameterIndices[StaticPipelineConsts::NormalMapSRV], renderable.NormalMapTextureSRV);
+			}
+		}
+
+		if (lastRenderableCfg.IndexBufferView.BufferLocation != renderable.IndexBufferView.BufferLocation)
+		{
+			lastRenderableCfg.IndexBufferView = renderable.IndexBufferView;
+			cmd->IASetIndexBuffer(&renderable.IndexBufferView);
 		}
 		MVP_NORMAL_CB mvp{};
 		mvp.ModelViewProjection = XMMatrixMultiply(renderable.GlobalModelMatrix, viewData.ViewProjection);
 		mvp.NormalMatrix = DirectX::XMMatrixTranspose(DirectX::XMMatrixInverse(nullptr, renderable.GlobalModelMatrix));
 		cmd->SetGraphicsRoot32BitConstants(StaticMeshPipelineState.RootSignature->NameToParameterIndices[StaticPipelineConsts::ModelViewProjectionCB], sizeof(MVP_NORMAL_CB) / sizeof(uint32_t), &mvp, 0);
-		cmd->DrawInstanced(renderable.GetIndexCount(), 1, 0, 0);
+		cmd->DrawIndexedInstanced(renderable.GetIndexCount(), 1, 0, 0, 0);
 	}
 }
 void DeferredRenderingPipeline::RunShadowMapPipeline(ID3D12GraphicsCommandList2* cmd, SceneDataView const& scene)
@@ -411,20 +419,20 @@ void DeferredRenderingPipeline::RunShadowMapPipeline(ID3D12GraphicsCommandList2*
 	Renderable lastRenderableCfg{};
 	for (auto& renderable : scene.RenderableList)
 	{
-		if (lastRenderableCfg.VertexSRV.ptr != renderable.VertexSRV.ptr)
+		if (lastRenderableCfg.VertexBufferView.BufferLocation != renderable.VertexBufferView.BufferLocation)
 		{
-			lastRenderableCfg.VertexSRV = renderable.VertexSRV;
-			cmd->SetGraphicsRootDescriptorTable(ShadowMapPipelineState.RootSignature->NameToParameterIndices[ShadowMapPipelineConsts::VertexSRV], renderable.VertexSRV);
+			lastRenderableCfg.VertexBufferView = renderable.VertexBufferView;
+			cmd->IASetVertexBuffers(0, 1, &renderable.VertexBufferView);
 		}
-		if (lastRenderableCfg.IndicesView.BufferLocation != renderable.IndicesView.BufferLocation)
+		if (lastRenderableCfg.IndexBufferView.BufferLocation != renderable.IndexBufferView.BufferLocation)
 		{
-			lastRenderableCfg.IndicesView = renderable.IndicesView;
-			cmd->IASetVertexBuffers(0, 1, &renderable.IndicesView);
+			lastRenderableCfg.IndexBufferView = renderable.IndexBufferView;
+			cmd->IASetIndexBuffer(&renderable.IndexBufferView);
 		}
 		MVP_CB mvp{};
 		mvp.ModelViewProjection = XMMatrixMultiply(renderable.GlobalModelMatrix, scene.LightView.ViewProjection);
 		cmd->SetGraphicsRoot32BitConstants(ShadowMapPipelineState.RootSignature->NameToParameterIndices[ShadowMapPipelineConsts::ModelViewProjectionCB], sizeof(MVP_CB) / sizeof(uint32_t), &mvp, 0);
-		cmd->DrawInstanced(renderable.GetIndexCount(), 1, 0, 0);
+		cmd->DrawIndexedInstanced(renderable.GetIndexCount(), 1, 0, 0, 0);
 	}
 }
 void DeferredRenderingPipeline::RunLightingPipeline(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)

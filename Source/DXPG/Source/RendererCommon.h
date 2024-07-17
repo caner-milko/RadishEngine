@@ -4,14 +4,6 @@
 
 namespace dxpg
 {
-
-struct HLSL_VertexData
-{
-    uint32_t PositionIdx;
-    uint32_t NormalIdx;
-    uint32_t TexCoordIdx;
-};
-
 struct ViewData
 {
     Matrix4x4 View;
@@ -46,13 +38,14 @@ struct Renderable
     std::string Name;
     D3D12_GPU_DESCRIPTOR_HANDLE MaterialInfo;
 	D3D12_GPU_DESCRIPTOR_HANDLE DiffuseTextureSRV;
-    D3D12_GPU_DESCRIPTOR_HANDLE VertexSRV;
-    D3D12_VERTEX_BUFFER_VIEW IndicesView;
+	D3D12_GPU_DESCRIPTOR_HANDLE NormalMapTextureSRV;
+    D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
+    D3D12_INDEX_BUFFER_VIEW IndexBufferView;
     Matrix4x4 GlobalModelMatrix;
 
 	__forceinline uint32_t GetIndexCount() const
 	{
-		return IndicesView.SizeInBytes / sizeof(HLSL_VertexData);
+		return IndexBufferView.SizeInBytes / sizeof(uint32_t);
 	}
 };
 

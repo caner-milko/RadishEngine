@@ -16,9 +16,13 @@ struct DeferredRenderingPipeline
 	void Run(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx);
 
 	DXTexture& GetOutputBuffer() { return OutputBuffer; }
-	DescriptorAllocation& GetOutputBufferSRV() { return OutputBufferSRV; }
+	D3D12_GPU_DESCRIPTOR_HANDLE GetOutputBufferSRV() { return OutputBufferSRV.GetGPUHandle(); }
 	DXTexture& GetShadowMap() { return ShadowMap; }
-	DescriptorAllocation& GetShadowMapSRV() { return ShadowMapSRV; }
+	D3D12_GPU_DESCRIPTOR_HANDLE GetShadowMapSRV() { return ShadowMapSRV.GetGPUHandle(); }
+	DXTexture& GetAlbedoBuffer() { return AlbedoBuffer; }
+	D3D12_GPU_DESCRIPTOR_HANDLE GetAlbedoBufferSRV() { return GBuffersSRV.GetGPUHandle(); }
+	DXTexture& GetNormalBuffer() { return NormalBuffer; }
+	D3D12_GPU_DESCRIPTOR_HANDLE GetNormalBufferSRV() { return GBuffersSRV.GetGPUHandle(1); }
 private:
 	bool SetupStaticMeshPipeline();
 	bool SetupLightingPipeline();

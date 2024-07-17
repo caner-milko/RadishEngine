@@ -455,22 +455,22 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 	g_DeferredRenderingPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
 
     DXTexture* selectedView = nullptr;
-	DescriptorAllocation* selectedSRV = nullptr;
+	D3D12_GPU_DESCRIPTOR_HANDLE selectedSRV = {};
     {
         if (g_Controlled == &g_Cam)
         {
             selectedView = &g_DeferredRenderingPipeline.GetOutputBuffer();
-			selectedSRV = &g_DeferredRenderingPipeline.GetOutputBufferSRV();
+			selectedSRV = g_DeferredRenderingPipeline.GetOutputBufferSRV();
         }
         else
         {
 			selectedView = &g_DeferredRenderingPipeline.GetShadowMap();
-			selectedSRV = &g_DeferredRenderingPipeline.GetShadowMapSRV();
+			selectedSRV = g_DeferredRenderingPipeline.GetShadowMapSRV();
         }
     }
 
     g_BlitPipeline.Blit(g_pd3dCommandList.Get(), &g_mainRenderTargetResource[backBufferIdx],
-        selectedView, g_mainRTVSRGBs.GetCPUHandle(backBufferIdx), selectedSRV->GetGPUHandle());
+        selectedView, g_mainRTVSRGBs.GetCPUHandle(backBufferIdx), selectedSRV);
 	
     TransitionVec(g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_RENDER_TARGET)
 		.Execute(g_pd3dCommandList.Get());
@@ -747,6 +747,7 @@ void LoadSceneData()
     {
         auto sponzaObj = ModelManager::Get().LoadModel(DXPG_SPONZA_DIR "sponza.obj", FrameIndependentCtx, g_pd3dCommandList.Get());
         auto* sponzaRoot = g_SceneTree.AddObject(MeshObject("SponzaRoot"));
+        sponzaRoot->Scale /= 100.0f;
         for (auto& [indexed, materialInfo] : sponzaObj->Objects)
 			auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed, materialInfo), sponzaRoot);
     }

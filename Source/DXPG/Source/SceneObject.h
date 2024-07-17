@@ -47,8 +47,10 @@ struct MeshObject
 		renderable.MaterialInfo = Material->MaterialInfo.GetGPUHandle();
 		if (Material->DiffuseTextureSRV)
 			renderable.DiffuseTextureSRV = Material->DiffuseTextureSRV->GetGPUHandle();
-		renderable.VertexSRV = IndexedModel->Model->VertexSRV.GetGPUHandle();
-		renderable.IndicesView = IndexedModel->IndicesView;
+		if (Material->NormalMapTextureSRV)
+			renderable.NormalMapTextureSRV = Material->NormalMapTextureSRV->GetGPUHandle();
+		renderable.VertexBufferView = IndexedModel->Model->VertexBufferView;
+		renderable.IndexBufferView = IndexedModel->IndexBufferView;
 		return renderable;
 	}
 };

@@ -18,8 +18,6 @@ struct DXPipelineState;
 struct DXRootSignature;
 struct DXDescriptorHeap;
 
-
-
 inline std::wstring s2ws(const std::string& str)
 {
     using convert_typeX = std::codecvt_utf8<wchar_t>;
@@ -34,6 +32,13 @@ inline std::string ws2s(const std::wstring& wstr)
     std::wstring_convert<convert_typeX, wchar_t> converterX;
 
     return converterX.to_bytes(wstr);
+}
+
+template <typename T, typename... Rest>
+void HashCombine(std::size_t& seed, const T& v, const Rest&... rest)
+{
+	seed ^= std::hash<T>{}(v)+0x9e3779b9 + (seed << 6) + (seed >> 2);
+	(HashCombine(seed, rest), ...);
 }
 
 template<typename T>
