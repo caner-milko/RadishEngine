@@ -33,7 +33,7 @@ macro(source_group_files FILES GROUP_NAME)
 	endforeach()
 endmacro()
 
-project(DX12Playground LANGUAGES CXX)
+project(RadishEngine LANGUAGES CXX)
 
 foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
     string( TOUPPER ${OUTPUTCONFIG} UPPERCONFIG )
@@ -53,4 +53,4 @@ set(EXTERNAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External")
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/External)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT DXPG)
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT radEngine)
