@@ -3,16 +3,10 @@
 #include "DXResource.h"
 #include "RendererCommon.h"
 
+#include "ConstantBuffers.hlsli"
+
 namespace rad
 {
-
-
-struct HLSL_ShaderMaterialInfo
-{
-    Vector4 Diffuse;
-    int UseDiffuseTexture;
-    int UseNormalMap;
-};
 
 struct Material
 {
@@ -24,7 +18,7 @@ struct Material
 
     Vector3 DiffuseColor = { 1, 1, 1 };
 
-    DXTypedBuffer<HLSL_ShaderMaterialInfo> MaterialInfoBuffer;
+    DXTypedBuffer<rad::hlsl::MaterialBuffer> MaterialInfoBuffer;
     DescriptorAllocation MaterialInfo;
 	std::optional<DescriptorAllocation> DiffuseTextureSRV = std::nullopt;
 	std::optional<DescriptorAllocation> NormalMapTextureSRV = std::nullopt;
