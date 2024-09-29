@@ -6,6 +6,7 @@
 #include <memory>
 #include <cassert>
 #include <stack>
+#include <bit>
 
 namespace rad
 {
