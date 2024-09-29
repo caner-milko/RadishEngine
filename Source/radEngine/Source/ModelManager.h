@@ -12,7 +12,7 @@ namespace rad
 
 struct ObjModel
 {
-	Model Model;
+	VertexBuffer Vertices;
 	std::unordered_map<std::string, IndexedModel> ModelViews;
 	std::unordered_map<std::string, Material> Materials;
 	std::vector<std::pair<IndexedModel*, Material*>> Objects;

@@ -49,11 +49,15 @@ PSOut PSMain(VSOut IN)
 	 	Texture2D<float4> diffuseTex = ResourceDescriptorHeap[material.DiffuseTextureIndex];
 		diffuseCol = diffuseTex.Sample(Sampler, IN.TexCoord);
 	 }
-        
+    
+    
+    PSOut output;
+    output.Albedo = float4(IN.TexCoord.r, IN.TexCoord.g, 0, 1);
+    return output;
+    
     if(diffuseCol.a < 0.5)
         discard;
    
-    PSOut output;
     output.Albedo = diffuseCol;
     if (material.NormalMapTextureIndex)
     {

@@ -40,17 +40,49 @@ struct Vertex
 
 };
 
-struct Model
+struct VertexBuffer
 {
     DXTypedBuffer<Vertex> VerticesBuffer;
     D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
 };
 
+struct ModelView
+{
+	D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+};
+
 struct IndexedModel
 {
 	std::string Name;
-    Model* Model;
+	VertexBuffer* Vertices;
     DXTypedBuffer<uint32_t> Indices;
     D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
+
+	ModelView ToModelView() const
+	{
+		ModelView modelView{};
+		modelView.VertexBufferView = Vertices->VertexBufferView;
+		modelView.IndexBufferView = IndexBufferView;
+		return modelView;
+	}
 };
-}
+
+struct StandaloneModel
+{
+	std::string Name;
+	VertexBuffer Vertices;
+	DXTypedBuffer<uint32_t> Indices;
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
+
+	ModelView ToModelView() const
+	{
+		ModelView modelView{};
+		modelView.VertexBufferView = Vertices.VertexBufferView;
+		modelView.IndexBufferView = IndexBufferView;
+		return modelView;
+	}
+};
+
+
+} // namespace rad

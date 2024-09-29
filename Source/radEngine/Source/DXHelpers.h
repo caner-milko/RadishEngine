@@ -1,4 +1,6 @@
 #pragma once
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <dxgi1_4.h>
 #include <tchar.h>
 #include <iostream>

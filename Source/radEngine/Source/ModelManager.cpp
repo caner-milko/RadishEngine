@@ -170,7 +170,7 @@ ObjModel* ModelManager::LoadModel(const std::string& modelPath, FrameContext& fr
 	std::vector<std::vector<uint32_t>> indicesPerShape;
 	LoadVerticesAndIndexBuffer(reader, vertices, indicesPerShape);
     {
-		auto& model = objModel->Model;
+		auto& model = objModel->Vertices;
 	    model.VerticesBuffer = DXTypedBuffer<Vertex>::CreateAndUpload(Device, s2ws(modelPath) + L"_Vertices", cmdList, frameCtx.IntermediateResources.emplace_back(), vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 		model.VertexBufferView.BufferLocation = model.VerticesBuffer.Resource->GetGPUVirtualAddress();
 		model.VertexBufferView.SizeInBytes = model.VerticesBuffer.Size;
@@ -239,7 +239,7 @@ ObjModel* ModelManager::LoadModel(const std::string& modelPath, FrameContext& fr
 		auto& shape = shapes[i];
 		auto& indices = indicesPerShape[i];
 		auto& indexedModel = objModel->ModelViews[shape.name];
-		indexedModel.Model = &objModel->Model;
+		indexedModel.Vertices = &objModel->Vertices;
         indexedModel.Name = shape.name;
         indexedModel.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(Device, s2ws(shape.name), cmdList, frameCtx.IntermediateResources.emplace_back(), indices, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 		indexedModel.IndexBufferView.BufferLocation = indexedModel.Indices.Resource->GetGPUVirtualAddress();

@@ -20,6 +20,7 @@ struct TextureManager : public Singleton<TextureManager>
 		D3D12_RESOURCE_FLAGS Flags = D3D12_RESOURCE_FLAG_NONE;
 	};
 
+
 	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, bool generateMips = true);
 
 private:

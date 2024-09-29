@@ -27,6 +27,7 @@
 #include "ModelManager.h"
 
 #include "SceneTree.h"
+#include "ProcGen/TerrainGenerator.h"
 
 extern "C" { __declspec(dllexport) extern const unsigned int D3D12SDKVersion = DIRECT3D_AGILITY_SDK_VERSION; }
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
@@ -62,6 +63,17 @@ SceneTree g_SceneTree;
 
 static int g_Width = 1920;
 static int g_Height = 1080;
+
+struct TerrainRenderData
+{
+    rad::proc::TerrainData Terrain{};
+    rad::Material TerrainMaterial{};
+	rad::DXTypedSingularBuffer<rad::hlsl::MaterialBuffer> TerrainMaterialBuffer{};
+};
+
+std::unique_ptr<TerrainRenderData> Terrain;
+
+
 
 struct IO
 {
@@ -747,11 +759,22 @@ void LoadSceneData()
 
     {
         auto sponzaObj = ModelManager::Get().LoadModel(RAD_SPONZA_DIR "sponza.obj", FrameIndependentCtx, g_pd3dCommandList.Get());
-        auto* sponzaRoot = g_SceneTree.AddObject(MeshObject("SponzaRoot"));
-        sponzaRoot->Scale /= 100.0f;
-        for (auto& [indexed, materialInfo] : sponzaObj->Objects)
-			auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed, materialInfo), sponzaRoot);
+        //auto* sponzaRoot = g_SceneTree.AddObject(MeshObject("SponzaRoot"));
+        //sponzaRoot->Scale /= 100.0f;
+        //for (auto& [indexed, materialInfo] : sponzaObj->Objects)
+		//	auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed->ToModelView(), materialInfo), sponzaRoot);
     }
+
+    Terrain = std::make_unique<TerrainRenderData>();
+
+    proc::TerrainGenerator terrainGen{};
+    Terrain->Terrain = terrainGen.InitializeTerrain(g_pd3dDevice.Get(), 256, 256);
+	terrainGen.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, 8);
+    auto* terrainRoot = g_SceneTree.AddObject(MeshObject("TerrainRoot"));
+	hlsl::MaterialBuffer terrainMaterial = {};
+	terrainMaterial.Diffuse = { 0.5f, 0.5f, 0.5f, 1.0f };
+    Terrain->TerrainMaterial.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(g_pd3dDevice.Get(), L"TerrainMaterialInfo", g_pd3dCommandList.Get(), FrameIndependentCtx.IntermediateResources.emplace_back(), terrainMaterial, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+    terrainRoot->Children.push_back(MeshObject("Terrain", Terrain->Terrain.Model.ToModelView(), &Terrain->TerrainMaterial));
 
     //Execute and flush
     EndFrame(FrameIndependentCtx);
@@ -829,6 +852,7 @@ int main(int argv, char** args)
     }
 
     CreateConsole();
+   
     // Setup SDL
     // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
     // depending on whether SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to the latest version of SDL is recommended!)
