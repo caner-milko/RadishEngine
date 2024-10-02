@@ -43,7 +43,7 @@ Shader* ShaderManager::CompileBindlessComputeShader(std::wstring_view name, std:
 {
 	std::vector<std::wstring_view> includeFoldersCopy{ {RAD_SHADERS_DIR L""} };
 	includeFoldersCopy.insert(includeFoldersCopy.end(), includeFolders.begin(), includeFolders.end());
-	return CompileShader(std::wstring(name) + L".cs", shaderPath, ShaderType::Compute, L"Main", includeFoldersCopy);
+	return CompileShader(std::wstring(name) + L".cs", shaderPath, ShaderType::Compute, L"CSMain", includeFoldersCopy);
 }
 
 Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)

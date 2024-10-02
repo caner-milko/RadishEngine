@@ -14,8 +14,6 @@ struct Material
     std::optional<std::string> DiffuseTextureName;
 	std::optional<std::string> NormalMapTextureName;
 
-    bool Dirty = false;
-
     Vector3 DiffuseColor = { 1, 1, 1 };
 
     DXTypedBuffer<rad::hlsl::MaterialBuffer> MaterialInfoBuffer;
@@ -37,7 +35,6 @@ struct Vertex
 			Normal.x == other.Normal.x && Normal.y == other.Normal.y && Normal.z == other.Normal.z &&
 			TexCoord.x == other.TexCoord.x && TexCoord.y == other.TexCoord.y;
 	}
-
 };
 
 struct VertexBuffer

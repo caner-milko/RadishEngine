@@ -1,5 +1,3 @@
-#pragma once
-
 #include "BindlessRootSignature.hlsli"
 
 struct VSOut

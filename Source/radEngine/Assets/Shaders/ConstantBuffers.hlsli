@@ -61,6 +61,14 @@ struct LightTransformBuffer
     float4x4 CamInverseView;
     float4x4 CamInverseProjection;
 };
+
+struct Vertex
+{
+    float3 Position;
+    float3 Normal;
+    float2 TexCoord;
+    float3 Tangent;
+};
     
 #ifdef __cplusplus
 };

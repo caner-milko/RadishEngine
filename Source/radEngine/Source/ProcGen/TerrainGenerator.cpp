@@ -1,5 +1,7 @@
 #include "TerrainGenerator.h"
 
+#include "ShaderManager.h"
+
 namespace rad::proc
 {
 size_t GetIndex(size_t x, size_t y, size_t width)
@@ -113,6 +115,19 @@ void diamondSquare(MapVector<float>& map, int size)
 	diamondSquare(map, size / 2);
 }
 
+bool TerrainGenerator::Setup(ID3D12Device2* dev)
+{
+	Device = dev;
+	struct HeightToMeshPipelineStream : PipelineStateStreamBase
+	{
+		CD3DX12_PIPELINE_STATE_STREAM_CS CS;
+	} pipelineStateStream;
+	auto compute = ShaderManager::Get().CompileBindlessComputeShader(L"HeightToMesh", RAD_SHADERS_DIR L"Compute/HeightMapToMesh.hlsl");
+	pipelineStateStream.CS = CD3DX12_SHADER_BYTECODE(compute->Blob.Get());
+	HeightMapToMeshPipelineState = PipelineState::Create("HeightToMeshPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature);
+	return true;
+}
+
 std::vector<float> TerrainGenerator::CreateDiamondSquareHeightMap(uint32_t toPowerOfTwo, uint32_t& width)
 {
 	width = (1 << toPowerOfTwo) + 1;
@@ -193,7 +208,7 @@ Vertex ToVertex(TerrainData& data, std::vector<float>& heightMapVals, uint32_t x
 
 	DirectX::XMVECTOR normal = DirectX::XMVector3Normalize(DirectX::XMVectorSet(xDif, 2.0f, yDif, 0.0f));
 	
-	DirectX::XMVECTOR tangent = DirectX::XMVector3Normalize(DirectX::XMVectorSet(0.0f, -yDif, 2.0f * texelSize, 0.f));
+	DirectX::XMVECTOR tangent = DirectX::XMVector3Normalize(DirectX::XMVectorSet(0.0f, -yDif, 2.0f, 0.f));
 	Vertex vtx{
 		.Position = { u, height, v },
 		.TexCoord = {u, v}
@@ -203,7 +218,7 @@ Vertex ToVertex(TerrainData& data, std::vector<float>& heightMapVals, uint32_t x
 	return vtx;
 };
 
-void TerrainGenerator::GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, TerrainData& terrain, uint32_t toPowerOfTwo, bool createMesh)
+void TerrainGenerator::GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, TerrainData& terrain, uint32_t toPowerOfTwo)
 {
 	//create heightmap
 	uint32_t width;
@@ -217,40 +232,77 @@ void TerrainGenerator::GenerateBaseHeightMap(ID3D12Device* device, FrameContext&
 			.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
 		});
 	heightMap.UploadDataTyped<float>(frameCtx, cmdList, heightMapVals);
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Texture2D.MipLevels = 1;
+	terrain.HeightMapSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	heightMap.CreatePlacedSRV(terrain.HeightMapSRV.GetView(), &srvDesc);
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+	terrain.HeightMapUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	heightMap.CreatePlacedUAV(terrain.HeightMapUAV.GetView(), &uavDesc);
+}
 
-	if (createMesh)
-	{
-		std::vector<Vertex> vertices(width * width);
-		for (uint32_t y = 0; y < width; y++)
-			for (uint32_t x = 0; x < width; x++)
-				vertices[GetIndex(x, y, width)] = ToVertex(terrain, heightMapVals, x, y);
-		std::vector<uint32_t> indices((width - 1) * (width - 1) * 6);
-		for (uint32_t y = 0; y < width - 1; y++)
-			for (uint32_t x = 0; x < width - 1; x++)
-			{
-				auto vtx1 = GetIndex(x, y, width);
-				auto vtx2 = GetIndex(x + 1, y, width);
-				auto vtx3 = GetIndex(x, y + 1, width);
-				auto vtx4 = GetIndex(x + 1, y + 1, width);
-				indices[6 * GetIndex(x, y, width - 1) + 0] = vtx1;
-				indices[6 * GetIndex(x, y, width - 1) + 1] = vtx3;
-				indices[6 * GetIndex(x, y, width - 1) + 2] = vtx2;
-				indices[6 * GetIndex(x, y, width - 1) + 3] = vtx3;
-				indices[6 * GetIndex(x, y, width - 1) + 4] = vtx4;
-				indices[6 * GetIndex(x, y, width - 1) + 5] = vtx2;
-			}
-		terrain.Model.Vertices.VerticesBuffer = DXTypedBuffer<Vertex>::CreateAndUpload(device, L"TerrainVtxBuffer", cmdList, frameCtx.IntermediateResources.emplace_back(), vertices);
-		auto& vtxBufView = terrain.Model.Vertices.VertexBufferView;
-		vtxBufView.BufferLocation = terrain.Model.Vertices.VerticesBuffer.Resource->GetGPUVirtualAddress();
-		vtxBufView.SizeInBytes = terrain.Model.Vertices.VerticesBuffer.Size;
-		vtxBufView.StrideInBytes = sizeof(Vertex);
+void TerrainGenerator::GenerateMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, TerrainData& terrain)
+{
+	std::vector<Vertex> vertices(terrain.MeshResX * terrain.MeshResY);
+	//for (uint32_t y = 0; y < width; y++)
+	//	for (uint32_t x = 0; x < width; x++)
+	//		vertices[GetIndex(x, y, width)] = ToVertex(terrain, heightMapVals, x, y);
+	std::vector<uint32_t> indices((terrain.MeshResX - 1) * (terrain.MeshResY - 1) * 6);
+	for (uint32_t y = 0; y < terrain.MeshResY - 1; y++)
+		for (uint32_t x = 0; x < terrain.MeshResX - 1; x++)
+		{
+			auto vtx1 = GetIndex(x, y, terrain.MeshResX);
+			auto vtx2 = GetIndex(x + 1, y, terrain.MeshResX);
+			auto vtx3 = GetIndex(x, y + 1, terrain.MeshResX);
+			auto vtx4 = GetIndex(x + 1, y + 1, terrain.MeshResX);
+			indices[6 * GetIndex(x, y, terrain.MeshResX - 1) + 0] = vtx1;
+			indices[6 * GetIndex(x, y, terrain.MeshResX - 1) + 1] = vtx3;
+			indices[6 * GetIndex(x, y, terrain.MeshResX - 1) + 2] = vtx2;
+			indices[6 * GetIndex(x, y, terrain.MeshResX - 1) + 3] = vtx3;
+			indices[6 * GetIndex(x, y, terrain.MeshResX - 1) + 4] = vtx4;
+			indices[6 * GetIndex(x, y, terrain.MeshResX - 1) + 5] = vtx2;
+		}
 
-		terrain.Model.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(device, L"TerrainIdxBuffer", cmdList, frameCtx.IntermediateResources.emplace_back(), indices);
-		auto& idxBufView = terrain.Model.IndexBufferView;
-		idxBufView.BufferLocation = terrain.Model.Indices.Resource->GetGPUVirtualAddress();
-		idxBufView.SizeInBytes = terrain.Model.Indices.Size;
-		idxBufView.Format = DXGI_FORMAT_R32_UINT;
-	}
+	terrain.Model = StandaloneModel{};
+	auto& model = *terrain.Model;
+	model.Vertices.VerticesBuffer = DXTypedBuffer<Vertex>::Create(device, L"TerrainVtxBuffer", terrain.MeshResX * terrain.MeshResY, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	auto& vtxBufView = model.Vertices.VertexBufferView;
+	vtxBufView.BufferLocation = model.Vertices.VerticesBuffer.Resource->GetGPUVirtualAddress();
+	vtxBufView.SizeInBytes = model.Vertices.VerticesBuffer.Size;
+	vtxBufView.StrideInBytes = sizeof(Vertex);
+	terrain.VerticesUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	model.Vertices.VerticesBuffer.CreatePlacedTypedUAV(terrain.VerticesUAV.GetView());
+	// Run compute shader to generate mesh
+	cmdList->SetPipelineState(HeightMapToMeshPipelineState.DXPipelineState.Get());
+	cmdList->SetComputeRootSignature(HeightMapToMeshPipelineState.RootSignature->DXSignature.Get());
+
+	TransitionVec().Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.Model->Vertices.VerticesBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
+
+	hlsl::HeightToMeshResources resources{
+		.HeightMapTextureIndex = terrain.HeightMapSRV.Index,
+		.VertexBufferIndex = terrain.VerticesUAV.Index,
+		.MeshResX = terrain.MeshResX,
+		.MeshResY = terrain.MeshResY 
+	};
+
+	//cmdList->SetComputeRoot32BitConstants(0, sizeof(resources) / sizeof(uint32_t), &resources, 0);
+
+	cmdList->Dispatch(1, 1, 1);
+
+	model.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(device, L"TerrainIdxBuffer", cmdList, frameCtx.IntermediateResources.emplace_back(), indices);
+	auto& idxBufView = model.IndexBufferView;
+	idxBufView.BufferLocation = model.Indices.Resource->GetGPUVirtualAddress();
+	idxBufView.SizeInBytes = model.Indices.Size;
+	idxBufView.Format = DXGI_FORMAT_R32_UINT;
+}
+
+void TerrainGenerator::GenerateMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, TerrainData& terrain)
+{
 }
 
 }

@@ -169,6 +169,16 @@ struct DXTypedBuffer : DXBuffer
 		return CreateSRV(Size / sizeof(T), offset, sizeof(T), flags);
 	}
 
+	void CreatePlacedTypedUAV(DescriptorAllocationView alloc, size_t firstElement = 0, D3D12_BUFFER_UAV_FLAGS flags = D3D12_BUFFER_UAV_FLAG_NONE)
+	{
+		CreatePlacedUAV(alloc, Size / sizeof(T), sizeof(T), firstElement, flags);
+	}
+
+	void CreatePlacedTypedSRV(DescriptorAllocationView alloc, size_t offset = 0, D3D12_BUFFER_SRV_FLAGS flags = D3D12_BUFFER_SRV_FLAG_NONE)
+	{
+		CreatePlacedSRV(alloc, Size / sizeof(T), offset, sizeof(T), flags);
+	}
+
 	using DXBuffer::DXBuffer;
 	explicit DXTypedBuffer(DXBuffer const& buf) : DXBuffer(buf) { Size = buf.Size; }
 };

@@ -59,6 +59,7 @@ static HWND g_hWnd = nullptr;
 
 DeferredRenderingPipeline g_DeferredRenderingPipeline;
 BlitPipeline g_BlitPipeline;
+proc::TerrainGenerator g_TerrainGenerator;
 SceneTree g_SceneTree;
 
 static int g_Width = 1920;
@@ -591,6 +592,7 @@ bool CreateDeviceD3D()
 
     g_DeferredRenderingPipeline.Setup(g_pd3dDevice.Get());
 	g_BlitPipeline.Setup(g_pd3dDevice.Get());
+	g_TerrainGenerator.Setup(g_pd3dDevice.Get());
 
     CreateSwapchainRTVDSV(false);
     return true;
@@ -608,6 +610,7 @@ void CleanupDeviceD3D()
     FrameIndependentCtx.CommandAllocator = nullptr;
     g_DeferredRenderingPipeline = {};
 	g_BlitPipeline = {};
+	g_TerrainGenerator = {};
     g_pd3dCommandQueue = nullptr;
     g_pd3dCommandList = nullptr;
     g_fence = nullptr;
@@ -766,15 +769,15 @@ void LoadSceneData()
     }
 
     Terrain = std::make_unique<TerrainRenderData>();
-
-    proc::TerrainGenerator terrainGen{};
-    Terrain->Terrain = terrainGen.InitializeTerrain(g_pd3dDevice.Get(), 256, 256);
-	terrainGen.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, 8);
+    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), 256, 256);
+	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, 8);
+	g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
     auto* terrainRoot = g_SceneTree.AddObject(MeshObject("TerrainRoot"));
+    terrainRoot->Scale *= 100.0f;
 	hlsl::MaterialBuffer terrainMaterial = {};
 	terrainMaterial.Diffuse = { 0.5f, 0.5f, 0.5f, 1.0f };
     Terrain->TerrainMaterial.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(g_pd3dDevice.Get(), L"TerrainMaterialInfo", g_pd3dCommandList.Get(), FrameIndependentCtx.IntermediateResources.emplace_back(), terrainMaterial, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-    terrainRoot->Children.push_back(MeshObject("Terrain", Terrain->Terrain.Model.ToModelView(), &Terrain->TerrainMaterial));
+    terrainRoot->Children.push_back(MeshObject("Terrain", Terrain->Terrain.Model->ToModelView(), &Terrain->TerrainMaterial));
 
     //Execute and flush
     EndFrame(FrameIndependentCtx);

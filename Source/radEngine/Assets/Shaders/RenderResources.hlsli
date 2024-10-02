@@ -47,6 +47,25 @@ struct BlitResources
 {
     uint SourceTextureIndex;
 };
+
+struct HeightToAlbedoResources
+{
+    uint HeightMapTextureIndex;
+    uint AlbedoTextureIndex;
+};
+    
+struct HeightToNormalResources
+{
+    uint HeightMapTextureIndex;
+    uint NormalMapTextureIndex;
+};
+    
+struct HeightToMeshResources
+{
+    uint HeightMapTextureIndex;
+    uint VertexBufferIndex;
+    uint MeshResX, MeshResY;
+};
     
 #ifdef __cplusplus
 };
