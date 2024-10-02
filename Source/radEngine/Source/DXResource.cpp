@@ -36,7 +36,8 @@ void DXTexture::UploadData(FrameContext& frameCtx, ID3D12GraphicsCommandList* cm
 	subresourceData.RowPitch = Info.Width * bytesPerPixel;
 	subresourceData.SlicePitch = Info.Height * subresourceData.RowPitch;
 
-	UpdateSubresources(cmdList, Resource.Get(), intermediateBuf.Resource.Get(), 0, 0, 1, &subresourceData);
+	uint64_t res = UpdateSubresources(cmdList, Resource.Get(), intermediateBuf.Resource.Get(), 0, 0, 1, &subresourceData);
+	assert(res != 0);
 }
 
 ShaderResourceView DXTexture::CreateSRV(D3D12_SHADER_RESOURCE_VIEW_DESC const* srvDesc)

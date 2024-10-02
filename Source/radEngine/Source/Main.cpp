@@ -68,8 +68,6 @@ static int g_Height = 1080;
 struct TerrainRenderData
 {
     rad::proc::TerrainData Terrain{};
-    rad::Material TerrainMaterial{};
-	rad::DXTypedSingularBuffer<rad::hlsl::MaterialBuffer> TerrainMaterialBuffer{};
 };
 
 std::unique_ptr<TerrainRenderData> Terrain;
@@ -762,22 +760,24 @@ void LoadSceneData()
 
     {
         auto sponzaObj = ModelManager::Get().LoadModel(RAD_SPONZA_DIR "sponza.obj", FrameIndependentCtx, g_pd3dCommandList.Get());
-        //auto* sponzaRoot = g_SceneTree.AddObject(MeshObject("SponzaRoot"));
-        //sponzaRoot->Scale /= 100.0f;
-        //for (auto& [indexed, materialInfo] : sponzaObj->Objects)
-		//	auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed->ToModelView(), materialInfo), sponzaRoot);
+        auto* sponzaRoot = g_SceneTree.AddObject(MeshObject("SponzaRoot"));
+        sponzaRoot->Scale /= 100.0f;
+        for (auto& [indexed, materialInfo] : sponzaObj->Objects)
+			auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed->ToModelView(), materialInfo), sponzaRoot);
     }
 
     Terrain = std::make_unique<TerrainRenderData>();
     Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), 256, 256);
 	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, 8);
 	g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+	g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
     auto* terrainRoot = g_SceneTree.AddObject(MeshObject("TerrainRoot"));
-    terrainRoot->Scale *= 100.0f;
+    terrainRoot->Scale *= 10.0f;
+    terrainRoot->Position = DirectX::XMVectorSet(-5, 3, -5, 0);
+    terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
 	hlsl::MaterialBuffer terrainMaterial = {};
-	terrainMaterial.Diffuse = { 0.5f, 0.5f, 0.5f, 1.0f };
-    Terrain->TerrainMaterial.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(g_pd3dDevice.Get(), L"TerrainMaterialInfo", g_pd3dCommandList.Get(), FrameIndependentCtx.IntermediateResources.emplace_back(), terrainMaterial, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-    terrainRoot->Children.push_back(MeshObject("Terrain", Terrain->Terrain.Model->ToModelView(), &Terrain->TerrainMaterial));
+    terrainMaterial.Diffuse = DirectX::XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
+    terrainRoot->Children.push_back(MeshObject("Terrain", Terrain->Terrain.Model->ToModelView(), &*Terrain->Terrain.Material));
 
     //Execute and flush
     EndFrame(FrameIndependentCtx);

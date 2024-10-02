@@ -45,19 +45,15 @@ PSOut PSMain(VSOut IN)
 	ConstantBuffer<rad::MaterialBuffer> material = ResourceDescriptorHeap[Resources.MaterialBufferIndex];
     float4 diffuseCol = material.Diffuse;
 	if(material.DiffuseTextureIndex)
-	 {
-	 	Texture2D<float4> diffuseTex = ResourceDescriptorHeap[material.DiffuseTextureIndex];
-		diffuseCol = diffuseTex.Sample(Sampler, IN.TexCoord);
-	 }
-    
-    
-    PSOut output;
-    output.Albedo = float4(IN.TexCoord.r, IN.TexCoord.g, 0, 1);
-    return output;
+	{
+        Texture2D<float4> diffuseTex = ResourceDescriptorHeap[material.DiffuseTextureIndex];
+        diffuseCol = diffuseTex.Sample(Sampler, IN.TexCoord);
+	}
     
     if(diffuseCol.a < 0.5)
         discard;
    
+    PSOut output;
     output.Albedo = diffuseCol;
     if (material.NormalMapTextureIndex)
     {
@@ -65,6 +61,7 @@ PSOut PSMain(VSOut IN)
         float3 normalMapVal = normalMap.Sample(Sampler, IN.TexCoord).xyz * 2 - 1;
         normalMapVal.xy *= 3.0;
         normalMapVal = normalize(normalMapVal);
+        normalMapVal.x *= -1;
         
         float3 normal = normalize(IN.Normal);
         float3 tangent = normalize(IN.Tangent);
@@ -73,6 +70,7 @@ PSOut PSMain(VSOut IN)
         //Calculate TBN matrix
         float3x3 TBN = float3x3(tangent, bitangent, normal);
         output.Normal = float4(normalize(mul(normalMapVal, TBN)), 0);
+        //output.Albedo = float4(pow(normalMapVal * 0.5 + 0.5, 2.2), 1);
     }
     else
         output.Normal = float4(IN.Normal, 0);

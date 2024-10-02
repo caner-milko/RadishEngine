@@ -13,6 +13,7 @@ struct TerrainData
 {
 	uint32_t MeshResX = 256, MeshResY = 256;
 	std::optional<StandaloneModel> Model = std::nullopt;
+	std::optional<Material> Material{};
 
 	DXTexture HeightMap{};
 	DXTexture AlbedoTex{};
@@ -24,7 +25,6 @@ struct TerrainData
 	DescriptorAllocation AlbedoTexUAV{};
 	DescriptorAllocation NormalMapUAV{};
 	DescriptorAllocation VerticesUAV{};
-	Material Material{};
 };
 
 struct TerrainGenerator
@@ -33,9 +33,9 @@ struct TerrainGenerator
 
 	std::vector<float> CreateDiamondSquareHeightMap(uint32_t toPowerOfTwo, uint32_t& width);
 	TerrainData InitializeTerrain(ID3D12Device* device, uint32_t resX, uint32_t resY);
-	void GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, TerrainData& terrain, uint32_t toPowerOfTwo);
-	void GenerateMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, TerrainData& terrain);
-	void GenerateMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, TerrainData& terrain);
+	void GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, uint32_t toPowerOfTwo);
+	void GenerateMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
+	void GenerateMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
 	
 	ID3D12Device2* Device = nullptr;
 	PipelineState HeightMapToMeshPipelineState;

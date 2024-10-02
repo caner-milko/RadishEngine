@@ -49,18 +49,20 @@ bool GenerateMipsPipeline::Setup(ID3D12Device2* dev)
 	return true;
 }
 
-void GenerateMipsPipeline::GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, DXTexture& texture, uint32_t width, uint32_t height, uint32_t arraySize)
+void GenerateMipsPipeline::GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, DXTexture& texture)
 {
+	assert(texture.Info.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	assert(texture.Info.MipLevels == 0);
 	varAU2(dispatchThreadGroupCountXY);
 	varAU2(workGroupOffset); // needed if Left and Top are not 0,0
 	varAU2(numWorkGroupsAndMips);
-	varAU4(rectInfo) = initAU4(0, 0, width, height); // left, top, width, height
+	varAU4(rectInfo) = initAU4(0, 0, texture.Info.Width, texture.Info.Height); // left, top, width, height
 	SpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo);
 
 	// downsample
 	uint32_t dispatchX = dispatchThreadGroupCountXY[0];
 	uint32_t dispatchY = dispatchThreadGroupCountXY[1];
-	uint32_t dispatchZ = arraySize;
+	uint32_t dispatchZ = texture.Info.IsCubeMap ? texture.Info.DepthOrArraySize * 6 : texture.Info.DepthOrArraySize;
 
 	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 

@@ -20,7 +20,7 @@ struct TextureManager : public Singleton<TextureManager>
 		D3D12_RESOURCE_FLAGS Flags = D3D12_RESOURCE_FLAG_NONE;
 	};
 
-
+	void GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, DXTexture& texture);
 	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, bool generateMips = true);
 
 private:
@@ -28,7 +28,7 @@ private:
 	std::unordered_map<std::filesystem::path, TextureId> LoadedTextures;
 	ID3D12Device2* Device;
 	TextureId NextId = { 1 };
-	GenerateMipsPipeline GenerateMips;
+	GenerateMipsPipeline GenerateMipsPipeline;
 };
 
 }
