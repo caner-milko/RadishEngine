@@ -1,7 +1,8 @@
 #include "BindlessRootSignature.hlsli"
-#include "RenderResources.hlsli"
+#include "TerrainConstantBuffers.hlsli"
+#include "TerrainResources.hlsli"
 
-ConstantBuffer<rad::HeightToMaterialResources> Resources : register(b0);
+ConstantBuffer<HeightToMaterialResources> Resources : register(b0);
 
 SamplerState LinearSampler : register(s6);
 
@@ -13,9 +14,9 @@ uint2 ClampTexCoord(uint2 texCoord, uint2 textureSize)
 [numthreads(8,8,1)]
 void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 {
-    Texture2D<float> heightMap = ResourceDescriptorHeap[Resources.HeightMapTextureIndex];
-    RWTexture2D<float4> normalMap = ResourceDescriptorHeap[Resources.NormalMapTextureIndex];
-    RWTexture2D<float4> albedoTex = ResourceDescriptorHeap[Resources.AlbedoTextureIndex];
+    Texture2D<float> heightMap = GetBindlessResource(Resources.HeightMapTextureIndex);
+    RWTexture2D<float4> normalMap = GetBindlessResource(Resources.NormalMapTextureIndex);
+    RWTexture2D<float4> albedoTex = GetBindlessResource(Resources.AlbedoTextureIndex);
     uint2 heightTextureSize;
     heightMap.GetDimensions(heightTextureSize.x, heightTextureSize.y);
     float2 texelSize = 1.0 / float2(heightTextureSize.x, heightTextureSize.y);

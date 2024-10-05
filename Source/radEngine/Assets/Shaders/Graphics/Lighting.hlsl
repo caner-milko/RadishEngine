@@ -2,7 +2,7 @@
 #include "RenderResources.hlsli"
 #include "ConstantBuffers.hlsli"
 
-ConstantBuffer<rad::LightingResources> Resources : register(b0);
+ConstantBuffer<LightingResources> Resources : register(b0);
 
 SamplerState PointSampler : register(s0);
 SamplerComparisonState ShadowSampler : register(s1);
@@ -13,7 +13,7 @@ struct PSIn
     float2 TexCoord : TEXCOORD;
 };
 
-float3 WorldPosFromDepth(rad::LightTransformBuffer lightTransform, float2 texCoord, float depth)
+float3 WorldPosFromDepth(LightTransformBuffer lightTransform, float2 texCoord, float depth)
 {
     float2 screenPos = texCoord * 2 - 1;
     screenPos.y = -screenPos.y;
@@ -24,7 +24,7 @@ float3 WorldPosFromDepth(rad::LightTransformBuffer lightTransform, float2 texCoo
     return worldPos.xyz;
 }
 
-float3 LightSpaceFromWorld(rad::LightTransformBuffer lightTransform, float3 worldPos)
+float3 LightSpaceFromWorld(LightTransformBuffer lightTransform, float3 worldPos)
 {
     float4 lightSpacePos = mul(lightTransform.LightViewProjection, float4(worldPos, 1));
     lightSpacePos /= lightSpacePos.w;
@@ -41,14 +41,14 @@ float shadow_offset_lookup(Texture2D<float> shadowMap, SamplerComparisonState sh
 
 float4 PSMain(PSIn IN) : SV_TARGET
 {
-    Texture2D<float4> albedoTex = ResourceDescriptorHeap[Resources.AlbedoTextureIndex];
-    Texture2D<float4> normalTex = ResourceDescriptorHeap[Resources.NormalTextureIndex];
-    Texture2D<float> depthMap = ResourceDescriptorHeap[Resources.DepthTextureIndex];
+    Texture2D<float4> albedoTex = GetBindlessResource(Resources.AlbedoTextureIndex);
+    Texture2D<float4> normalTex = GetBindlessResource(Resources.NormalTextureIndex);
+    Texture2D<float> depthMap = GetBindlessResource(Resources.DepthTextureIndex);
     
-    Texture2D<float> shadowMap = ResourceDescriptorHeap[Resources.ShadowMapTextureIndex];
-    SamplerComparisonState shadowMapSampler = SamplerDescriptorHeap[Resources.ShadowMapSamplerIndex];
-    ConstantBuffer<rad::LightDataBuffer> lightData = ResourceDescriptorHeap[Resources.LightDataBufferIndex];
-    ConstantBuffer<rad::LightTransformBuffer> lightTransform = ResourceDescriptorHeap[Resources.LightTransformBufferIndex];
+    Texture2D<float> shadowMap = GetBindlessResource(Resources.ShadowMapTextureIndex);
+    SamplerComparisonState shadowMapSampler = GetBindlessSampler(Resources.ShadowMapSamplerIndex);
+    ConstantBuffer<LightDataBuffer> lightData = GetBindlessResource(Resources.LightDataBufferIndex);
+    ConstantBuffer<LightTransformBuffer> lightTransform = GetBindlessResource(Resources.LightTransformBufferIndex);
     
     float3 normal = normalTex.Sample(PointSampler, IN.TexCoord).rgb;
     float3 albedo = albedoTex.Sample(PointSampler, IN.TexCoord).rgb;

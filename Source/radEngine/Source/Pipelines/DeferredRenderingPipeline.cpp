@@ -138,7 +138,7 @@ bool DeferredRenderingPipeline::SetupStaticMeshPipeline()
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature);
+	StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
 	return true;
 }
 
@@ -166,7 +166,7 @@ bool DeferredRenderingPipeline::SetupShadowMapPipeline()
 
 	pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
-	ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature);
+	ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
 	ShadowMap = DXTexture::Create(Device, L"ShadowMap", {
 		.Width = 1024,
 		.Height = 1024,
@@ -247,7 +247,7 @@ bool DeferredRenderingPipeline::SetupLightingPipeline()
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	LightingPipelineState = PipelineState::Create("LightingPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature);
+	LightingPipelineState = PipelineState::Create("LightingPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
 
 	LightBuffer = DXBuffer::Create(Device, L"LightBuffer", sizeof(rad::hlsl::LightDataBuffer), D3D12_HEAP_TYPE_DEFAULT);
 	LightBufferCBV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);

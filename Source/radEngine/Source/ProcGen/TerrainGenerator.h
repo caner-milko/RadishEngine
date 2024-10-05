@@ -34,12 +34,17 @@ struct TerrainGenerator
 	std::vector<float> CreateDiamondSquareHeightMap(uint32_t toPowerOfTwo, uint32_t& width);
 	TerrainData InitializeTerrain(ID3D12Device* device, uint32_t resX, uint32_t resY);
 	void GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, uint32_t toPowerOfTwo);
+	void ErodeTerrain(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
+	void InitializeMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
+	void InitializeMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
 	void GenerateMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
 	void GenerateMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
 	
 	ID3D12Device2* Device = nullptr;
-	PipelineState HeightMapToMeshPipelineState;
-	PipelineState HeightMapToMaterialPipelineState;
+	PipelineState HeightMapToMeshPSO;
+	PipelineState HeightMapToMaterialPSO;
+	PipelineState ThermalOutfluxPSO;
+	PipelineState ThermalDepositPSO;
 };
 
 }

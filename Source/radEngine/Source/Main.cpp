@@ -461,7 +461,14 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     FrameContext* frameCtx = WaitForNextFrameResources();
     BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
-    
+    static uint32_t frameCount = 0;
+    if (g_IO.IsKeyPressed(SDL_SCANCODE_K) || frameCount++ == 1)
+    {
+		g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+		g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+		g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+    }
+
     SceneDataView sceneDataView{.RenderableList = g_SceneTree.SceneToRenderableList(), .Light = g_DirectionalLight.ToLightData(), .LightView = g_DirectionalLight.ToViewData()};
 	g_DeferredRenderingPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
 
@@ -766,15 +773,21 @@ void LoadSceneData()
 			auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed->ToModelView(), materialInfo), sponzaRoot);
     }
 
+    g_Cam.Position = { -20, 38, -19, 0};
+    g_Cam.Rotation = { 0.7, 0.75, 0 };
     Terrain = std::make_unique<TerrainRenderData>();
-    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), 256, 256);
-	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, 8);
+    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), 128, 128);
+	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, 10);
+	g_TerrainGenerator.InitializeMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+	g_TerrainGenerator.InitializeMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+    //g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
 	g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
 	g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
     auto* terrainRoot = g_SceneTree.AddObject(MeshObject("TerrainRoot"));
     terrainRoot->Scale *= 10.0f;
-    terrainRoot->Position = DirectX::XMVectorSet(-5, 3, -5, 0);
-    terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
+	terrainRoot->Scale.m128_f32[1] *= 2.0f;
+    terrainRoot->Position = DirectX::XMVectorSet(-13, 15, -10, 0);
+    //terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
 	hlsl::MaterialBuffer terrainMaterial = {};
     terrainMaterial.Diffuse = DirectX::XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
     terrainRoot->Children.push_back(MeshObject("Terrain", Terrain->Terrain.Model->ToModelView(), &*Terrain->Terrain.Material));

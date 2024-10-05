@@ -4,7 +4,7 @@
 
 SamplerState Sampler : register(s2);
 
-ConstantBuffer<rad::StaticMeshResources> Resources : register(b0);
+ConstantBuffer<StaticMeshResources> Resources : register(b0);
 
 struct VSIn
 {
@@ -42,11 +42,11 @@ struct PSOut
 [RootSignature(BindlessRootSignature)]
 PSOut PSMain(VSOut IN)
 {
-	ConstantBuffer<rad::MaterialBuffer> material = ResourceDescriptorHeap[Resources.MaterialBufferIndex];
+	ConstantBuffer<MaterialBuffer> material = GetBindlessResource(Resources.MaterialBufferIndex);
     float4 diffuseCol = material.Diffuse;
 	if(material.DiffuseTextureIndex)
 	{
-        Texture2D<float4> diffuseTex = ResourceDescriptorHeap[material.DiffuseTextureIndex];
+        Texture2D<float4> diffuseTex = GetBindlessResource(material.DiffuseTextureIndex);
         diffuseCol = diffuseTex.Sample(Sampler, IN.TexCoord);
 	}
     
@@ -57,7 +57,7 @@ PSOut PSMain(VSOut IN)
     output.Albedo = diffuseCol;
     if (material.NormalMapTextureIndex)
     {
-		Texture2D<float4> normalMap = ResourceDescriptorHeap[material.NormalMapTextureIndex];
+		Texture2D<float4> normalMap = GetBindlessResource(material.NormalMapTextureIndex);
         float3 normalMapVal = normalMap.Sample(Sampler, IN.TexCoord).xyz * 2 - 1;
         normalMapVal.xy *= 3.0;
         normalMapVal = normalize(normalMapVal);
@@ -70,7 +70,6 @@ PSOut PSMain(VSOut IN)
         //Calculate TBN matrix
         float3x3 TBN = float3x3(tangent, bitangent, normal);
         output.Normal = float4(normalize(mul(normalMapVal, TBN)), 0);
-        //output.Albedo = float4(pow(normalMapVal * 0.5 + 0.5, 2.2), 1);
     }
     else
         output.Normal = float4(IN.Normal, 0);

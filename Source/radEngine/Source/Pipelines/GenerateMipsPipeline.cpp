@@ -37,7 +37,7 @@ bool GenerateMipsPipeline::Setup(ID3D12Device2* dev)
 
 	pipelineStateStream.CS = CD3DX12_SHADER_BYTECODE(shader->Blob.Get());
 
-	PipelineState = PipelineState::Create("SPDPipelineState", dev, pipelineStateStream, &RootSignature);
+	PipelineState = PipelineState::Create("SPDPipelineState", dev, pipelineStateStream, &RootSignature, true);
 
 	// Create the global counter buffer
 
@@ -80,13 +80,13 @@ void GenerateMipsPipeline::GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCo
 
 	cmdList->SetComputeRootSignature(RootSignature.DXSignature.Get());
 
-	auto mipUavs = frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->Allocate(SPD_MAX_MIP_LEVELS+5);
+	auto mipUavs = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, SPD_MAX_MIP_LEVELS+5);
 	
 	for (int i = 0; i < SPD_MAX_MIP_LEVELS + 5; i++)
 	{
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		uavDesc.Format = texture.Info.Format;
 		uavDesc.Texture2D.MipSlice = constants.mips <= i ? constants.mips : i;
 		uavDesc.Texture2D.PlaneSlice = 0;
 		texture.CreatePlacedUAV(mipUavs.GetView(i), &uavDesc);

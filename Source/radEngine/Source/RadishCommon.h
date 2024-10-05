@@ -19,20 +19,19 @@ struct DXPipelineState;
 struct DXRootSignature;
 struct DXDescriptorHeap;
 
-inline std::wstring s2ws(const std::string& str)
+inline std::wstring s2ws(std::string_view str)
 {
     using convert_typeX = std::codecvt_utf8<wchar_t>;
     std::wstring_convert<convert_typeX, wchar_t> converterX;
-
-    return converterX.from_bytes(str);
+	return converterX.from_bytes(str.data(), str.data() + str.size());
 }
 
-inline std::string ws2s(const std::wstring& wstr)
+inline std::string ws2s(std::wstring_view wstr)
 {
     using convert_typeX = std::codecvt_utf8<wchar_t>;
     std::wstring_convert<convert_typeX, wchar_t> converterX;
 
-    return converterX.to_bytes(wstr);
+	return converterX.to_bytes(wstr.data(), wstr.data() + wstr.size());
 }
 
 template <typename T, typename... Rest>

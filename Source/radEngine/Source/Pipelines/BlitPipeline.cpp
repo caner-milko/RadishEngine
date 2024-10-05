@@ -30,7 +30,7 @@ bool BlitPipeline::Setup(ID3D12Device2* dev)
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	PipelineState = PipelineState::Create("BlitPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature);
+	PipelineState = PipelineState::Create("BlitPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
 	return true;
 }
 

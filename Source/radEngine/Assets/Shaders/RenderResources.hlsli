@@ -1,20 +1,10 @@
 #pragma once
 
+#include "Common.hlsli"
+
 #ifdef __cplusplus
-
-#define float4 DirectX::XMFLOAT4
-#define float3 DirectX::XMFLOAT3
-#define float2 DirectX::XMFLOAT2
-
-#define uint uint32_t
-
-#define float4x4 DirectX::XMMATRIX
-
-#endif
-
 namespace rad
 {
-#ifdef __cplusplus
 namespace hlsl
 {
 #endif
@@ -47,30 +37,7 @@ struct BlitResources
 {
     uint SourceTextureIndex;
 };
-    
-struct HeightToMaterialResources
-{
-    uint HeightMapTextureIndex;
-    uint AlbedoTextureIndex;
-    uint NormalMapTextureIndex;
-};
-    
-struct HeightToMeshResources
-{
-    uint HeightMapTextureIndex;
-    uint VertexBufferIndex;
-    uint MeshResX, MeshResY;
-};
-    
-struct TerrainResources
-{
-    float4x4 MVP;
-    float4x4 Normal;
-    uint HeightMapIndex;
-    uint MeshWidth;
-};
-    
 #ifdef __cplusplus
 };
-#endif
 };
+#endif

@@ -1,7 +1,7 @@
 #include "BindlessRootSignature.hlsli"
 #include "RenderResources.hlsli"
 
-ConstantBuffer<rad::ShadowMapResources> Resources : register(b0);
+ConstantBuffer<ShadowMapResources> Resources : register(b0);
 
 struct VSIn
 {

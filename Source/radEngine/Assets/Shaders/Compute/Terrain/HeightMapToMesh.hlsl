@@ -1,8 +1,8 @@
 #include "BindlessRootSignature.hlsli"
-#include "RenderResources.hlsli"
-#include "ConstantBuffers.hlsli"
+#include "TerrainConstantBuffers.hlsli"
+#include "TerrainResources.hlsli"
 
-ConstantBuffer<rad::HeightToMeshResources> Resources : register(b0);
+ConstantBuffer<HeightToMeshResources> Resources : register(b0);
 
 SamplerState LinearSampler : register(s6);
 
@@ -10,7 +10,7 @@ SamplerState LinearSampler : register(s6);
 [numthreads(8, 8, 1)]
 void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 {
-    Texture2D<float4> heightMap = ResourceDescriptorHeap[Resources.HeightMapTextureIndex];
+    Texture2D<float> heightMap = GetBindlessResource(Resources.HeightMapTextureIndex);
     uint2 textureSize;
     heightMap.GetDimensions(textureSize.x, textureSize.y);
     
@@ -18,11 +18,11 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     float2 texelSize = 1.0 / float2(textureSize.x, textureSize.y);
     float2 uv = float2(meshCoord) / float2(Resources.MeshResX, Resources.MeshResY);
     
-    float heightCur = heightMap.Sample(LinearSampler, uv).r;
+    float heightCur = heightMap.Sample(LinearSampler, uv);
     
-    RWStructuredBuffer<rad::Vertex> vertexBuf = ResourceDescriptorHeap[Resources.VertexBufferIndex];
+    RWStructuredBuffer<Vertex> vertexBuf = GetBindlessResource(Resources.VertexBufferIndex);
     
-    rad::Vertex vtx;
+    Vertex vtx;
     vtx.Position = float3(uv.x * 2.0, heightCur, uv.y * 2.0);
     vtx.Normal = float3(0, 1, 0);
     vtx.TexCoord = uv;
