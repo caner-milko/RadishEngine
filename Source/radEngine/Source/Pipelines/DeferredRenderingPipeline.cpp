@@ -213,8 +213,6 @@ bool DeferredRenderingPipeline::SetupShadowMapPipeline()
 	shadowSampler.MaxAnisotropy = 16;
 	shadowSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
 	memset(shadowSampler.BorderColor, std::bit_cast<int>(1.0f), sizeof(shadowSampler.BorderColor));
-	shadowSampler.MinLOD = 0;
-	shadowSampler.MaxLOD = D3D12_FLOAT32_MAX;
 	
 	Device->CreateSampler(&shadowSampler, ShadowMapSampler.GetCPUHandle());
 	

@@ -29,6 +29,7 @@ DXTexture DXTexture::FromExisting(ID3D12Device* device, std::wstring name, ComPt
 
 void DXTexture::UploadData(FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, std::span<const std::byte> data, uint8_t bytesPerPixel)
 {
+	TransitionVec(*this, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdList);
 	auto intermediateBuf = DXBuffer::Create(Device, Name + L"_IntermediateBuffer", data.size(), D3D12_HEAP_TYPE_UPLOAD);
 	frameCtx.IntermediateResources.push_back(intermediateBuf.Resource);
 	D3D12_SUBRESOURCE_DATA subresourceData = {};

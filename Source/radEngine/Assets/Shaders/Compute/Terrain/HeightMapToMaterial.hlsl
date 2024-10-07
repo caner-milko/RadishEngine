@@ -26,19 +26,22 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     float2 texCoord = float2(dispatchID.xy) / float2(albedoTextureSize);
 
-    float heightCenter = heightMap.Sample(LinearSampler, texCoord).r;
-    float heightLeft = heightMap.Sample(LinearSampler, texCoord - float2(texelSize.x, 0));
-    float heightRight = heightMap.Sample(LinearSampler, texCoord + float2(texelSize.x, 0));
-    float heightTop = heightMap.Sample(LinearSampler, texCoord - float2(0, texelSize.y));
-    float heightBottom = heightMap.Sample(LinearSampler, texCoord + float2(0, texelSize.y));
-
-    float xDif = (heightLeft - heightRight) / (2 * texelSize.x);
-    float yDif = (heightBottom - heightTop) / (2 * texelSize.y);
+    float heightCenter = heightMap.Sample(LinearSampler, texCoord);
+    float2 leftCoord = clamp(texCoord - float2(texelSize.x, 0), 0, 1);
+    float2 rightCoord = clamp(texCoord + float2(texelSize.x, 0), 0, 1);
+    float2 topCoord = clamp(texCoord - float2(0, texelSize.y), 0, 1);
+    float2 bottomCoord = clamp(texCoord + float2(0, texelSize.y), 0, 1);
     
-    float3 normal = normalize(float3(xDif, 2, yDif));
+    float heightLeft = heightMap.Sample(LinearSampler, leftCoord);
+    float heightRight = heightMap.Sample(LinearSampler, rightCoord);
+    float heightTop = heightMap.Sample(LinearSampler, topCoord);
+    float heightBottom = heightMap.Sample(LinearSampler, bottomCoord);
+
+    float xDif = (heightLeft - heightRight);
+    float yDif = (heightBottom - heightTop);
+    
+    float3 normal = normalize(cross(float3((rightCoord - leftCoord).x, xDif, 0), float3(0, yDif, (topCoord - bottomCoord).y)));
     float3 mapVal = float3(normal.xzy);
-    mapVal.x *= -1;
-    mapVal.xy /= 3;
     mapVal = mapVal * 0.5 + 0.5;
     normalMap[dispatchID.xy] = float4(mapVal, 0);
     
@@ -70,5 +73,5 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     }
     
     albedoTex[dispatchID.xy] = float4(surfaceColor, 1);
-    
+    albedoTex[dispatchID.xy] = float4(heightCenter, heightCenter, heightCenter, 1);
 }

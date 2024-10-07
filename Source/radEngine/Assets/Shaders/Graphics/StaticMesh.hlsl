@@ -59,7 +59,7 @@ PSOut PSMain(VSOut IN)
     {
 		Texture2D<float4> normalMap = GetBindlessResource(material.NormalMapTextureIndex);
         float3 normalMapVal = normalMap.Sample(Sampler, IN.TexCoord).xyz * 2 - 1;
-        normalMapVal.xy *= 3.0;
+        //normalMapVal.xy *= 3.0;
         normalMapVal = normalize(normalMapVal);
         normalMapVal.x *= -1;
         
@@ -70,6 +70,7 @@ PSOut PSMain(VSOut IN)
         //Calculate TBN matrix
         float3x3 TBN = float3x3(tangent, bitangent, normal);
         output.Normal = float4(normalize(mul(normalMapVal, TBN)), 0);
+        //output.Albedo = float4(normalMapVal, 1);
     }
     else
         output.Normal = float4(IN.Normal, 0);

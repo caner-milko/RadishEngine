@@ -49,13 +49,9 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 		{
 			uint index = OffsetToIndex(-offset);
 			if(index > 3)
-			{
 				toAdd += pipes2[neighborCoord][index - 4];
-			}
 			else
-			{
                 toAdd += pipes1[neighborCoord][index];
-            }
 		}
 		if(i > 3)
 			toAdd -= pipes2[dispatchID.xy][i - 4];

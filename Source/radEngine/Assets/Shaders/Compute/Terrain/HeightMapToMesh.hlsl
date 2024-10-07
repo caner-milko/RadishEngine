@@ -23,7 +23,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     RWStructuredBuffer<Vertex> vertexBuf = GetBindlessResource(Resources.VertexBufferIndex);
     
     Vertex vtx;
-    vtx.Position = float3(uv.x * 2.0, heightCur, uv.y * 2.0);
+    vtx.Position = float3(uv.x, heightCur, uv.y);
     vtx.Normal = float3(0, 1, 0);
     vtx.TexCoord = uv;
     vtx.Tangent = float3(1, 0, 0);

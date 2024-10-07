@@ -12,9 +12,13 @@
 // code side.
 #define float4x4 DirectX::XMMATRIX
 
+
+#define DEFAULT_VALUE(x) = x
 #else
 // if HLSL
 #define PI 3.14159265359
+
+#define DEFAULT_VALUE(x) 
 #endif
 
 #if RAD_BINDLESS

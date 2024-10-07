@@ -71,7 +71,7 @@ struct TerrainRenderData
 };
 
 std::unique_ptr<TerrainRenderData> Terrain;
-
+proc::ErosionParameters ErosionParams = {};
 
 
 struct IO
@@ -380,6 +380,29 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
             ImGui::PopID();
         }
 
+		if (ImGui::CollapsingHeader("Terrain", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::PushID("Terrain");
+			if (ImGui::Button("Generate Base Height Map"))
+			{
+				g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams.InitialRoughness);
+				g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+				g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+			}
+			if (ImGui::Button("Erode Terrain"))
+			{
+				g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
+				g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+				g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+			}
+			ImGui::SliderFloat("Initial Roughness", &ErosionParams.InitialRoughness, 0.0f, 2.0f);
+			ImGui::SliderInt("Iterations", &ErosionParams.Iterations, 1, 1024);
+			ImGui::SliderFloat("Cell Size", &ErosionParams.CellSize, 1.0f, 1024.0f);
+			ImGui::SliderFloat("Height to Width Ratio", &ErosionParams.HeightToWidthRatio, 1.0f, 10.0f);
+			ImGui::SliderFloat("Talus Angle", &ErosionParams.TalusAngleDegrees, 0.0f, 90.0f);
+			ImGui::PopID();
+		}
+
 		UIDrawMeshTree(&g_SceneTree.Root);
 
         ImGui::End();
@@ -462,9 +485,15 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
     static uint32_t frameCount = 0;
-    if (g_IO.IsKeyPressed(SDL_SCANCODE_K) || frameCount++ == 1)
+    if (g_IO.IsKeyPressed(SDL_SCANCODE_K))
     {
-		g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+		g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
+		g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+		g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+    }
+    else if (g_IO.IsKeyPressed(SDL_SCANCODE_L))
+    {
+		g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams.InitialRoughness);
 		g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
 		g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
     }
@@ -776,16 +805,10 @@ void LoadSceneData()
     g_Cam.Position = { -20, 38, -19, 0};
     g_Cam.Rotation = { 0.7, 0.75, 0 };
     Terrain = std::make_unique<TerrainRenderData>();
-    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), 128, 128);
-	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, 10);
-	g_TerrainGenerator.InitializeMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
-	g_TerrainGenerator.InitializeMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
-    //g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
-	g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
-	g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
+    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), 64, 64, 2048);
+	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams.InitialRoughness);
     auto* terrainRoot = g_SceneTree.AddObject(MeshObject("TerrainRoot"));
     terrainRoot->Scale *= 10.0f;
-	terrainRoot->Scale.m128_f32[1] *= 2.0f;
     terrainRoot->Position = DirectX::XMVectorSet(-13, 15, -10, 0);
     //terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
 	hlsl::MaterialBuffer terrainMaterial = {};

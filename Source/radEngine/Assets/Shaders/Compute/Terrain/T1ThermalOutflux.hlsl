@@ -2,14 +2,6 @@
 #include "TerrainConstantBuffers.hlsli"
 #include "TerrainResources.hlsli"
 
-/*
-
-H = maxDiff = max{b - b_i, i = 1,...,8}
-a = cellArea
-deltaS(basic) = H * a / 2 = maxDiff * cellArea / 2
-
-*/
-
 ConstantBuffer<ThermalOutfluxResources> Resources : register(b0);
 
 // index = 0 => (-1, -1), 1 => (0, -1), 2 => (1, -1), 3=>(-1, 0), 4=>(1, 0), 5=>(-1, 1), 6=>(0, 1), 7=>(1, 1)
@@ -33,9 +25,8 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     heightMap.GetDimensions(textureSize.x, textureSize.y);
     RWTexture2D<float4> outPipes1 = GetBindlessResource(Resources.OutFluxTextureIndex1);
 	RWTexture2D<float4> outPipes2 = GetBindlessResource(Resources.OutFluxTextureIndex2);
-    float heightToWidthRatio = 2;
-    float realWidth = 256;
-    float cellWidth = 1 / float(textureSize.x) * realWidth;
+	float texelSize = 1 / float(textureSize.x);
+    float cellWidth = texelSize * Resources.CellSize;
 	float cellArea = cellWidth * cellWidth;
 
 	float heightCur = heightMap[dispatchID.xy];
@@ -56,20 +47,18 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 	for(uint i = 0; i < 8; i++)
         totDiff += max(heightDiffs[i], 0);
 
-    float deltaS = totDiff * cellArea / 2 * heightToWidthRatio;
-
-	float talusAngle = PI / 6;
+    float deltaS = totDiff * Resources.HeightToWidthRatio * cellArea / 2;
+	
 	float effectiveTotalHeightDiffs = 0;
-
+	
 	for(uint i = 0; i < 8; i++)
 	{
 		int2 offset = IndexToOffset(i);
-        float d = length(float2(offset)) * cellWidth / (realWidth * heightToWidthRatio);
-		float heightDiff = heightDiffs[i];
+        float d = length(float2(offset)) * texelSize;
+        float heightDiff = heightDiffs[i] * Resources.HeightToWidthRatio;
 		if(heightDiff > 0)
 		{
-			float angle = atan(heightDiff / d);
-			if (angle >= talusAngle)
+            if (heightDiff / d >= Resources.TalusAnglePrecomputed)
 			{
 				effectiveTotalHeightDiffs += heightDiff;
 				continue;
