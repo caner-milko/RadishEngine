@@ -412,9 +412,36 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
     ImGui::Render();
 }
 
+struct int2
+{
+    int x, y;
+    bool operator==(const int2& other) const
+    {
+        return x == other.x && y == other.y;
+    };
+};
+
+int2 IndexToOffset(int index)
+{
+    return int2(((index + 1) % 2) * ((index / 2) * 2 - 1), (index % 2) * ((index / 2) * 2 - 1));
+}
+
+int OffsetToIndex(int2 offset)
+{
+    return abs(offset.x) * (offset.x + 1) + abs(offset.y) * (offset.y + 2);
+}
+
 void InitGame()
 {
     memset(g_IO.CUR_KEYS, 0, sizeof(g_IO.CUR_KEYS));
+    assert((IndexToOffset(0) == int2(-1, 0)));
+    assert((IndexToOffset(1) == int2(0, -1)));
+	assert((IndexToOffset(2) == int2(1, 0)));
+	assert((IndexToOffset(3) == int2(0, 1)));
+	assert((OffsetToIndex(int2(-1, 0)) == 0));
+	assert((OffsetToIndex(int2(0, -1)) == 1));
+	assert((OffsetToIndex(int2(1, 0)) == 2));
+	assert((OffsetToIndex(int2(0, 1)) == 3));
 }
 
 void UpdateGame(float deltaTime)

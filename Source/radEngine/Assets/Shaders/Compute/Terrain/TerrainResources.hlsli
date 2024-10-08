@@ -42,19 +42,18 @@ struct ThermalDepositResources
  
 struct HydrolicAddWaterResources
 {
-    uint OutWaterMapIndex;
+    uint WaterMapIndex;
     float RainRate DEFAULT_VALUE(0.05f);
 };
 
 struct HydrolicCalculateOutfluxResources
 {
+    uint InHeightMapIndex;
     uint InWaterMapIndex;
-    uint OutFluxTextureIndex1;
-    uint OutFluxTextureIndex2;
-    float CellSize DEFAULT_VALUE(256.0f);
-    float HeightToWidthRatio DEFAULT_VALUE(2.0f);
+    uint OutFluxTextureIndex;
     float Gravity DEFAULT_VALUE(9.81f);
     float PipeCrossSection DEFAULT_VALUE(20.0f);
+    float PipeLength DEFAULT_VALUE(1.0f);
 };
 
 struct HydrolicUpdateWaterHeightResources
