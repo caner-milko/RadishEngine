@@ -12,8 +12,6 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     RWTexture2D<float4> outPipes1 = GetBindlessResource(Resources.OutFluxTextureIndex1);
 	RWTexture2D<float4> outPipes2 = GetBindlessResource(Resources.OutFluxTextureIndex2);
 	float texelSize = 1 / float(textureSize.x);
-    float cellWidth = texelSize * Resources.CellSize;
-	float cellArea = cellWidth * cellWidth;
 
 	float heightCur = heightMap[dispatchID.xy];
 	float heightDiffs[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
@@ -33,7 +31,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 	for(uint i = 0; i < 8; i++)
         totDiff += max(heightDiffs[i], 0);
 
-    float deltaS = totDiff * Resources.HeightToWidthRatio * cellArea / 2;
+    float deltaS = totDiff * Resources.ThermalErosionRate * (Resources.PipeLength * Resources.PipeLength) / 2 * Resources.DeltaTime;
 	
 	float effectiveTotalHeightDiffs = 0;
 	
@@ -41,7 +39,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 	{
 		int2 offset = IndexToOffset8(i);
         float d = length(float2(offset)) * texelSize;
-        float heightDiff = heightDiffs[i] * Resources.HeightToWidthRatio;
+        float heightDiff = heightDiffs[i];
 		if(heightDiff > 0)
 		{
             if (heightDiff / d >= Resources.TalusAnglePrecomputed)
@@ -72,5 +70,5 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 	}
 
 	outPipes1[dispatchID.xy] = outFlux1;
-	outPipes2[dispatchID.xy] = outFlux2;
+    outPipes2[dispatchID.xy] = outFlux2;
 }

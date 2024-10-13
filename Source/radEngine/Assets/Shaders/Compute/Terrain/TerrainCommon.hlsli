@@ -3,7 +3,7 @@
 #include "TerrainConstantBuffers.hlsli"
 #include "TerrainResources.hlsli"
 
-bool IsInBounds(uint2 coord, uint2 textureSize)
+bool IsInBounds(int2 coord, uint2 textureSize)
 {
     return coord.x < textureSize.x && coord.y < textureSize.y && coord.x >= 0 && coord.y >= 0;
 }
@@ -30,3 +30,12 @@ int OffsetToIndex4(int2 offset)
 {
     return abs(offset.x) * (offset.x + 1) + abs(offset.y) * (offset.y + 2);
 }
+
+
+
+/*
+
+To left: 16.48 = 9.81 * 0.03 * 20 * x * 1024
+To top: 16.71  =  9.81 * 0.03 * 20 * x * 1024
+
+*/

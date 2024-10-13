@@ -7,5 +7,5 @@ ConstantBuffer<HydrolicAddWaterResources> Resources : register(b0);
 void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 {
     RWTexture2D<float> waterMap = GetBindlessResource(Resources.WaterMapIndex);
-    waterMap[dispatchID.xy] += Resources.RainRate;
+    waterMap[dispatchID.xy] = waterMap[dispatchID.xy] + Resources.RainRate * Resources.DeltaTime;
 }

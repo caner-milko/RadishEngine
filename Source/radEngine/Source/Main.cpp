@@ -239,7 +239,8 @@ struct DirectionalLight : ViewPoint
 
 } g_DirectionalLight = {};
 ViewPoint* g_Controlled = &g_Cam;
-
+std::unordered_map<std::string, std::function<std::pair<rad::DXTexture*, rad::DescriptorAllocationView>()>> g_TextureSelections;
+std::string g_SelectedTexture = "None";
 
 // Forward declarations of helper functions
 bool CreateDeviceD3D();
@@ -285,9 +286,9 @@ void CreateConsole()
 
 void BeginFrame(FrameContext& frameCtx)
 {
+    g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
     frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
     frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
-    g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
     frameCtx.Ready = true;
     auto heaps = g_GPUDescriptorAllocator->GetHeaps();
     g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
@@ -305,6 +306,7 @@ void ClearFrame(FrameContext& frameCtx)
         g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
     }
 	frameCtx.GPUHeapPages.clear();
+	frameCtx.CPUViewsToGPUViews.clear();
     frameCtx.CommandAllocator->Reset();
 	frameCtx.IntermediateResources.clear();
 }
@@ -395,13 +397,42 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 				g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
 				g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
 			}
+			ImGui::Checkbox("With Water", &ErosionParams.MeshWithWater);
 			ImGui::SliderFloat("Initial Roughness", &ErosionParams.InitialRoughness, 0.0f, 2.0f);
 			ImGui::SliderInt("Iterations", &ErosionParams.Iterations, 1, 1024);
-			ImGui::SliderFloat("Cell Size", &ErosionParams.CellSize, 1.0f, 1024.0f);
-			ImGui::SliderFloat("Height to Width Ratio", &ErosionParams.HeightToWidthRatio, 1.0f, 10.0f);
-			ImGui::SliderFloat("Talus Angle", &ErosionParams.TalusAngleDegrees, 0.0f, 90.0f);
-			ImGui::PopID();
+			ImGui::SliderFloat("Pipe Length", &ErosionParams.PipeLength, 0.0f, 2.0f);
+
+
+			ImGui::SliderFloat("Rain Rate", &ErosionParams.RainRate, 0.0f, 0.1f);
+			ImGui::SliderFloat("Pipe Cross Section", &ErosionParams.PipeCrossSection, 0.0f, 100.0f);
+			ImGui::SliderFloat("Evaporation Rate", &ErosionParams.EvaporationRate, 0.0f, 0.1f);
+			ImGui::SliderFloat("Sediment Capacity", &ErosionParams.SedimentCapacity, 0.0f, 2.0f);
+			ImGui::SliderFloat("Soil Suspension Rate", &ErosionParams.SoilSuspensionRate, 0.0f, 0.1f);
+			ImGui::SliderFloat("Sediment Deposition Rate", &ErosionParams.SedimentDepositionRate, 0.0f, 0.1f);
+			ImGui::SliderFloat("Maximal Erosion Depth", &ErosionParams.MaximalErosionDepth, 0.0f, 2.0f);
+			
+            ImGui::SliderFloat("Talus Angle", &ErosionParams.TalusAngleDegrees, 0.0f, 90.0f);
+			ImGui::SliderFloat("Thermal Erosion Rate", &ErosionParams.ThermalErosionRate, 0.0f, 1.0f);
+			
+            ImGui::PopID();
 		}
+
+        if (ImGui::CollapsingHeader("Texture View"))
+        {
+			if (ImGui::BeginCombo("Textures", g_SelectedTexture.c_str()))
+			{
+				for (auto& [name, func] : g_TextureSelections)
+				{
+					if (ImGui::Selectable(name.c_str()))
+						g_SelectedTexture = name;
+				}
+                if (ImGui::Selectable("None"))
+                {
+					g_SelectedTexture = "None";
+                }
+				ImGui::EndCombo();
+			}
+        }
 
 		UIDrawMeshTree(&g_SceneTree.Root);
 
@@ -512,17 +543,13 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
     static uint32_t frameCount = 0;
-    if (g_IO.IsKeyPressed(SDL_SCANCODE_K))
+	if (g_IO.IsKeyPressed(SDL_SCANCODE_K) || true)
     {
 		g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-		g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
-		g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
     }
-    else if (g_IO.IsKeyPressed(SDL_SCANCODE_L))
+    if (g_IO.IsKeyPressed(SDL_SCANCODE_T))
     {
 		g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams.InitialRoughness);
-		g_TerrainGenerator.GenerateMesh(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
-		g_TerrainGenerator.GenerateMaterial(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain);
     }
 
     SceneDataView sceneDataView{.RenderableList = g_SceneTree.SceneToRenderableList(), .Light = g_DirectionalLight.ToLightData(), .LightView = g_DirectionalLight.ToViewData()};
@@ -530,7 +557,7 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 
     DXTexture* selectedView = nullptr;
 	DescriptorAllocationView selectedSRVView = {};
-    {
+    if(g_SelectedTexture == "None"){
         if (g_Controlled == &g_Cam)
         {
             selectedView = &g_DeferredRenderingPipeline.GetOutputBuffer();
@@ -541,6 +568,12 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
 			selectedView = &g_DeferredRenderingPipeline.GetShadowMap();
             selectedSRVView = g_DeferredRenderingPipeline.GetShadowMapSRV();
         }
+    }
+    else
+    {
+		auto [view, srv] = g_TextureSelections[g_SelectedTexture]();
+		selectedView = view;
+		selectedSRVView = srv;
     }
 
     g_BlitPipeline.Blit(g_pd3dCommandList.Get(), &g_mainRenderTargetResource[backBufferIdx],
@@ -829,10 +862,11 @@ void LoadSceneData()
 			auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed->ToModelView(), materialInfo), sponzaRoot);
     }
 
+
     g_Cam.Position = { -20, 38, -19, 0};
     g_Cam.Rotation = { 0.7, 0.75, 0 };
     Terrain = std::make_unique<TerrainRenderData>();
-    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), 64, 64, 2048);
+    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), 512, 512, 1024);
 	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams.InitialRoughness);
     auto* terrainRoot = g_SceneTree.AddObject(MeshObject("TerrainRoot"));
     terrainRoot->Scale *= 10.0f;
@@ -841,6 +875,31 @@ void LoadSceneData()
 	hlsl::MaterialBuffer terrainMaterial = {};
     terrainMaterial.Diffuse = DirectX::XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
     terrainRoot->Children.push_back(MeshObject("Terrain", Terrain->Terrain.Model->ToModelView(), &*Terrain->Terrain.Material));
+    g_TextureSelections["TerrainHeightMap"] = []()
+        {
+            return std::pair{ &Terrain->Terrain.HeightMap, Terrain->Terrain.HeightMap.SRV.GetView() };
+        };
+	g_TextureSelections["TerrainWaterHeightMap"] = []()
+		{
+			return std::pair{ &Terrain->Terrain.WaterHeightMap, Terrain->Terrain.WaterHeightMap.SRV.GetView() };
+		};
+    g_TextureSelections["TerrainWaterOutfluxMap"] = []()
+        {
+            return std::pair{ &Terrain->Terrain.WaterOutflux, Terrain->Terrain.WaterOutflux.SRV.GetView() };
+        };
+
+    g_TextureSelections["TerrainVelocityMap"] = []()
+        {
+            return std::pair{ &Terrain->Terrain.VelocityMap, Terrain->Terrain.VelocityMap.SRV.GetView() };
+        };
+    g_TextureSelections["TerrainSedimentMap"] = []()
+        {
+            return std::pair{ &Terrain->Terrain.SedimentMap, Terrain->Terrain.SedimentMap.SRV.GetView() };
+        };
+	g_TextureSelections["TerrainNormalMap"] = []()
+		{
+			return std::pair{ &Terrain->Terrain.NormalMap, Terrain->Terrain.NormalMap.SRV.GetView() };
+		};
 
     //Execute and flush
     EndFrame(FrameIndependentCtx);

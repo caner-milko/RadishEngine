@@ -1,23 +1,6 @@
-#include "BindlessRootSignature.hlsli"
-#include "TerrainConstantBuffers.hlsli"
-#include "TerrainResources.hlsli"
-
-/*
-
-H = maxDiff = max{b - b_i, i = 1,...,8}
-a = cellArea
-deltaS(basic) = H * a / 2 = maxDiff * cellArea / 2
-
-*/
+#include "TerrainCommon.hlsli"
 
 ConstantBuffer<ThermalDepositResources> Resources : register(b0);
-
-
-
-bool IsInBounds(uint2 coord, uint2 textureSize)
-{
-	return coord.x < textureSize.x && coord.y < textureSize.y && coord.x >= 0 && coord.y >= 0;
-}
 
 [RootSignature(BindlessRootSignature)]
 [numthreads(8, 8, 1)]

@@ -7,6 +7,7 @@
 #include <span>
 #include <unordered_map>
 #include <optional>
+#include <functional>
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER

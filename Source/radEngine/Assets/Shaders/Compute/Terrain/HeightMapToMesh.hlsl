@@ -11,6 +11,7 @@ SamplerState LinearSampler : register(s6);
 void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 {
     Texture2D<float> heightMap = GetBindlessResource(Resources.HeightMapTextureIndex);
+    Texture2D<float> waterMap = GetBindlessResource(Resources.WaterHeightMapTextureIndex);
     uint2 textureSize;
     heightMap.GetDimensions(textureSize.x, textureSize.y);
     
@@ -18,7 +19,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     float2 texelSize = 1.0 / float2(textureSize.x, textureSize.y);
     float2 uv = float2(meshCoord) / float2(Resources.MeshResX, Resources.MeshResY);
     
-    float heightCur = heightMap.Sample(LinearSampler, uv);
+    float heightCur = heightMap.Sample(LinearSampler, uv) + float(Resources.WithWater) * waterMap.Sample(LinearSampler, uv);
     
     RWStructuredBuffer<Vertex> vertexBuf = GetBindlessResource(Resources.VertexBufferIndex);
     
