@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <optional>
 #include <functional>
+#include <queue>
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER

@@ -32,7 +32,9 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
         volumeChange += neighborOutflux[i] - curOutFlux[i];
     }
     
-    float newWater = max(curWater + Resources.DeltaTime * volumeChange / (Resources.PipeLength * Resources.PipeLength), 0.0);
+    volumeChange *= Resources.DeltaTime;
+    
+    float newWater = max(curWater + volumeChange / (Resources.PipeLength * Resources.PipeLength), 0.0);
     
     float xChange = neighborOutflux[0] + curOutFlux[2] - neighborOutflux[2] - curOutFlux[0];
     
@@ -40,10 +42,13 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     waterHeightMap[dispatchID.xy] = newWater;
     float avgWater = (newWater + curWater) / 2;
-    if (avgWater < 0.001f)
+    if (avgWater < 0.0001f)
     {
         velocityMap[dispatchID.xy] = float2(0, 0);
     }
     else
-        velocityMap[dispatchID.xy] = 0.5f * float2(xChange, yChange) / (avgWater * Resources.PipeLength);
+    {
+        float invAvgL = 1 / (avgWater * Resources.PipeLength);
+        velocityMap[dispatchID.xy] = 0.5f * float2(xChange, yChange) * invAvgL;
+    }
 }

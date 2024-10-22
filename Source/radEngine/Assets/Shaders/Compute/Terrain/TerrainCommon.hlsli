@@ -16,7 +16,7 @@ int2 IndexToOffset8(uint index)
 }
 int OffsetToIndex8(int2 offset)
 {
-    uint index = (offset.x + 1) + (offset.y + 1) * 3;
+    int index = (offset.x + 1) + (offset.y + 1) * 3;
     return index - min(index / 4, 1);
 }
 

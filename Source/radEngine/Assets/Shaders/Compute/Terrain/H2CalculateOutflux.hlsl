@@ -26,13 +26,13 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
         if (IsInBounds(neighbor, textureSize))
         {
             float neighborTotHeight = heightMap[neighbor] + waterHeightMap[neighbor];
-            float calculatedOutFlux = max(0, curOutFlux[i] + Resources.DeltaTime * Resources.PipeCrossSection * Resources.Gravity * (curTotHeight - neighborTotHeight) / Resources.PipeLength);
+            float calculatedOutFlux = max(0,  curOutFlux[i] + Resources.DeltaTime * Resources.PipeCrossSection * Resources.Gravity * (curTotHeight - neighborTotHeight) / Resources.PipeLength);
             curOutFlux[i] = calculatedOutFlux;
             totOutFlux += calculatedOutFlux;
         }
     }
     
-    float K = min(1, curWater * Resources.PipeLength * Resources.PipeLength / (totOutFlux * Resources.DeltaTime));
+    float K = min(1.0, curWater * Resources.PipeLength * Resources.PipeLength / (totOutFlux * Resources.DeltaTime));
     
     outFluxTexture[dispatchID.xy] = curOutFlux * K;
 }

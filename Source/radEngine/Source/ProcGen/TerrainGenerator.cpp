@@ -160,16 +160,7 @@ namespace rad::proc
 		std::vector<float> heightMapVals((width - 1) * (width - 1));
 		for (int y = 0; y < width - 1; y++)
 			for (int x = 0; x < width - 1; x++)
-			{
 				heightMapVals[GetIndex(x, y, width - 1)] = heightMap(x, y);
-				min = std::min(min, heightMap(x, y));
-				max = std::max(max, heightMap(x, y));
-			}
-		float oneOverRange = 1.f / (max - min);
-		for (auto& val : heightMapVals)
-			val = (val - min) * oneOverRange;
-		width = width - 1;
-
 		return heightMapVals;
 	}
 
@@ -191,6 +182,7 @@ namespace rad::proc
 		terrain.SedimentMap = DXTexture::Create(device, L"SedimentMap", baseTextureInfo);
 		terrain.TempHeightMap = DXTexture::Create(device, L"TempHeightMap", baseTextureInfo);
 		terrain.TempSedimentMap = DXTexture::Create(device, L"TempSedimentMap", baseTextureInfo);
+		terrain.SoftnessMap = DXTexture::Create(device, L"HardnessMap", baseTextureInfo);
 
 		baseTextureInfo.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		terrain.WaterOutflux = DXTexture::Create(device, L"WaterOutflux", baseTextureInfo);
@@ -205,18 +197,44 @@ namespace rad::proc
 		return terrain;
 	}
 
-	void TerrainGenerator::GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, float roughness, bool generateMeshAndMaterial)
+	void TerrainGenerator::GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters, bool generateMeshAndMaterial)
 	{
 		//create heightmap
-		auto heightMapVals = CreateDiamondSquareHeightMap(terrain.HeightMap.Info.Width, roughness);
+		constexpr auto scaleHeightMaps = [](float* data, size_t size, float min, float max)
+			{
+				float valsMin = FLT_MAX, valsMax = FLT_MIN;
+				for (size_t i = 0; i < size; i++)
+				{
+					valsMin = std::min(valsMin, data[i]);
+					valsMax = std::max(valsMax, data[i]);
+				}
+				float oneOverRange = 1.0 / (valsMax - valsMin);
+				for (size_t i = 0; i < size; i++)
+				{
 
-		//int width, height, channels;
-		//float* heightMapVals = stbi_loadf(RAD_ASSETS_DIR "heightmap.png", &width, &height, &channels, 1);
-		terrain.HeightMap.UploadDataTyped<float>(frameCtx, cmdList, heightMapVals);
-		//heightMap.UploadDataTyped<float>(frameCtx, cmdList, std::span<const float>(heightMapVals, width * width));
+					data[i] = std::pow((data[i] - valsMin) * oneOverRange, 2.0f) * (max - min) + min;
+				}
+			};
+		if (parameters.BaseFromFile)
+		{
+			int width, height, channels;
+			float* heightMapVals = stbi_loadf(RAD_ASSETS_DIR "heightmap.png", &width, &height, &channels, 1);
+			scaleHeightMaps(heightMapVals, width * height, parameters.MinHeight, parameters.MaxHeight);
+			terrain.HeightMap.UploadDataTyped<float>(frameCtx, cmdList, std::span<const float>(heightMapVals, width * width));
+		}
+		else
+		{
+			if(!parameters.Random)
+				generator = std::mt19937(parameters.Seed);
+			else
+				generator = std::mt19937(time(0));
+			auto heightMapVals = CreateDiamondSquareHeightMap(terrain.HeightMap.Info.Width, parameters.InitialRoughness);
+			scaleHeightMaps(heightMapVals.data(), heightMapVals.size(), parameters.MinHeight, parameters.MaxHeight);
+			terrain.HeightMap.UploadDataTyped<float>(frameCtx, cmdList, heightMapVals);
+		}
 
-		// Clear water/sediment/outflux maps
-		TransitionVec().Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.SedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.WaterOutflux, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
+		// Clear water/sediment/outflux/hardness maps
+		TransitionVec().Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.SedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.WaterOutflux, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.SoftnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
 		float clearValue[4] = { 0.f, 0.f, 0.f, 0.f };
 		auto cpuUAV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -232,27 +250,37 @@ namespace rad::proc
 		uavDesc.Format = terrain.WaterOutflux.Info.Format;
 		terrain.WaterOutflux.CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
 		cmdList->ClearUnorderedAccessViewFloat(terrain.WaterOutflux.UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), terrain.WaterOutflux.Resource.Get(), clearValue, 0, nullptr);
+		uavDesc.Format = terrain.SoftnessMap.Info.Format;
+		float hardnessClearValue[4] = { 0.5f, 0.5f, 0.5f, 0.5f };
+		terrain.SoftnessMap.CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
+		cmdList->ClearUnorderedAccessViewFloat(terrain.SoftnessMap.UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), terrain.SoftnessMap.Resource.Get(), hardnessClearValue, 0, nullptr);
 		g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StaticPage->Top--;
+		terrain.IterationCount = 0;
 		if (generateMeshAndMaterial)
 		{
-			GenerateMesh(device, frameCtx, cmdList, terrain);
-			GenerateMaterial(device, frameCtx, cmdList, terrain);
+			GenerateMesh(device, frameCtx, cmdList, terrain, parameters);
+			GenerateMaterial(device, frameCtx, cmdList, terrain, parameters);
 		}
 	}
 
-	void TerrainGenerator::ErodeTerrain(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters parameters, bool generateMeshAndMaterial)
+	void TerrainGenerator::ErodeTerrain(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters, bool generateMeshAndMaterial)
 	{
 
 		uint32_t width = terrain.HeightMap.Info.Width;
 		uint32_t height = terrain.HeightMap.Info.Height;
 
+		float pipeLength = parameters.TotalLength / width;
+		float crossSection = parameters.PipeCrossSection * pipeLength * pipeLength;
+
 		hlsl::ThermalOutfluxResources outfluxResources{
 			.InHeightMapIndex = terrain.HeightMap.SRV.Index,
+			.InHardnessMapIndex = terrain.SoftnessMap.SRV.Index,
 			.OutFluxTextureIndex1 = terrain.ThermalPipe1.UAV.Index,
 			.OutFluxTextureIndex2 = terrain.ThermalPipe2.UAV.Index,
 			.ThermalErosionRate = parameters.ThermalErosionRate,
-			.TalusAnglePrecomputed = std::tanf(DirectX::XM_PI * parameters.TalusAngleDegrees / 180.f),
-			.PipeLength = parameters.PipeLength,
+			.PipeLength = pipeLength,
+			.SoftnessTalusCoefficient = parameters.SoftnessTalusCoefficient,
+			.MinTalusCoefficient = parameters.MinTalusCoefficient,
 		};
 
 		hlsl::ThermalDepositResources depositResources{
@@ -265,7 +293,8 @@ namespace rad::proc
 		{
 			hlsl::HydrolicAddWaterResources addWaterResources{
 				.WaterMapIndex = terrain.WaterHeightMap.UAV.Index,
-				.RainRate = parameters.RainRate
+				.RainRate = parameters.RainRate,
+				.Iteration = terrain.IterationCount,
 			};
 			TransitionVec().Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
 			HydrolicAddWaterPSO.ExecuteCompute(cmdList, addWaterResources, width / 8, height / 8, 1);
@@ -274,8 +303,8 @@ namespace rad::proc
 				.InHeightMapIndex = terrain.HeightMap.SRV.Index,
 				.InWaterMapIndex = terrain.WaterHeightMap.SRV.Index,
 				.OutFluxTextureIndex = terrain.WaterOutflux.UAV.Index,
-				.PipeCrossSection = parameters.PipeCrossSection,
-				.PipeLength = parameters.PipeLength,
+				.PipeCrossSection = crossSection,
+				.PipeLength = pipeLength,
 			};
 			TransitionVec().Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.WaterOutflux, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
 			HydrolicCalculateOutfluxPSO.ExecuteCompute(cmdList, calculateOutfluxResources, width / 8, height / 8, 1);
@@ -284,38 +313,40 @@ namespace rad::proc
 				.InFluxTextureIndex = terrain.WaterOutflux.SRV.Index,
 				.OutWaterMapIndex = terrain.WaterHeightMap.UAV.Index,
 				.OutVelocityMapIndex = terrain.VelocityMap.UAV.Index,
-				.PipeLength = parameters.PipeLength,
+				.PipeLength = pipeLength,
 			};
 			TransitionVec().Add(terrain.WaterOutflux, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.VelocityMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
 			HydrolicUpdateWaterVelocityPSO.ExecuteCompute(cmdList, updateWaterVelocityResources, width / 8, height / 8, 1);
 			
-
-			TransitionVec().Add(terrain.ThermalPipe1, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.ThermalPipe2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
-				.Execute(cmdList);
-			ThermalOutfluxPSO.ExecuteCompute(cmdList, outfluxResources, width / 8, height / 8, 1);
-
-
 			hlsl::HydrolicErosionAndDepositionResources erosionAndDepositionResources{
 				.InVelocityMapIndex = terrain.VelocityMap.SRV.Index,
 				.InOldHeightMapIndex = terrain.HeightMap.SRV.Index,
+				.InOutSoftnessMapIndex = terrain.SoftnessMap.UAV.Index,
 				.OutHeightMapIndex = terrain.TempHeightMap.UAV.Index,
 				.OutWaterMapIndex = terrain.WaterHeightMap.UAV.Index,
 				.OutSedimentMapIndex = terrain.SedimentMap.UAV.Index,
+				.PipeLength = pipeLength,
 				.SedimentCapacity = parameters.SedimentCapacity,
 				.SoilSuspensionRate = parameters.SoilSuspensionRate,
 				.SedimentDepositionRate = parameters.SedimentDepositionRate,
+				.SoilHardeningRate = parameters.SoilHardeningRate,
+				.SoilSofteningRate = parameters.SoilSofteningRate,
+				.MinimumSoftness = parameters.MinimumSoilSoftness,
 				.MaximalErosionDepth = parameters.MaximalErosionDepth,
 			};
-			TransitionVec().Add(terrain.VelocityMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.TempHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.SedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
+			TransitionVec().Add(terrain.VelocityMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.TempHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.SedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.SoftnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).
+				Execute(cmdList);
 			HydrolicErosionAndDepositionPSO.ExecuteCompute(cmdList, erosionAndDepositionResources, width / 8, height / 8, 1);
 			// Copy temp height map to height map
 			TransitionVec().Add(terrain.TempHeightMap, D3D12_RESOURCE_STATE_COPY_SOURCE).Add(terrain.HeightMap, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdList);
 			cmdList->CopyResource(terrain.HeightMap.Resource.Get(), terrain.TempHeightMap.Resource.Get());
 
+
 			hlsl::HydrolicSedimentTransportationAndEvaporationResources sedimentTransportationAndEvaporationResources{
 				.InVelocityMapIndex = terrain.VelocityMap.SRV.Index,
 				.InOldSedimentMapIndex = terrain.SedimentMap.SRV.Index,
 				.OutSedimentMapIndex = terrain.TempSedimentMap.UAV.Index,
+				.PipeLength = pipeLength,
 				.InOutWaterMapIndex = terrain.WaterHeightMap.UAV.Index,
 				.EvaporationRate = parameters.EvaporationRate,
 			};
@@ -325,15 +356,20 @@ namespace rad::proc
 			TransitionVec().Add(terrain.TempSedimentMap, D3D12_RESOURCE_STATE_COPY_SOURCE).Add(terrain.SedimentMap, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdList);
 			cmdList->CopyResource(terrain.SedimentMap.Resource.Get(), terrain.TempSedimentMap.Resource.Get());
 
+			TransitionVec().Add(terrain.ThermalPipe1, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.ThermalPipe2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.SoftnessMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Execute(cmdList);
+			ThermalOutfluxPSO.ExecuteCompute(cmdList, outfluxResources, width / 8, height / 8, 1);
+
 			TransitionVec().Add(terrain.ThermalPipe1, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.ThermalPipe2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.HeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 				.Execute(cmdList);
 			ThermalDepositPSO.ExecuteCompute(cmdList, depositResources, width / 8, height / 8, 1);
+
+			terrain.IterationCount++;
 		}
 
 		if (generateMeshAndMaterial)
 		{
-			GenerateMesh(device, frameCtx, cmdList, terrain, parameters.MeshWithWater);
-			GenerateMaterial(device, frameCtx, cmdList, terrain);
+			GenerateMesh(device, frameCtx, cmdList, terrain, parameters);
+			GenerateMaterial(device, frameCtx, cmdList, terrain, parameters);
 		}
 
 	}
@@ -356,26 +392,41 @@ namespace rad::proc
 				indices[6 * GetIndex(x, y, terrain.MeshResX - 1) + 5] = vtx2;
 			}
 
-		terrain.Model = StandaloneModel{};
-		auto& model = *terrain.Model;
+		terrain.TerrainModel = StandaloneModel{};
+		auto& model = *terrain.TerrainModel;
 		model.Vertices.VerticesBuffer = DXTypedBuffer<Vertex>::Create(device, L"TerrainVtxBuffer", terrain.MeshResX * terrain.MeshResY, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 		auto& vtxBufView = model.Vertices.VertexBufferView;
 		vtxBufView.BufferLocation = model.Vertices.VerticesBuffer.Resource->GetGPUVirtualAddress();
 		vtxBufView.SizeInBytes = model.Vertices.VerticesBuffer.Size;
 		vtxBufView.StrideInBytes = sizeof(Vertex);
-		terrain.VerticesUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-		model.Vertices.VerticesBuffer.CreatePlacedTypedUAV(terrain.VerticesUAV.GetView());
+		terrain.TerrainVerticesUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+		model.Vertices.VerticesBuffer.CreatePlacedTypedUAV(terrain.TerrainVerticesUAV.GetView());
 		model.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(device, L"TerrainIdxBuffer", cmdList, frameCtx.IntermediateResources.emplace_back(), indices);
 		auto& idxBufView = model.IndexBufferView;
 		idxBufView.BufferLocation = model.Indices.Resource->GetGPUVirtualAddress();
 		idxBufView.SizeInBytes = model.Indices.Size;
 		idxBufView.Format = DXGI_FORMAT_R32_UINT;
+
+		terrain.WaterModel = StandaloneModel{};
+		auto& waterModel = *terrain.WaterModel;
+		waterModel.Vertices.VerticesBuffer = DXTypedBuffer<Vertex>::Create(device, L"WaterVtxBuffer", terrain.MeshResX * terrain.MeshResY, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+		auto& waterVtxBufView = waterModel.Vertices.VertexBufferView;
+		waterVtxBufView.BufferLocation = waterModel.Vertices.VerticesBuffer.Resource->GetGPUVirtualAddress();
+		waterVtxBufView.SizeInBytes = waterModel.Vertices.VerticesBuffer.Size;
+		waterVtxBufView.StrideInBytes = sizeof(Vertex);
+		terrain.WaterVerticesUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+		waterModel.Vertices.VerticesBuffer.CreatePlacedTypedUAV(terrain.WaterVerticesUAV.GetView());
+		waterModel.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(device, L"WaterIdxBuffer", cmdList, frameCtx.IntermediateResources.emplace_back(), indices);
+		auto& waterIdxBufView = waterModel.IndexBufferView;
+		waterIdxBufView.BufferLocation = waterModel.Indices.Resource->GetGPUVirtualAddress();
+		waterIdxBufView.SizeInBytes = waterModel.Indices.Size;
+		waterIdxBufView.Format = DXGI_FORMAT_R32_UINT;
 	}
 
 	void TerrainGenerator::InitializeMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain)
 	{
-		terrain.Material = Material{};
-		auto& material = *terrain.Material;
+		terrain.TerrainMaterial = Material{};
+		auto& material = *terrain.TerrainMaterial;
 		auto materialTexInfo = DXTexture::TextureCreateInfo
 		{
 			.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
@@ -385,12 +436,12 @@ namespace rad::proc
 			.Format = DXGI_FORMAT_R16G16B16A16_UNORM,
 			.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
 		};
-		terrain.AlbedoTex = RWTexture(DXTexture::Create(device, L"TerrainAlbedo", materialTexInfo), -1);
+		terrain.TerrainAlbedoTex = RWTexture(DXTexture::Create(device, L"TerrainAlbedo", materialTexInfo), -1);
 
-		terrain.NormalMap = RWTexture(DXTexture::Create(device, L"TerrainNormal", materialTexInfo), -1);
+		terrain.TerrainNormalMap = RWTexture(DXTexture::Create(device, L"TerrainNormal", materialTexInfo), -1);
 		
-		material.DiffuseTextureSRV = terrain.AlbedoTex.SRV;
-		material.NormalMapTextureSRV = terrain.NormalMap.SRV;
+		material.DiffuseTextureSRV = terrain.TerrainAlbedoTex.SRV;
+		material.NormalMapTextureSRV = terrain.TerrainNormalMap.SRV;
 		hlsl::MaterialBuffer materialBuffer{
 			.DiffuseTextureIndex = material.DiffuseTextureSRV->Index,
 			.NormalMapTextureIndex = material.NormalMapTextureSRV->Index,
@@ -398,46 +449,93 @@ namespace rad::proc
 		material.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(device, L"TerrainMaterialBuffer", cmdList, frameCtx.IntermediateResources.emplace_back(), materialBuffer);
 		material.MaterialInfo = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 		material.MaterialInfoBuffer.CreatePlacedCBV(material.MaterialInfo.GetView());
+		TransitionVec().Add(terrain.TerrainAlbedoTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE).Add(terrain.TerrainNormalMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE).Execute(cmdList);
 
-		TransitionVec().Add(terrain.AlbedoTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE).Add(terrain.NormalMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE).Execute(cmdList);
+		terrain.WaterMaterial = Material{};
+		auto& waterMaterial = *terrain.WaterMaterial;
+		terrain.WaterAlbedoTex = RWTexture(DXTexture::Create(device, L"WaterAlbedo", materialTexInfo), -1);
+		terrain.WaterNormalMap = RWTexture(DXTexture::Create(device, L"WaterNormal", materialTexInfo), -1);
+		waterMaterial.DiffuseTextureSRV = terrain.WaterAlbedoTex.SRV;
+		waterMaterial.NormalMapTextureSRV = terrain.WaterNormalMap.SRV;
+		hlsl::MaterialBuffer waterMaterialBuffer{
+			.DiffuseTextureIndex = terrain.WaterAlbedoTex.SRV.Index,
+			.NormalMapTextureIndex = waterMaterial.NormalMapTextureSRV->Index,
+		};
+		waterMaterial.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(device, L"WaterMaterialBuffer", cmdList, frameCtx.IntermediateResources.emplace_back(), waterMaterialBuffer);
+		waterMaterial.MaterialInfo = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+		waterMaterial.MaterialInfoBuffer.CreatePlacedCBV(waterMaterial.MaterialInfo.GetView());
+		TransitionVec()
+			.Add(terrain.WaterAlbedoTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.WaterNormalMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE).Execute(cmdList);
 	}
 
-	void TerrainGenerator::GenerateMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, bool withWater)
+	void TerrainGenerator::GenerateMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters)
 	{
 		//std::vector<Vertex> vertices(terrain.MeshResX * terrain.MeshResY);
 		//for (uint32_t y = 0; y < width; y++)
 		//	for (uint32_t x = 0; x < width; x++)
 		//		vertices[GetIndex(x, y, width)] = ToVertex(terrain, heightMapVals, x, y);
-		TransitionVec().Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(terrain.Model->Vertices.VerticesBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdList);
+		TransitionVec()
+			.Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.TerrainModel->Vertices.VerticesBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+			.Add(terrain.WaterModel->Vertices.VerticesBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+			.Execute(cmdList);
 		
 		hlsl::HeightToMeshResources resources{
 			.HeightMapTextureIndex = terrain.HeightMap.SRV.Index,
 			.WaterHeightMapTextureIndex = terrain.WaterHeightMap.SRV.Index,
-			.VertexBufferIndex = terrain.VerticesUAV.Index,
+			.TerrainVertexBufferIndex = terrain.TerrainVerticesUAV.Index,
+			.WaterVertexBufferIndex = terrain.WaterVerticesUAV.Index,
 			.MeshResX = terrain.MeshResX,
 			.MeshResY = terrain.MeshResY,
-			.WithWater = withWater ? 1u : 0u
+			.CellSize = parameters.TotalLength / terrain.HeightMap.Info.Width,
 		};
 		HeightMapToMeshPSO.ExecuteCompute(cmdList, resources, terrain.MeshResX / 8, terrain.MeshResY / 8, 1);
 
-		TransitionVec().Add(terrain.Model->Vertices.VerticesBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmdList);
+		TransitionVec()
+			.Add(terrain.TerrainModel->Vertices.VerticesBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
+			.Add(terrain.WaterModel->Vertices.VerticesBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
+			.Execute(cmdList);
 	}
 
-	void TerrainGenerator::GenerateMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain)
+	void TerrainGenerator::GenerateMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters)
 	{
-		TransitionVec().Add(terrain.AlbedoTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.NormalMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Execute(cmdList);
+		TransitionVec()
+			.Add(terrain.TerrainAlbedoTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+			.Add(terrain.TerrainNormalMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+			.Add(terrain.WaterAlbedoTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+			.Add(terrain.WaterNormalMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+			.Add(terrain.HeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.WaterHeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.SedimentMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			.Execute(cmdList);
+
+		float cellSize = parameters.TotalLength / terrain.HeightMap.Info.Width;
 
 		hlsl::HeightToMaterialResources resources{
 			.HeightMapTextureIndex = terrain.HeightMap.SRV.Index,
-			.AlbedoTextureIndex = terrain.AlbedoTex.UAV.Index,
-			.NormalMapTextureIndex = terrain.NormalMap.UAV.Index,
+			.WaterHeightMapTextureIndex = terrain.WaterHeightMap.SRV.Index,
+			.SedimentMapTextureIndex = terrain.SedimentMap.SRV.Index,
+			.TerrainAlbedoTextureIndex = terrain.TerrainAlbedoTex.UAV.Index,
+			.TerrainNormalMapTextureIndex = terrain.TerrainNormalMap.UAV.Index,
+			.WaterAlbedoTextureIndex = terrain.WaterAlbedoTex.UAV.Index,
+			.WaterNormalMapTextureIndex = terrain.WaterNormalMap.UAV.Index,
+			.CellSize = cellSize,
 		};
 
-		HeightMapToMaterialPSO.ExecuteCompute(cmdList, resources, terrain.AlbedoTex.Info.Width / 8, terrain.AlbedoTex.Info.Height / 8, 1);
+		HeightMapToMaterialPSO.ExecuteCompute(cmdList, resources, terrain.TerrainAlbedoTex.Info.Width / 8, terrain.TerrainAlbedoTex.Info.Height / 8, 1);
 
-		TextureManager::Get().GenerateMips(frameCtx, cmdList, terrain.AlbedoTex);
-		TextureManager::Get().GenerateMips(frameCtx, cmdList, terrain.NormalMap);
-		TransitionVec().Add(terrain.AlbedoTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE).Add(terrain.NormalMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE).Execute(cmdList);
+		TextureManager::Get().GenerateMips(frameCtx, cmdList, terrain.TerrainAlbedoTex);
+		TextureManager::Get().GenerateMips(frameCtx, cmdList, terrain.TerrainNormalMap);
+		TextureManager::Get().GenerateMips(frameCtx, cmdList, terrain.WaterAlbedoTex);
+		TextureManager::Get().GenerateMips(frameCtx, cmdList, terrain.WaterNormalMap);
+		TransitionVec()
+			.Add(terrain.TerrainAlbedoTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.TerrainNormalMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.WaterAlbedoTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+			.Add(terrain.WaterNormalMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+			.Execute(cmdList);
 	}
 	RWTexture::RWTexture(DXTexture texture, int srvMipLevels) : DXTexture(std::move(texture))
 	{

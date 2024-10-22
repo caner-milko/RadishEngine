@@ -27,9 +27,9 @@ VSOut VSMain(VSIn IN)
 {
     VSOut output;
     output.Pos = mul(Resources.MVP, float4(IN.Pos, 1.0));
-    output.Normal = normalize(mul((float3x3) Resources.Normal, IN.Normal));
+    output.Normal = normalize(IN.Normal);
     output.TexCoord = IN.TexCoord;
-    output.Tangent = normalize(mul((float3x3) Resources.Normal, normalize(IN.Tangent)));
+    output.Tangent = normalize(IN.Tangent);
     return output;
 }
 
@@ -70,6 +70,7 @@ PSOut PSMain(VSOut IN)
         //Calculate TBN matrix
         float3x3 TBN = float3x3(tangent, bitangent, normal);
         output.Normal = float4(normalize(mul(normalMapVal, TBN)), 0);
+        //output.Normal = float4(normalize(mul((float3x3) Resources.Normal, output.Normal.xyz)), 0);
         //output.Albedo = float4(normalMapVal, 1);
     }
     else
