@@ -4,7 +4,7 @@
 
 SamplerState Sampler : register(s2);
 
-ConstantBuffer<rad::StaticMeshResources> Resources : register(b0);
+ConstantBuffer<StaticMeshResources> Resources : register(b0);
 
 struct VSIn
 {
@@ -27,9 +27,9 @@ VSOut VSMain(VSIn IN)
 {
     VSOut output;
     output.Pos = mul(Resources.MVP, float4(IN.Pos, 1.0));
-    output.Normal = normalize(mul((float3x3) Resources.Normal, IN.Normal));
+    output.Normal = normalize(IN.Normal);
     output.TexCoord = IN.TexCoord;
-    output.Tangent = normalize(mul((float3x3) Resources.Normal, normalize(IN.Tangent)));
+    output.Tangent = normalize(IN.Tangent);
     return output;
 }
 
@@ -42,14 +42,14 @@ struct PSOut
 [RootSignature(BindlessRootSignature)]
 PSOut PSMain(VSOut IN)
 {
-	ConstantBuffer<rad::MaterialBuffer> material = ResourceDescriptorHeap[Resources.MaterialBufferIndex];
+	ConstantBuffer<MaterialBuffer> material = GetBindlessResource(Resources.MaterialBufferIndex);
     float4 diffuseCol = material.Diffuse;
 	if(material.DiffuseTextureIndex)
-	 {
-	 	Texture2D<float4> diffuseTex = ResourceDescriptorHeap[material.DiffuseTextureIndex];
-		diffuseCol = diffuseTex.Sample(Sampler, IN.TexCoord);
-	 }
-        
+	{
+        Texture2D<float4> diffuseTex = GetBindlessResource(material.DiffuseTextureIndex);
+        diffuseCol = diffuseTex.Sample(Sampler, IN.TexCoord);
+	}
+    
     if(diffuseCol.a < 0.5)
         discard;
    
@@ -57,10 +57,11 @@ PSOut PSMain(VSOut IN)
     output.Albedo = diffuseCol;
     if (material.NormalMapTextureIndex)
     {
-		Texture2D<float4> normalMap = ResourceDescriptorHeap[material.NormalMapTextureIndex];
+		Texture2D<float4> normalMap = GetBindlessResource(material.NormalMapTextureIndex);
         float3 normalMapVal = normalMap.Sample(Sampler, IN.TexCoord).xyz * 2 - 1;
-        normalMapVal.xy *= 3.0;
+        //normalMapVal.xy *= 3.0;
         normalMapVal = normalize(normalMapVal);
+        normalMapVal.x *= -1;
         
         float3 normal = normalize(IN.Normal);
         float3 tangent = normalize(IN.Tangent);
@@ -69,6 +70,8 @@ PSOut PSMain(VSOut IN)
         //Calculate TBN matrix
         float3x3 TBN = float3x3(tangent, bitangent, normal);
         output.Normal = float4(normalize(mul(normalMapVal, TBN)), 0);
+        //output.Normal = float4(normalize(mul((float3x3) Resources.Normal, output.Normal.xyz)), 0);
+        //output.Albedo = float4(normalMapVal, 1);
     }
     else
         output.Normal = float4(IN.Normal, 0);

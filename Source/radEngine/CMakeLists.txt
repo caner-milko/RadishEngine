@@ -13,7 +13,8 @@ file(GLOB_RECURSE INCLUDE_FILES CONFIGURE_DEPENDS "${INCLUDE_DIRECTORY}/*")
 add_executable(${PROJECT_NAME} WIN32 ${INCLUDE_FILES} ${SRC_FILES} ${SHADER_FILES})
 
 foreach(SHADER ${SHADER_FILES})
-	set_source_files_properties(${SHADER} PROPERTIES VS_TOOL_OVERRIDE "Text")
+	set_source_files_properties(SOURCE ${SHADER} PROPERTIES VS_SETTINGS "ExcludedFromBuild=true")
+	set_source_files_properties(SOURCE ${SHADER} PROPERTIES VS_SHADER_MODEL "6.6")
 endforeach()
 
 foreach(source IN LISTS SRC_FILES)

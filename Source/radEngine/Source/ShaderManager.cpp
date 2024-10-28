@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include "RadishCommon.h"
+#include <filesystem>
 
 namespace rad
 {
@@ -32,18 +33,18 @@ std::pair<Shader*, Shader*> ShaderManager::CompileBindlessGraphicsShader(std::ws
 	return { vs, ps };
 }
 
-Shader* ShaderManager::CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders)
+Shader* ShaderManager::CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
 {
-	std::vector<std::wstring_view> includeFoldersCopy{ {RAD_SHADERS_DIR L""} };
+	std::vector<std::wstring_view> includeFoldersCopy{ {RAD_SHADERS_DIR L""}};
 	includeFoldersCopy.insert(includeFoldersCopy.end(), includeFolders.begin(), includeFolders.end());
-	return CompileShader(std::wstring(name) + L".vs", shaderPath, ShaderType::Vertex, L"VSMain", includeFoldersCopy);
+	return CompileShader(std::wstring(name) + L".vs", shaderPath, ShaderType::Vertex, entryPoint, includeFoldersCopy);
 }
 
-Shader* ShaderManager::CompileBindlessComputeShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders)
+Shader* ShaderManager::CompileBindlessComputeShader(std::wstring_view name, std::wstring_view shaderPath, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
 {
 	std::vector<std::wstring_view> includeFoldersCopy{ {RAD_SHADERS_DIR L""} };
 	includeFoldersCopy.insert(includeFoldersCopy.end(), includeFolders.begin(), includeFolders.end());
-	return CompileShader(std::wstring(name) + L".cs", shaderPath, ShaderType::Compute, L"Main", includeFoldersCopy);
+	return CompileShader(std::wstring(name) + L".cs", shaderPath, ShaderType::Compute, entryPoint, includeFoldersCopy);
 }
 
 Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
@@ -77,6 +78,10 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 		compilationArgs.push_back(includeFolder.data());
 	}
 
+	std::filesystem::path parentPath = std::filesystem::path(shaderPath).parent_path();
+	compilationArgs.push_back(L"-I");
+	compilationArgs.push_back(parentPath.c_str());
+
 	if constexpr (_DEBUG)
 		compilationArgs.push_back(DXC_ARG_DEBUG);
 	else
@@ -95,13 +100,16 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 	Source.Size = sourceEncoded->GetBufferSize();
 	Source.Encoding = DXC_CP_ACP;
 
+	wprintf(L"Compiling %s\n", shaderPath.data());
 	ComPtr<IDxcResult> results;
 	Compiler->Compile(&Source, compilationArgs.data(), compilationArgs.size(), IncludeHandler.Get(), IID_PPV_ARGS(&results));
 
 	ComPtr<IDxcBlobUtf8> pErrors = nullptr;
 	results->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&pErrors), nullptr);
 	if (pErrors != nullptr && pErrors->GetStringLength() != 0)
-		wprintf(L"Warnings and Errors:\n%S\n", pErrors->GetStringPointer());
+	{
+		wprintf(L"%S", pErrors->GetStringPointer());
+	}
 
 	ComPtr<ID3DBlob> rootSignatureBlob{ nullptr };
 	results->GetOutput(DXC_OUT_ROOT_SIGNATURE, IID_PPV_ARGS(&rootSignatureBlob), nullptr);

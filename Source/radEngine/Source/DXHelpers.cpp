@@ -28,7 +28,7 @@ namespace rad
         return alloc;
     }
 
-    DescriptorAllocation DescriptorAllocation::CreatePreAllocated(DescriptorHeap* heap, size_t index, size_t size)
+    DescriptorAllocation DescriptorAllocation::CreatePreAllocated(DescriptorHeap* heap, uint32_t index, uint32_t size)
     {
         DescriptorAllocation alloc{};
         alloc.Heap = heap;
@@ -67,7 +67,7 @@ namespace rad
         return allocator;
     }
     template<bool CPU>
-    void DescriptorHeapAllocator<CPU>::CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, size_t numDescriptors, uint32_t pageCount, size_t staticPageSize)
+    void DescriptorHeapAllocator<CPU>::CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors, uint32_t pageCount, uint32_t staticPageSize)
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
 		desc.NumDescriptors = numDescriptors;

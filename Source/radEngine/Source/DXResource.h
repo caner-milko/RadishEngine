@@ -54,6 +54,12 @@ struct DXTexture : DXResource
 	static DXTexture Create(ID3D12Device* device, std::wstring name, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState = D3D12_RESOURCE_STATE_COMMON);
 	static DXTexture FromExisting(ID3D12Device* device, std::wstring name, ComPtr<ID3D12Resource> resource, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState = D3D12_RESOURCE_STATE_COMMON);
 
+	void UploadData(struct FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, std::span<const std::byte> data, uint8_t bytesPerPixel);
+	template<typename T>
+	void UploadDataTyped(struct FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, std::span<const T> data)
+	{
+		UploadData(frameCtx, cmdList, std::span<const std::byte>((std::byte const*)data.data(), data.size_bytes()), sizeof(T));
+	}
 
 	ShaderResourceView CreateSRV(D3D12_SHADER_RESOURCE_VIEW_DESC const* srvDesc);
 	UnorderedAccessView CreateUAV(D3D12_UNORDERED_ACCESS_VIEW_DESC const* uavDesc);
@@ -161,6 +167,16 @@ struct DXTypedBuffer : DXBuffer
 	ShaderResourceView CreateTypedSRV(size_t offset = 0, D3D12_BUFFER_SRV_FLAGS flags = D3D12_BUFFER_SRV_FLAG_NONE)
 	{
 		return CreateSRV(Size / sizeof(T), offset, sizeof(T), flags);
+	}
+
+	void CreatePlacedTypedUAV(DescriptorAllocationView alloc, size_t firstElement = 0, D3D12_BUFFER_UAV_FLAGS flags = D3D12_BUFFER_UAV_FLAG_NONE)
+	{
+		CreatePlacedUAV(alloc, Size / sizeof(T), sizeof(T), firstElement, flags);
+	}
+
+	void CreatePlacedTypedSRV(DescriptorAllocationView alloc, size_t offset = 0, D3D12_BUFFER_SRV_FLAGS flags = D3D12_BUFFER_SRV_FLAG_NONE)
+	{
+		CreatePlacedSRV(alloc, Size / sizeof(T), offset, sizeof(T), flags);
 	}
 
 	using DXBuffer::DXBuffer;

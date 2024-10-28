@@ -18,8 +18,8 @@ struct ShaderManager : Singleton<ShaderManager>
 	void Init(ID3D12Device* device);
 
 	std::pair<Shader*, Shader*> CompileBindlessGraphicsShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders = {});
-	Shader* CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders = {});
-	Shader* CompileBindlessComputeShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders = {});
+	Shader* CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath, std::wstring_view entryPoint = L"VSMain", std::span<const std::wstring_view> includeFolders = {});
+	Shader* CompileBindlessComputeShader(std::wstring_view name, std::wstring_view shaderPath, std::wstring_view entryPoint = L"CSMain", std::span<const std::wstring_view> includeFolders = {});
 	Shader* CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint = L"main", std::span<const std::wstring_view> includeFolders = {});
 
 

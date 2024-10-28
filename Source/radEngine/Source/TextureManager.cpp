@@ -9,8 +9,14 @@ std::unique_ptr<TextureManager> TextureManager::Instance = nullptr;
 void TextureManager::Init(ID3D12Device2* device)
 {
 	Device = device;
-	GenerateMips.Setup(device);
+	GenerateMipsPipeline.Setup(device);
 }
+
+void TextureManager::GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, DXTexture& texture)
+{
+	GenerateMipsPipeline.GenerateMips(frameCtx, cmdList, texture);
+}
+
 DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, TextureManager::TextureLoadInfo const& info, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, bool generateMips)
 {
 	auto it = LoadedTextures.find(path);
@@ -53,24 +59,15 @@ DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, T
 
 	// Copy the data to the texture
 	{
-		// Create the intermediate upload heap
-		auto intermediateBuf = DXBuffer::Create(Device, path.filename().wstring() + L"_IntermediateBuffer", width * height * desiredComp, D3D12_HEAP_TYPE_UPLOAD);
-		TransitionVec(intermediateBuf, D3D12_RESOURCE_STATE_GENERIC_READ).Execute(cmdList);
-		frameCtx.IntermediateResources.push_back(intermediateBuf.Resource);
-
-		D3D12_SUBRESOURCE_DATA subresourceData = {};
-		subresourceData.pData = data;
-		subresourceData.RowPitch = width * desiredComp;
-		subresourceData.SlicePitch = height * subresourceData.RowPitch;
-
-		UpdateSubresources(cmdList, texture.Resource.Get(), intermediateBuf.Resource.Get(), 0, 0, 1, &subresourceData);
+		size_t size = width * height * desiredComp;
+		texture.UploadData(frameCtx, cmdList, std::span<const std::byte>(reinterpret_cast<const std::byte*>(data), size_t(width * height * desiredComp)), desiredComp);
 	}
 
 	stbi_image_free(data);
 
 	if (generateMips)
 	{
-		GenerateMips.GenerateMips(frameCtx, cmdList, texture, width, height);
+		GenerateMips(frameCtx, cmdList, texture);
 	}
 
 

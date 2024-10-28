@@ -2,7 +2,7 @@
 #include "RenderResources.hlsli"
 #include "ConstantBuffers.hlsli"
 
-ConstantBuffer<rad::LightingResources> Resources : register(b0);
+ConstantBuffer<LightingResources> Resources : register(b0);
 
 SamplerState PointSampler : register(s0);
 SamplerComparisonState ShadowSampler : register(s1);
@@ -13,7 +13,7 @@ struct PSIn
     float2 TexCoord : TEXCOORD;
 };
 
-float3 WorldPosFromDepth(rad::LightTransformBuffer lightTransform, float2 texCoord, float depth)
+float3 WorldPosFromDepth(LightTransformBuffer lightTransform, float2 texCoord, float depth)
 {
     float2 screenPos = texCoord * 2 - 1;
     screenPos.y = -screenPos.y;
@@ -24,7 +24,7 @@ float3 WorldPosFromDepth(rad::LightTransformBuffer lightTransform, float2 texCoo
     return worldPos.xyz;
 }
 
-float3 LightSpaceFromWorld(rad::LightTransformBuffer lightTransform, float3 worldPos)
+float3 LightSpaceFromWorld(LightTransformBuffer lightTransform, float3 worldPos)
 {
     float4 lightSpacePos = mul(lightTransform.LightViewProjection, float4(worldPos, 1));
     lightSpacePos /= lightSpacePos.w;
@@ -34,21 +34,21 @@ float3 LightSpaceFromWorld(rad::LightTransformBuffer lightTransform, float3 worl
     return lightSpacePos.xyz;
 }
 
-float shadow_offset_lookup(Texture2D<float> shadowMap, SamplerComparisonState shadowMapSampler, float3 loc, float2 offset)
+float shadow_offset_lookup(Texture2D<float> shadowMap, SamplerComparisonState shadowMapSampler, float3 loc, float2 offset, float bias)
 {
-    return shadowMap.SampleCmp(shadowMapSampler, loc.xy + offset * float2(1.0 / 1024.0, 1.0 / 1024.0), loc.z - 1e-3).r;
+    return shadowMap.SampleCmp(shadowMapSampler, loc.xy + offset * float2(1.0 / 1024.0, 1.0 / 1024.0), loc.z - bias).r;
 }
 
 float4 PSMain(PSIn IN) : SV_TARGET
 {
-    Texture2D<float4> albedoTex = ResourceDescriptorHeap[Resources.AlbedoTextureIndex];
-    Texture2D<float4> normalTex = ResourceDescriptorHeap[Resources.NormalTextureIndex];
-    Texture2D<float> depthMap = ResourceDescriptorHeap[Resources.DepthTextureIndex];
+    Texture2D<float4> albedoTex = GetBindlessResource(Resources.AlbedoTextureIndex);
+    Texture2D<float4> normalTex = GetBindlessResource(Resources.NormalTextureIndex);
+    Texture2D<float> depthMap = GetBindlessResource(Resources.DepthTextureIndex);
     
-    Texture2D<float> shadowMap = ResourceDescriptorHeap[Resources.ShadowMapTextureIndex];
-    SamplerComparisonState shadowMapSampler = SamplerDescriptorHeap[Resources.ShadowMapSamplerIndex];
-    ConstantBuffer<rad::LightDataBuffer> lightData = ResourceDescriptorHeap[Resources.LightDataBufferIndex];
-    ConstantBuffer<rad::LightTransformBuffer> lightTransform = ResourceDescriptorHeap[Resources.LightTransformBufferIndex];
+    Texture2D<float> shadowMap = GetBindlessResource(Resources.ShadowMapTextureIndex);
+    SamplerComparisonState shadowMapSampler = GetBindlessSampler(Resources.ShadowMapSamplerIndex);
+    ConstantBuffer<LightDataBuffer> lightData = GetBindlessResource(Resources.LightDataBufferIndex);
+    ConstantBuffer<LightTransformBuffer> lightTransform = GetBindlessResource(Resources.LightTransformBufferIndex);
     
     float3 normal = normalTex.Sample(PointSampler, IN.TexCoord).rgb;
     float3 albedo = albedoTex.Sample(PointSampler, IN.TexCoord).rgb;
@@ -71,17 +71,46 @@ float4 PSMain(PSIn IN) : SV_TARGET
     {
         float sum = 0;
         float x, y;
-        for (y = -1.5; y <= 1.5; y += 1.0)
-            for (x = -1.5; x <= 1.5; x += 1.0)
-                sum += shadow_offset_lookup(shadowMap, shadowMapSampler, lightSpacePos, float2(x, y));
+        static const float2 poissonDisk[16] =
+        {
+            float2(-0.94201624, -0.39906216),
+            float2(0.94558609, -0.76890725),
+            float2(-0.094184101, -0.92938870),
+            float2(0.34495938, 0.29387760),
+            float2(-0.91588581, 0.45771432),
+            float2(-0.81544232, -0.87912464),
+            float2(-0.38277543, 0.27676845),
+            float2(0.97484398, 0.75648379),
+            float2(0.44323325, -0.97511554),
+            float2(0.53742981, -0.47373420),
+            float2(-0.26496911, -0.41893023),
+            float2(0.79197514, 0.19090188),
+            float2(-0.24188840, 0.99706507),
+            float2(-0.81409955, 0.91437590),
+            float2(0.19984126, 0.78641367),
+            float2(0.14383161, -0.14100790)
+        };
+        
+        float lightSlope = dot(normal, -lightData.DirectionOrPosition);
+        
+        static float minBlur = 2;
+        static float maxBlur = 10;
+        float blur = lerp(maxBlur, minBlur, saturate(lightSlope));
+        
+        float biasMin = 0.0005;
+        float biasMax = 0.01;
+        float bias = lerp(biasMin, biasMax, saturate(lightSlope));
+        
+        for (int i = 0; i < 16; i++)
+            sum += shadow_offset_lookup(shadowMap, shadowMapSampler, lightSpacePos, poissonDisk[i] * blur, bias);
         shadowCoeff = sum / 16.0;
     }
     
     shadowCoeff = 1 - saturate(shadowCoeff);
     
-    diffuse *= shadowCoeff;
-    specular *= shadowCoeff;
+    //diffuse *= shadowCoeff;
+    //specular *= shadowCoeff;
     
-    
+    //return float4(albedo, 1);
     return float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1);
 }

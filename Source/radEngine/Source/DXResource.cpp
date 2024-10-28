@@ -1,4 +1,5 @@
 #include "DXResource.h"
+#include "RendererCommon.h"
 
 namespace rad
 {
@@ -24,6 +25,20 @@ DXTexture DXTexture::Create(ID3D12Device* device, std::wstring name, TextureCrea
 DXTexture DXTexture::FromExisting(ID3D12Device* device, std::wstring name, ComPtr<ID3D12Resource> resource, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState)
 {
 	return DXTexture(name, resource, startState, device, info);
+}
+
+void DXTexture::UploadData(FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, std::span<const std::byte> data, uint8_t bytesPerPixel)
+{
+	TransitionVec(*this, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdList);
+	auto intermediateBuf = DXBuffer::Create(Device, Name + L"_IntermediateBuffer", data.size(), D3D12_HEAP_TYPE_UPLOAD);
+	frameCtx.IntermediateResources.push_back(intermediateBuf.Resource);
+	D3D12_SUBRESOURCE_DATA subresourceData = {};
+	subresourceData.pData = data.data();
+	subresourceData.RowPitch = Info.Width * bytesPerPixel;
+	subresourceData.SlicePitch = Info.Height * subresourceData.RowPitch;
+
+	uint64_t res = UpdateSubresources(cmdList, Resource.Get(), intermediateBuf.Resource.Get(), 0, 0, 1, &subresourceData);
+	assert(res != 0);
 }
 
 ShaderResourceView DXTexture::CreateSRV(D3D12_SHADER_RESOURCE_VIEW_DESC const* srvDesc)

@@ -14,8 +14,6 @@ struct Material
     std::optional<std::string> DiffuseTextureName;
 	std::optional<std::string> NormalMapTextureName;
 
-    bool Dirty = false;
-
     Vector3 DiffuseColor = { 1, 1, 1 };
 
     DXTypedBuffer<rad::hlsl::MaterialBuffer> MaterialInfoBuffer;
@@ -37,20 +35,51 @@ struct Vertex
 			Normal.x == other.Normal.x && Normal.y == other.Normal.y && Normal.z == other.Normal.z &&
 			TexCoord.x == other.TexCoord.x && TexCoord.y == other.TexCoord.y;
 	}
-
 };
 
-struct Model
+struct VertexBuffer
 {
     DXTypedBuffer<Vertex> VerticesBuffer;
     D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
 };
 
+struct ModelView
+{
+	D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+};
+
 struct IndexedModel
 {
 	std::string Name;
-    Model* Model;
+	VertexBuffer* Vertices;
     DXTypedBuffer<uint32_t> Indices;
     D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
+
+	ModelView ToModelView() const
+	{
+		ModelView modelView{};
+		modelView.VertexBufferView = Vertices->VertexBufferView;
+		modelView.IndexBufferView = IndexBufferView;
+		return modelView;
+	}
 };
-}
+
+struct StandaloneModel
+{
+	std::string Name;
+	VertexBuffer Vertices;
+	DXTypedBuffer<uint32_t> Indices;
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
+
+	ModelView ToModelView() const
+	{
+		ModelView modelView{};
+		modelView.VertexBufferView = Vertices.VertexBufferView;
+		modelView.IndexBufferView = IndexBufferView;
+		return modelView;
+	}
+};
+
+
+} // namespace rad

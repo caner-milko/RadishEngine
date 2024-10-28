@@ -26,3 +26,5 @@
     "StaticSampler(s8, filter = FILTER_ANISOTROPIC, maxAnisotropy = 16), "                                             \
     "StaticSampler(s9, filter = FILTER_MIN_MAG_MIP_LINEAR,  addressU = TEXTURE_ADDRESS_BORDER, addressV = "            \
     "TEXTURE_ADDRESS_BORDER, addressW = TEXTURE_ADDRESS_BORDER, borderColor = STATIC_BORDER_COLOR_OPAQUE_BLACK)"
+
+#define RAD_BINDLESS 1

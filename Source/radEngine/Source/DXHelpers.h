@@ -1,10 +1,14 @@
 #pragma once
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <dxgi1_4.h>
 #include <tchar.h>
 #include <iostream>
 #include <span>
 #include <unordered_map>
 #include <optional>
+#include <functional>
+#include <queue>
 
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
@@ -44,36 +48,36 @@ struct DescriptorHeap
     ID3D12Device* Device;
     ComPtr<ID3D12DescriptorHeap> Heap;
     D3D12_DESCRIPTOR_HEAP_DESC Desc;
-    size_t Increment;
+    uint32_t Increment;
 
-    size_t Top = 0;
+    uint32_t Top = 0;
 
-    size_t Allocate(uint32_t count = 1)
+    uint32_t Allocate(uint32_t count = 1)
     {
-        size_t old = Top;
+        uint32_t old = Top;
         Top += count;
         assert(GetSize() >= Top);
         return old;
     }
-    inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(size_t index)
+    inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(uint32_t index)
     {
         D3D12_CPU_DESCRIPTOR_HANDLE handle = Heap->GetCPUDescriptorHandleForHeapStart();
         handle.ptr += index * Increment;
         return handle;
     }
-    inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(size_t index)
+    inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(uint32_t index)
     {
         D3D12_GPU_DESCRIPTOR_HANDLE handle = Heap->GetGPUDescriptorHandleForHeapStart();
         handle.ptr += index * Increment;
         return handle;
     }
-    size_t GetSize() const { return Desc.NumDescriptors; }
+    uint32_t GetSize() const { return Desc.NumDescriptors; }
 };
 
 struct DescriptorAllocationView
 {
     struct DescriptorAllocation* Base;
-    size_t Offset;
+    uint32_t Offset;
 
     D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle();
     D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle();
@@ -84,22 +88,22 @@ struct DescriptorAllocationView
 struct DescriptorAllocation
 {
     static DescriptorAllocation Create(DescriptorHeap* heap, uint32_t size);
-    static DescriptorAllocation CreatePreAllocated(DescriptorHeap* heap, size_t index, size_t size);
+    static DescriptorAllocation CreatePreAllocated(DescriptorHeap* heap, uint32_t index, uint32_t size);
 	
     DescriptorHeap* Heap;
-	size_t Index;
-	size_t Size;
+	uint32_t Index;
+	uint32_t Size;
 
-    inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(size_t offset = 0)
+    inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(uint32_t offset = 0)
 	{
 		return Heap->GetCPUHandle(Index + offset);
 	}
-	inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(size_t offset = 0)
+	inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(uint32_t offset = 0)
 	{
 		return Heap->GetGPUHandle(Index + offset);
 	}
 
-	inline DescriptorAllocationView GetView(size_t offset = 0)
+	inline DescriptorAllocationView GetView(uint32_t offset = 0)
 	{
 		return { this, offset };
 	}
@@ -125,11 +129,11 @@ inline uint32_t DescriptorAllocationView::GetIndex() const
 struct DescriptorHeapPage
 {
     DescriptorHeap* Heap{};
-    size_t Offset{};
-    size_t Size{};
-    size_t Top = 0;
+    uint32_t Offset{};
+    uint32_t Size{};
+    uint32_t Top = 0;
 
-    static std::unique_ptr<DescriptorHeapPage> Create(DescriptorHeap* heap, size_t size)
+    static std::unique_ptr<DescriptorHeapPage> Create(DescriptorHeap* heap, uint32_t size)
     {
 		auto page = std::unique_ptr<DescriptorHeapPage>(new DescriptorHeapPage);
 		page->Heap = heap;
@@ -140,7 +144,7 @@ struct DescriptorHeapPage
 
     DescriptorAllocation Allocate(uint32_t count)
     {
-		size_t old = Top;
+        uint32_t old = Top;
 		Top += count;
 		assert(Size >= Top);
 		return DescriptorAllocation::CreatePreAllocated(Heap, old + Offset, count);
@@ -171,17 +175,17 @@ struct DescriptorHeapPageCollection
     std::vector<DescriptorHeapPage*> FreePages;
     std::vector<DescriptorHeapPage*> UsedPages;
 
-    static std::unique_ptr<DescriptorHeapPageCollection> Create(D3D12_DESCRIPTOR_HEAP_DESC desc, ID3D12Device* device, size_t pageCount, size_t staticPageSize)
+    static std::unique_ptr<DescriptorHeapPageCollection> Create(D3D12_DESCRIPTOR_HEAP_DESC desc, ID3D12Device* device, uint32_t pageCount, uint32_t staticPageSize)
     {
 		auto collection = std::make_unique<DescriptorHeapPageCollection>();
 		collection->Heap = DescriptorHeap::Create(desc, device);
-        size_t remSize = desc.NumDescriptors - staticPageSize;
+        uint32_t remSize = desc.NumDescriptors - staticPageSize;
         if (pageCount == 0)
             remSize = 0;
         else
             remSize = remSize - remSize % pageCount;
         collection->StaticPage = DescriptorHeapPage::Create(collection->Heap.get(), desc.NumDescriptors - remSize);
-        for (size_t i = 0; i < pageCount; i++)
+        for (uint32_t i = 0; i < pageCount; i++)
         {
             collection->Pages.push_back(DescriptorHeapPage::Create(collection->Heap.get(), remSize / pageCount));
             collection->FreePages.push_back(collection->Pages.back().get());
@@ -227,7 +231,7 @@ struct DescriptorHeapAllocator
 
     static std::unique_ptr<DescriptorHeapAllocator> Create(ID3D12Device* dev);
 
-    void CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, size_t numDescriptors, uint32_t pageCount = 0, size_t staticPageSize = 0);
+    void CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors, uint32_t pageCount = 0, uint32_t staticPageSize = 0);
 
     DescriptorAllocation AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t size = 1)
     {

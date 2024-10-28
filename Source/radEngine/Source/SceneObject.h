@@ -14,7 +14,7 @@ struct MeshObject
 
 	MeshObject* Parent = nullptr;
 	std::vector<MeshObject> Children;
-	IndexedModel* IndexedModel = nullptr;
+	ModelView ModelView{};
 	Material* Material = nullptr;
 	bool TransformOnly = true;
 
@@ -23,8 +23,8 @@ struct MeshObject
 	{
 	}
 
-	MeshObject(std::string name, rad::IndexedModel* indexedModel, rad::Material* material)
-		: Name(std::move(name)), IndexedModel(indexedModel), Material(material), TransformOnly(false)
+	MeshObject(std::string name, rad::ModelView modelView, rad::Material* material)
+		: Name(std::move(name)), ModelView(modelView), Material(material), TransformOnly(false)
 	{
 	}
 
@@ -35,7 +35,7 @@ struct MeshObject
 
 	bool IsRenderable() const
 	{
-		return !TransformOnly && IndexedModel && Material;
+		return !TransformOnly && ModelView.IndexBufferView.BufferLocation && Material;
 	}
 
 	Renderable ToRenderable(Matrix4x4 parentModel = DirectX::XMMatrixIdentity()) const
@@ -49,8 +49,8 @@ struct MeshObject
 			renderable.DiffuseTextureIndex = Material->DiffuseTextureSRV->Index;
 		if (Material->NormalMapTextureSRV)
 			renderable.NormalMapTextureIndex = Material->NormalMapTextureSRV->Index;
-		renderable.VertexBufferView = IndexedModel->Model->VertexBufferView;
-		renderable.IndexBufferView = IndexedModel->IndexBufferView;
+		renderable.VertexBufferView = ModelView.VertexBufferView;
+		renderable.IndexBufferView = ModelView.IndexBufferView;
 		return renderable;
 	}
 };
