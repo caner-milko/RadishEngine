@@ -51,6 +51,11 @@ add_subdirectory(SDL)
 
 add_subdirectory(DirectX-Headers)
 
+
+# enable natvis
+set(ENTT_INCLUDE_NATVIS ON CACHE BOOL "Enable natvis for EnTT" FORCE)
+add_subdirectory(entt)
+
 set(FIDELITYFX_SPD_SHADERS	
 FidelityFX-SPD/ffx-spd/ffx_a.h
 FidelityFX-SPD/ffx-spd/ffx_spd.h

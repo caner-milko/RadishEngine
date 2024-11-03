@@ -22,3 +22,6 @@
 [submodule "External/FidelityFX-SPD"]
 	path = External/FidelityFX-SPD
 	url = https://github.com/GPUOpen-Effects/FidelityFX-SPD.git
+[submodule "External/entt"]
+	path = External/entt
+	url = https://github.com/skypjack/entt.git
