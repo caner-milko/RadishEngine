@@ -28,6 +28,7 @@
 
 #include "SceneTree.h"
 #include "ProcGen/TerrainGenerator.h"
+#include <entt/entt.hpp>
 
 extern "C" { __declspec(dllexport) extern const unsigned int D3D12SDKVersion = DIRECT3D_AGILITY_SDK_VERSION; }
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
