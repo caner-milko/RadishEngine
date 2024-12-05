@@ -3,7 +3,7 @@
 
 namespace rad
 {
-DXTexture DXTexture::Create(ID3D12Device* device, std::wstring name, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState)
+DXTexture DXTexture::Create(RadDevice& device, std::wstring name, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState)
 {
 	// Create the texture
 	auto desc = CD3DX12_RESOURCE_DESC::Tex2D(info.Format, info.Width, info.Height, info.DepthOrArraySize * (info.IsCubeMap ? 6 : 1), info.MipLevels, info.SampleDesc.Count, info.SampleDesc.Quality, info.Flags, info.Layout, info.Alignment);
@@ -11,7 +11,7 @@ DXTexture DXTexture::Create(ID3D12Device* device, std::wstring name, TextureCrea
 
 	ComPtr<ID3D12Resource> resource;
 
-	device->CreateCommittedResource(
+	device.CreateCommittedResource(
 		&heapProp,
 		D3D12_HEAP_FLAG_NONE,
 		&desc,
@@ -19,25 +19,25 @@ DXTexture DXTexture::Create(ID3D12Device* device, std::wstring name, TextureCrea
 		info.ClearValue ? &*info.ClearValue : nullptr,
 		IID_PPV_ARGS(&resource));
 
-	return DXTexture(name, resource, startState, device, info);
+	return DXTexture(name, resource, startState, info);
 }
 
-DXTexture DXTexture::FromExisting(ID3D12Device* device, std::wstring name, ComPtr<ID3D12Resource> resource, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState)
+DXTexture DXTexture::FromExisting(RadDevice& device, std::wstring name, ComPtr<ID3D12Resource> resource, TextureCreateInfo const& info, D3D12_RESOURCE_STATES startState)
 {
-	return DXTexture(name, resource, startState, device, info);
+	return DXTexture(name, resource, startState, info);
 }
 
-void DXTexture::UploadData(FrameContext& frameCtx, ID3D12GraphicsCommandList* cmdList, std::span<const std::byte> data, uint8_t bytesPerPixel)
+void DXTexture::UploadData(CommandContext& commandCtx, std::span<const std::byte> data, uint8_t bytesPerPixel)
 {
-	TransitionVec(*this, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdList);
-	auto intermediateBuf = DXBuffer::Create(Device, Name + L"_IntermediateBuffer", data.size(), D3D12_HEAP_TYPE_UPLOAD);
-	frameCtx.IntermediateResources.push_back(intermediateBuf.Resource);
+	TransitionVec(*this, D3D12_RESOURCE_STATE_COPY_DEST).Execute(commandCtx.CommandList);
+	auto intermediateBuf = DXBuffer::Create(commandCtx.Device, Name + L"_IntermediateBuffer", data.size(), D3D12_HEAP_TYPE_UPLOAD);
+	commandCtx.IntermediateResources.push_back(intermediateBuf.Resource);
 	D3D12_SUBRESOURCE_DATA subresourceData = {};
 	subresourceData.pData = data.data();
 	subresourceData.RowPitch = Info.Width * bytesPerPixel;
 	subresourceData.SlicePitch = Info.Height * subresourceData.RowPitch;
 
-	uint64_t res = UpdateSubresources(cmdList, Resource.Get(), intermediateBuf.Resource.Get(), 0, 0, 1, &subresourceData);
+	uint64_t res = UpdateSubresources(&commandCtx.CommandList, Resource.Get(), intermediateBuf.Resource.Get(), 0, 0, 1, &subresourceData);
 	assert(res != 0);
 }
 
@@ -61,40 +61,40 @@ DepthStencilView DXTexture::CreateDSV(D3D12_DEPTH_STENCIL_VIEW_DESC const* dsvDe
 	return DepthStencilView::Create({ ResourceViewToDesc<ViewTypes::DepthStencilView>{ dsvDesc, Resource.Get() } });
 }
 
-DXBuffer DXBuffer::Create(ID3D12Device* device, std::wstring name, size_t size, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_FLAGS flags)
+DXBuffer DXBuffer::Create(RadDevice& device, std::wstring name, size_t size, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_FLAGS flags)
 {
 	size = size < 256 ? 256 : size;
 	ComPtr<ID3D12Resource> resource;
 	auto desc = CD3DX12_RESOURCE_DESC::Buffer(size, flags);
 	auto heapProp = CD3DX12_HEAP_PROPERTIES(heapType);
-	device->CreateCommittedResource(
+	device.CreateCommittedResource(
 		&heapProp,
 		D3D12_HEAP_FLAG_NONE,
 		&desc,
 		D3D12_RESOURCE_STATE_COMMON,
 		nullptr,
 		IID_PPV_ARGS(&resource));
-	return DXBuffer(name, resource, device, size);
+	return DXBuffer(name, resource, size);
 }
 
-DXBuffer DXBuffer::CreateAndUpload(ID3D12Device* device, std::wstring name, ID3D12GraphicsCommandList* cmdList, ComPtr<ID3D12Resource>& outUploadBuf, std::span<const std::byte> data, D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags)
+DXBuffer DXBuffer::CreateAndUpload(RadDevice& device, std::wstring name, CommandContext& commandCtx, std::span<const std::byte> data, D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags)
 {
 	auto buffer = Create(device, name, data.size(), D3D12_HEAP_TYPE_DEFAULT, flags);
-	TransitionVec(buffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdList);
-	outUploadBuf = buffer.Upload(cmdList, data);
-	TransitionVec(buffer, state).Execute(cmdList);
+	TransitionVec(buffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(commandCtx);
+	commandCtx.IntermediateResources.push_back(buffer.Upload(commandCtx, data));
+	TransitionVec(buffer, state).Execute(commandCtx);
 	return buffer;
 }
 
 
-ComPtr<ID3D12Resource> DXBuffer::Upload(ID3D12GraphicsCommandList* cmdList, std::span<const std::byte> data, size_t offset)
+ComPtr<ID3D12Resource> DXBuffer::Upload(CommandContext& commandCtx, std::span<const std::byte> data, size_t offset)
 {
-	auto uploadResource = Create(Device, Name + L"UploadBuffer", data.size(), D3D12_HEAP_TYPE_UPLOAD);
-	TransitionVec(uploadResource, D3D12_RESOURCE_STATE_GENERIC_READ).Execute(cmdList);
+	auto uploadResource = Create(commandCtx.Device, Name + L"UploadBuffer", data.size(), D3D12_HEAP_TYPE_UPLOAD);
+	TransitionVec(uploadResource, D3D12_RESOURCE_STATE_GENERIC_READ).Execute(commandCtx);
 	CD3DX12_RANGE readRange(0, 0);
 	memcpy(uploadResource.Map(), data.data(), data.size());
 	uploadResource.Unmap();
-	cmdList->CopyBufferRegion(Resource.Get(), offset, uploadResource.Resource.Get(), 0, data.size());
+	commandCtx->CopyBufferRegion(Resource.Get(), offset, uploadResource.Resource.Get(), 0, data.size());
 	return uploadResource.Resource;
 }
 
@@ -171,6 +171,14 @@ void DXTexture::CreatePlacedRTV(DescriptorAllocationView alloc, D3D12_RENDER_TAR
 void DXTexture::CreatePlacedDSV(DescriptorAllocationView alloc, D3D12_DEPTH_STENCIL_VIEW_DESC const* dsvDesc)
 {
 	alloc.Base->Heap->Device->CreateDepthStencilView(Resource.Get(), dsvDesc, alloc.GetCPUHandle());
+}
+DXFence DXFence::Create(std::wstring_view name, RadDevice& device, UINT64 initialValue, D3D12_FENCE_FLAGS flags)
+{
+	DXFence fence;
+	ThrowIfFailed(device.CreateFence(initialValue, flags, IID_PPV_ARGS(&fence.Fence)));
+	fence.Fence->SetName(name.data());
+	fence.FenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	return fence;
 }
 
 }

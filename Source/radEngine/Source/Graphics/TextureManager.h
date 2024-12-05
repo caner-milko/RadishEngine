@@ -1,18 +1,20 @@
 #pragma once
 
+#include "Pipelines/GenerateMipsPipeline.h"
+#include "RendererCommon.h"
 #include "DXResource.h"
 #include "RadishCommon.h"
 #include "filesystem"
-#include "Pipelines/GenerateMipsPipeline.h"
 
 RAD_ID_STRUCT_U32(rad, TextureId)
 
 namespace rad
 {
 
-struct TextureManager : public Singleton<TextureManager>
+struct TextureManager
 {
-	void Init(ID3D12Device2* device);
+	TextureManager(rad::Renderer& renderer) : Renderer(renderer), GenerateMipsPipeline(renderer) {}
+	bool Init();
 
 	struct TextureLoadInfo
 	{
@@ -20,13 +22,13 @@ struct TextureManager : public Singleton<TextureManager>
 		D3D12_RESOURCE_FLAGS Flags = D3D12_RESOURCE_FLAG_NONE;
 	};
 
-	void GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, DXTexture& texture);
-	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, bool generateMips = true);
+	void GenerateMips(CommandContext& commandCtx, DXTexture& texture);
+	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, CommandContext& commandCtx, bool generateMips = true);
 
 private:
 	std::unordered_map<TextureId, std::unique_ptr<DXTexture>> Textures;
 	std::unordered_map<std::filesystem::path, TextureId> LoadedTextures;
-	ID3D12Device2* Device;
+	Renderer& Renderer;
 	TextureId NextId = { 1 };
 	GenerateMipsPipeline GenerateMipsPipeline;
 };

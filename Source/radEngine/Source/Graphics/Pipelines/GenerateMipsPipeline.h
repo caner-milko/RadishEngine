@@ -2,11 +2,10 @@
 
 #include "RadishCommon.h"
 
-#include "RootSignature.h"
-#include "PipelineState.h"
-
-#include "RendererCommon.h"
-#include "DXResource.h"
+#include "Graphics/RootSignature.h"
+#include "Graphics/PipelineState.h"
+#include "Graphics/RendererCommon.h"
+#include "Graphics/DXResource.h"
 
 namespace rad
 {
@@ -18,16 +17,17 @@ struct GenerateMipsPipeline
 	{
 		uint32_t counters[6];
 	};
-	bool Setup(ID3D12Device2* dev);
+	GenerateMipsPipeline(Renderer& renderer) : Renderer(renderer) {}
+	bool Setup();
 
-	void GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, struct DXTexture& texture);
+	void GenerateMips(CommandContext& commandCtx, struct DXTexture& texture);
 
-	ID3D12Device2* Device = nullptr;
+	Renderer& Renderer;
 	RootSignature RootSignature;
 	PipelineState PipelineState;
 
 	DXTypedSingularBuffer<GlobalCounterStruct> GlobalCounterBuffer;
-	UnorderedAccessView GlobalCounterUAV;
+	DescriptorAllocation GlobalCounterUAV;
 };
 
 }

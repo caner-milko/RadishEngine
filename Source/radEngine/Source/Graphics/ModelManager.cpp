@@ -1,5 +1,6 @@
 #include "ModelManager.h"
 
+#include "Renderer.h"
 #include <filesystem>
 #include <tiny_obj_loader.h>
 #include "TextureManager.h"
@@ -39,11 +40,6 @@ namespace std
 
 namespace rad
 {
-std::unique_ptr<ModelManager> ModelManager::Instance = nullptr;
-void ModelManager::Init(ID3D12Device* device)
-{
-	Device = device;
-}
 
 void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Vertex>& vertices, std::vector<std::vector<uint32_t>>& indexPerShape)
 {
@@ -146,15 +142,15 @@ void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Ve
 	}
 }
 
-ObjModel* ModelManager::LoadModel(const std::string& modelPath, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList)
+OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, CommandContext& commandCtx)
 {
 	auto it = Models.find(modelPath);
 	if (it != Models.end())
 	{
-		return it->second.get();
+		return it->second;
 	}
     
-	auto& objModel = Models[modelPath] = std::make_unique<ObjModel>();
+	auto& objModel = Models[modelPath] = ObjModel{};
 
     tinyobj::ObjReaderConfig readerConfig;
     tinyobj::ObjReader reader;
@@ -163,24 +159,17 @@ ObjModel* ModelManager::LoadModel(const std::string& modelPath, FrameContext& fr
     auto& attrib = reader.GetAttrib();
     auto shapes = reader.GetShapes();
 
-    objModel->ModelViews.reserve(shapes.size());
-	objModel->Materials.reserve(reader.GetMaterials().size());
+    objModel.Meshes.reserve(shapes.size());
+	objModel.Materials.reserve(reader.GetMaterials().size());
 
 	std::vector<Vertex> vertices;
 	std::vector<std::vector<uint32_t>> indicesPerShape;
 	LoadVerticesAndIndexBuffer(reader, vertices, indicesPerShape);
-    {
-		auto& model = objModel->Vertices;
-	    model.VerticesBuffer = DXTypedBuffer<Vertex>::CreateAndUpload(Device, s2ws(modelPath) + L"_Vertices", cmdList, frameCtx.IntermediateResources.emplace_back(), vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-		model.VertexBufferView.BufferLocation = model.VerticesBuffer.Resource->GetGPUVirtualAddress();
-		model.VertexBufferView.SizeInBytes = model.VerticesBuffer.Size;
-		model.VertexBufferView.StrideInBytes = sizeof(Vertex);
-    }
-
+	objModel.Vertices = DXTypedBuffer<Vertex>::CreateAndUpload(Renderer.GetDevice(), s2ws(modelPath) + L"_Vertices", commandCtx, vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
     for (auto& mat : reader.GetMaterials())
     {
-        auto& material = objModel->Materials[mat.name];
+        auto& material = objModel.Materials[mat.name];
         material.Name = mat.name;
 
         material.MaterialInfo = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
@@ -192,7 +181,7 @@ ObjModel* ModelManager::LoadModel(const std::string& modelPath, FrameContext& fr
         {
             material.DiffuseTextureName = std::filesystem::path(modelPath).parent_path().string() + "/" + mat.diffuse_texname;
             // Load texture into memory
-            auto* tex = TextureManager::Get().LoadTexture(std::filesystem::path(*material.DiffuseTextureName), {}, frameCtx, cmdList, true);
+            auto* tex = Renderer.TextureManager->LoadTexture(std::filesystem::path(*material.DiffuseTextureName), {}, commandCtx, true);
             if (tex)
             {
 		        material.DiffuseTextureSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
@@ -215,7 +204,7 @@ ObjModel* ModelManager::LoadModel(const std::string& modelPath, FrameContext& fr
 		{
 			material.NormalMapTextureName = std::filesystem::path(modelPath).parent_path().string() + "/" + mat.displacement_texname;
 			// Load texture into memory
-			auto* tex = TextureManager::Get().LoadTexture(std::filesystem::path(*material.NormalMapTextureName), {}, frameCtx, cmdList, true);
+			auto* tex = Renderer.TextureManager->LoadTexture(std::filesystem::path(*material.NormalMapTextureName), {}, commandCtx, true);
 			if (tex)
 			{
 				material.NormalMapTextureSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
@@ -229,43 +218,22 @@ ObjModel* ModelManager::LoadModel(const std::string& modelPath, FrameContext& fr
 			}
 		}
 
-        material.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(Device, s2ws(mat.name) + L"_MaterialInfo", cmdList, frameCtx.IntermediateResources.emplace_back(), matInfo, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+        material.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(Renderer.GetDevice(), s2ws(mat.name) + L"_MaterialInfo", commandCtx, matInfo, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 		material.MaterialInfoBuffer.CreatePlacedCBV(material.MaterialInfo.GetView(0));
     }
 
     // Loop over shapes
-    for (size_t i = 0; i <shapes.size(); i++)
+    for (size_t i = 0; i < shapes.size(); i++)
     {
 		auto& shape = shapes[i];
 		auto& indices = indicesPerShape[i];
-		auto& indexedModel = objModel->ModelViews[shape.name];
-		indexedModel.Vertices = &objModel->Vertices;
-        indexedModel.Name = shape.name;
-        indexedModel.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(Device, s2ws(shape.name), cmdList, frameCtx.IntermediateResources.emplace_back(), indices, D3D12_RESOURCE_STATE_INDEX_BUFFER);
-		indexedModel.IndexBufferView.BufferLocation = indexedModel.Indices.Resource->GetGPUVirtualAddress();
-		indexedModel.IndexBufferView.SizeInBytes = indexedModel.Indices.Size;
-		indexedModel.IndexBufferView.Format = DXGI_FORMAT_R32_UINT;
-    }
+		auto& mesh = objModel.Meshes[shape.name];
+        mesh.Name = shape.name;
+        mesh.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(Renderer.GetDevice(), s2ws(shape.name), commandCtx, indices, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+		mesh.Material = objModel.Materials[reader.GetMaterials()[shape.mesh.material_ids[0]].name];
+	}
 
-	objModel->Objects.reserve(shapes.size());
-
-    for (size_t i = 0; i < shapes.size(); ++i)
-    {
-		auto& shape = shapes[i];
-		auto& indexedModel = objModel->ModelViews[shape.name];
-
-		Material* mat = nullptr;
-
-        if (!shape.mesh.material_ids.empty())
-        {
-            auto matName =reader.GetMaterials()[shape.mesh.material_ids[0]].name;
-			assert(objModel->Materials.find(matName) != objModel->Materials.end());
-			mat = &objModel->Materials[matName];
-        }
-		objModel->Objects.emplace_back(&indexedModel, mat);
-    }
-
-    return objModel.get();
+    return objModel;
 }
 
 }

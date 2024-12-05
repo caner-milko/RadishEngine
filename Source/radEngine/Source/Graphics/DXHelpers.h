@@ -1,4 +1,6 @@
 #pragma once
+#include "RadishCommon.h"
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <dxgi1_4.h>
@@ -31,6 +33,7 @@ using Vector2 = DirectX::XMFLOAT2;
 #include <directx/d3dx12.h>
 #include <d3dcompiler.h>
 
+
 inline void ThrowIfFailed(HRESULT hr)
 {
     if (FAILED(hr))
@@ -41,11 +44,15 @@ inline void ThrowIfFailed(HRESULT hr)
 
 namespace rad
 {
+
+using RadGraphicsCommandList = ID3D12GraphicsCommandList2;
+using RadDevice = ID3D12Device2;
 struct DescriptorHeap
 {
-    static std::unique_ptr<DescriptorHeap> Create(D3D12_DESCRIPTOR_HEAP_DESC desc, ID3D12Device* device);
+	DescriptorHeap(RadDevice& device) : Device(device) {}
+    static std::unique_ptr<DescriptorHeap> Create(D3D12_DESCRIPTOR_HEAP_DESC desc, RadDevice& device);
 
-    ID3D12Device* Device;
+    Ref<RadDevice> Device;
     ComPtr<ID3D12DescriptorHeap> Heap;
     D3D12_DESCRIPTOR_HEAP_DESC Desc;
     uint32_t Increment;
@@ -175,7 +182,7 @@ struct DescriptorHeapPageCollection
     std::vector<DescriptorHeapPage*> FreePages;
     std::vector<DescriptorHeapPage*> UsedPages;
 
-    static std::unique_ptr<DescriptorHeapPageCollection> Create(D3D12_DESCRIPTOR_HEAP_DESC desc, ID3D12Device* device, uint32_t pageCount, uint32_t staticPageSize)
+    static std::unique_ptr<DescriptorHeapPageCollection> Create(D3D12_DESCRIPTOR_HEAP_DESC desc, RadDevice& device, uint32_t pageCount, uint32_t staticPageSize)
     {
 		auto collection = std::make_unique<DescriptorHeapPageCollection>();
 		collection->Heap = DescriptorHeap::Create(desc, device);
@@ -227,9 +234,10 @@ template<bool CPU>
 struct DescriptorHeapAllocator
 {
     std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, std::unique_ptr<DescriptorHeapPageCollection>> Heaps;
-	ID3D12Device* Device;
+	Ref<RadDevice> Device;
 
-    static std::unique_ptr<DescriptorHeapAllocator> Create(ID3D12Device* dev);
+	DescriptorHeapAllocator(RadDevice& device) : Device(device) {}
+    static std::unique_ptr<DescriptorHeapAllocator> Create(RadDevice& dev);
 
     void CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors, uint32_t pageCount = 0, uint32_t staticPageSize = 0);
 
@@ -321,7 +329,10 @@ struct TransitionVec : std::vector<D3D12_RESOURCE_BARRIER>
 
     TransitionVec& Add(struct DXResource& res, D3D12_RESOURCE_STATES after);
     TransitionVec& Add(ID3D12Resource* res, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
-	void Execute(ID3D12GraphicsCommandList* cmdList);
+	void Execute(RadGraphicsCommandList& cmdList);
 };
+
+struct CommandContext;
+
 
 }

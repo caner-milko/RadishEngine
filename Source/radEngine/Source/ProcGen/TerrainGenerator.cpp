@@ -1,13 +1,13 @@
 #include "TerrainGenerator.h"
 
-#include "ShaderManager.h"
-#include "TextureManager.h"
+#include "Graphics/ShaderManager.h"
+#include "Graphics/TextureManager.h"
 #include <random>
 #include "Compute/Terrain/TerrainResources.hlsli"
 #include "Compute/Terrain/TerrainConstantBuffers.hlsli"
 #include "stb_image.h"
 
-
+#if RAD_ENABLE_EXPERIMENTAL
 namespace rad::proc
 {
 	size_t GetIndex(size_t x, size_t y, size_t width)
@@ -555,3 +555,4 @@ namespace rad::proc
 		CreatePlacedSRV(SRV.GetView(), &srvDesc);
 	}
 }
+#endif

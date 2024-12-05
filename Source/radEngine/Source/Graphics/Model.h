@@ -16,7 +16,7 @@ struct Material
 
     Vector3 DiffuseColor = { 1, 1, 1 };
 
-    DXTypedBuffer<rad::hlsl::MaterialBuffer> MaterialInfoBuffer;
+    DXTypedSingularBuffer<rad::hlsl::MaterialBuffer> MaterialInfoBuffer;
     DescriptorAllocation MaterialInfo;
 	std::optional<DescriptorAllocation> DiffuseTextureSRV = std::nullopt;
 	std::optional<DescriptorAllocation> NormalMapTextureSRV = std::nullopt;
@@ -36,50 +36,5 @@ struct Vertex
 			TexCoord.x == other.TexCoord.x && TexCoord.y == other.TexCoord.y;
 	}
 };
-
-struct VertexBuffer
-{
-    DXTypedBuffer<Vertex> VerticesBuffer;
-    D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
-};
-
-struct ModelView
-{
-	D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
-	D3D12_INDEX_BUFFER_VIEW IndexBufferView;
-};
-
-struct IndexedModel
-{
-	std::string Name;
-	VertexBuffer* Vertices;
-    DXTypedBuffer<uint32_t> Indices;
-    D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
-
-	ModelView ToModelView() const
-	{
-		ModelView modelView{};
-		modelView.VertexBufferView = Vertices->VertexBufferView;
-		modelView.IndexBufferView = IndexBufferView;
-		return modelView;
-	}
-};
-
-struct StandaloneModel
-{
-	std::string Name;
-	VertexBuffer Vertices;
-	DXTypedBuffer<uint32_t> Indices;
-	D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
-
-	ModelView ToModelView() const
-	{
-		ModelView modelView{};
-		modelView.VertexBufferView = Vertices.VertexBufferView;
-		modelView.IndexBufferView = IndexBufferView;
-		return modelView;
-	}
-};
-
 
 } // namespace rad

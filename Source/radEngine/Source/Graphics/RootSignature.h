@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RendererCommon.h"
 #include "DXHelpers.h"
 #include "Shader.h"
 
@@ -38,7 +39,7 @@ struct RootSignatureBuilder
 	RootSignatureBuilder& AddUnorderedAccessView(std::string_view name, RootParamDesc desc);
 
 
-	RootSignature Build(std::string_view name, ID3D12Device* device, D3D12_ROOT_SIGNATURE_FLAGS flags);
+	RootSignature Build(std::string_view name, RadDevice& device, D3D12_ROOT_SIGNATURE_FLAGS flags);
 
 };
 

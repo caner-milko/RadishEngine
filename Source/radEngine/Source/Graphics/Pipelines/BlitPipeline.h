@@ -2,21 +2,26 @@
 
 #include "RadishCommon.h"
 
-#include "RootSignature.h"
-#include "PipelineState.h"
+#include "Graphics/RootSignature.h"
+#include "Graphics/PipelineState.h"
+#include "Graphics/RendererCommon.h"
 
-#include "RendererCommon.h"
+namespace rad::hlsl
+{
+	struct BlitResources;
+}
 
 namespace rad
 {
 
 struct BlitPipeline
 {
-	bool Setup(ID3D12Device2* dev);
-	void Blit(ID3D12GraphicsCommandList2* cmdList, struct DXTexture* dstTex, struct DXTexture* srcTex, D3D12_CPU_DESCRIPTOR_HANDLE dstRTV, uint32_t srcSRVIndex);
+	BlitPipeline(rad::Renderer& renderer) : Renderer(renderer) {}
+	bool Setup();
+	void Blit(CommandContext& commandCtx, struct DXTexture* dstTex, struct DXTexture* srcTex, D3D12_CPU_DESCRIPTOR_HANDLE dstRTV, uint32_t srcSRVIndex);
 	
-	ID3D12Device2* Device = nullptr;
-	PipelineState PipelineState;
+	Renderer& Renderer;
+	GraphicsPipelineState<hlsl::BlitResources> PipelineState;
 };
 
 }

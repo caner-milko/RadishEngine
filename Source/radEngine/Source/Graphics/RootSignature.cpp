@@ -54,7 +54,7 @@ RootSignatureBuilder& RootSignatureBuilder::AddUnorderedAccessView(std::string_v
 	return AddRootParameter(name, parameter);
 }
 
-RootSignature RootSignatureBuilder::Build(std::string_view name, ID3D12Device* device, D3D12_ROOT_SIGNATURE_FLAGS flags)
+RootSignature RootSignatureBuilder::Build(std::string_view name, RadDevice& device, D3D12_ROOT_SIGNATURE_FLAGS flags)
 {
 	RootSignature rs{};
 	rs.Name = name;
@@ -64,7 +64,7 @@ RootSignature RootSignatureBuilder::Build(std::string_view name, ID3D12Device* d
 	ComPtr<ID3DBlob> signatureBlob;
 	ComPtr<ID3DBlob> errorBlob;
 	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signatureBlob, &errorBlob));
-	ThrowIfFailed(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rs.DXSignature)));
+	ThrowIfFailed(device.CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rs.DXSignature)));
 	rs.DXSignature->SetName(s2ws(rs.Name).c_str());
 
 	for (size_t i = 0; i < ParameterNames.size(); i++)

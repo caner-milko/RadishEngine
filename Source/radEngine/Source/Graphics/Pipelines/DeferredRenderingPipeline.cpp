@@ -1,6 +1,7 @@
 #include "DeferredRenderingPipeline.h"
 
-#include "ShaderManager.h"
+#include "Graphics/Renderer.h"
+#include "Graphics/ShaderManager.h"
 
 #include "RenderResources.hlsli"
 #include "ConstantBuffers.hlsli"
@@ -8,18 +9,16 @@
 namespace rad
 {
 
-bool DeferredRenderingPipeline::Setup(ID3D12Device2* dev)
+bool DeferredRenderingPipeline::Setup()
 {
-	Device = dev;
 	ScissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-	SetupStaticMeshPipeline();
-	SetupShadowMapPipeline();
-	SetupLightingPipeline();
-
+	SetupDeferredRenderPass();
+	SetupShadowMapPass();
+	SetupLightingPass();
 	return true;
 }
 
-void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
+bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 {
 	Viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
 	DXTexture::TextureCreateInfo depthBufferInfo
@@ -31,7 +30,7 @@ void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
 		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_D32_FLOAT, .DepthStencil = {.Depth = 1.0f}}
 	};
-	DepthBuffer = DXTexture::Create(Device, L"DepthBuffer", depthBufferInfo, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	DepthBuffer = DXTexture::Create(Renderer.GetDevice(), L"DepthBuffer", depthBufferInfo, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 	DXTexture::TextureCreateInfo albedoBufferInfo
 	{
 		.Width = width,
@@ -41,7 +40,7 @@ void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
 		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, .Color = {0, 0, 0, 1}}
 	};
-	AlbedoBuffer = DXTexture::Create(Device, L"AlbedoBuffer", albedoBufferInfo);
+	AlbedoBuffer = DXTexture::Create(Renderer.GetDevice(), L"AlbedoBuffer", albedoBufferInfo);
 	DXTexture::TextureCreateInfo normalBufferInfo
 	{
 		.Width = width,
@@ -51,7 +50,7 @@ void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
 		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_R16G16B16A16_FLOAT, .Color = {0, 0, 0, 1}}
 	};
-	NormalBuffer = DXTexture::Create(Device, L"NormalBuffer", normalBufferInfo);
+	NormalBuffer = DXTexture::Create(Renderer.GetDevice(), L"NormalBuffer", normalBufferInfo);
 	DXTexture::TextureCreateInfo outputBufferInfo
 	{
 		.Width = width,
@@ -61,7 +60,7 @@ void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
 		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, .Color = {0, 0, 0, 1}}
 	};
-	OutputBuffer = DXTexture::Create(Device, L"OutputBuffer", outputBufferInfo);
+	OutputBuffer = DXTexture::Create(Renderer.GetDevice(), L"OutputBuffer", outputBufferInfo);
 
 	// Create RTVs and DSVs
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
@@ -92,17 +91,11 @@ void DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	NormalBuffer.CreatePlacedSRV(GBuffersSRV.GetView(1), &srvDesc);
 	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
 	DepthBuffer.CreatePlacedSRV(GBuffersSRV.GetView(2), &srvDesc);
+	return true;
 }
-
-void DeferredRenderingPipeline::Run(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene, FrameContext& frameCtx)
+bool DeferredRenderingPipeline::SetupDeferredRenderPass()
 {
-	RunStaticMeshPipeline(cmd, viewData, scene);
-	RunShadowMapPipeline(cmd, scene);
-	RunLightingPipeline(cmd, viewData, scene, frameCtx); 
-}
-bool DeferredRenderingPipeline::SetupStaticMeshPipeline()
-{
-
+#if RAD_ENABLE_EXPERIMENTAL
 	struct StaticMeshPipelineStateStream : PipelineStateStreamBase
 	{
 		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
@@ -124,7 +117,7 @@ bool DeferredRenderingPipeline::SetupStaticMeshPipeline()
 	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-	auto [vertexShader, pixelShader] = ShaderManager::Get().CompileBindlessGraphicsShader(L"Triangle", RAD_SHADERS_DIR L"Graphics/StaticMesh.hlsl");
+	auto [vertexShader, pixelShader] = Renderer.ShaderManager->CompileBindlessGraphicsShader(L"Triangle", RAD_SHADERS_DIR L"Graphics/StaticMesh.hlsl");
 	
 	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
@@ -138,12 +131,14 @@ bool DeferredRenderingPipeline::SetupStaticMeshPipeline()
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
+	StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", Renderer.GetDevice(), pipelineStateStream, &Renderer.ShaderManager->BindlessRootSignature);
+#endif
 	return true;
 }
 
-bool DeferredRenderingPipeline::SetupShadowMapPipeline()
+bool DeferredRenderingPipeline::SetupShadowMapPass()
 {
+#if RAD_ENABLE_EXPERIMENTAL
 	struct ShadowMapPipelineStateStream : PipelineStateStreamBase
 	{
 		CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
@@ -162,12 +157,13 @@ bool DeferredRenderingPipeline::SetupShadowMapPipeline()
 	pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(ShaderManager::Get().CompileBindlessVertexShader(L"ShadowMap", RAD_SHADERS_DIR L"Graphics/Shadowmap.hlsl")->Blob.Get());
+	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(Renderer.ShaderManager->CompileBindlessVertexShader(L"ShadowMap", RAD_SHADERS_DIR L"Graphics/Shadowmap.hlsl")->Blob.Get());
 
 	pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
-	ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
-	ShadowMap = DXTexture::Create(Device, L"ShadowMap", {
+	ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", Renderer.GetDevice(), pipelineStateStream, &Renderer.ShaderManager->BindlessRootSignature);
+#endif
+	ShadowMap = DXTexture::Create(Renderer.GetDevice(), L"ShadowMap", {
 		.Width = 1024,
 		.Height = 1024,
 		.MipLevels = 1,
@@ -214,12 +210,12 @@ bool DeferredRenderingPipeline::SetupShadowMapPipeline()
 	shadowSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
 	memset(shadowSampler.BorderColor, std::bit_cast<int>(1.0f), sizeof(shadowSampler.BorderColor));
 	
-	Device->CreateSampler(&shadowSampler, ShadowMapSampler.GetCPUHandle());
+	Renderer.GetDevice().CreateSampler(&shadowSampler, ShadowMapSampler.GetCPUHandle());
 	
 	return true;
 }
 
-bool DeferredRenderingPipeline::SetupLightingPipeline()
+bool DeferredRenderingPipeline::SetupLightingPass()
 {
 
 	struct LightingPipelineStateStream : PipelineStateStreamBase
@@ -233,7 +229,7 @@ bool DeferredRenderingPipeline::SetupLightingPipeline()
 
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-	auto [vertexShader, pixelShader] = ShaderManager::Get().CompileBindlessGraphicsShader(L"Lighting", RAD_SHADERS_DIR L"Graphics/Lighting.hlsl");
+	auto [vertexShader, pixelShader] = Renderer.ShaderManager->CompileBindlessGraphicsShader(L"Lighting", RAD_SHADERS_DIR L"Graphics/Lighting.hlsl");
 	
 	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
@@ -245,14 +241,14 @@ bool DeferredRenderingPipeline::SetupLightingPipeline()
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	LightingPipelineState = PipelineState::Create("LightingPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
+	LightingPipelineState = PipelineState::Create("LightingPipeline", Renderer.GetDevice(), pipelineStateStream, &Renderer.ShaderManager->BindlessRootSignature);
 
-	LightBuffer = DXBuffer::Create(Device, L"LightBuffer", sizeof(rad::hlsl::LightDataBuffer), D3D12_HEAP_TYPE_DEFAULT);
+	LightBuffer = DXBuffer::Create(Renderer.GetDevice(), L"LightBuffer", sizeof(rad::hlsl::LightDataBuffer), D3D12_HEAP_TYPE_DEFAULT);
 	LightBufferCBV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 	LightBuffer.CreatePlacedCBV(LightBufferCBV.GetView());
 
 
-	LightTransformationMatricesBuffer = DXBuffer::Create(Device, L"LightTransformationMatricesBuffer", sizeof(rad::hlsl::LightTransformBuffer), D3D12_HEAP_TYPE_DEFAULT);
+	LightTransformationMatricesBuffer = DXBuffer::Create(Renderer.GetDevice(), L"LightTransformationMatricesBuffer", sizeof(rad::hlsl::LightTransformBuffer), D3D12_HEAP_TYPE_DEFAULT);
 	LightTransformationMatricesBufferCBV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 	LightTransformationMatricesBuffer.CreatePlacedCBV(LightTransformationMatricesBufferCBV.GetView());
 
@@ -266,7 +262,129 @@ bool DeferredRenderingPipeline::SetupLightingPipeline()
 	OutputBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 	return true;
 }
+void DeferredRenderingPipeline::ShadowMapPass(CommandContext cmdContext, RenderFrameRecord& frameRecord)
+{
+	cmdContext->RSSetViewports(1, &ShadowMapViewport);
+	TransitionVec(ShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE).Execute(cmdContext);
 
+	// Clear Render Targets
+	{
+		auto dsv = ShadowMapDSV.GetCPUHandle();
+		cmdContext->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	}
+
+	// Set Render Targets
+	{
+		auto dsv = ShadowMapDSV.GetCPUHandle();
+		cmdContext->OMSetRenderTargets(0, nullptr, FALSE, &dsv);
+	}
+
+	DepthOnlyPassData passData{ .CmdContext = cmdContext, .OutDepth = &ShadowMap };
+	RenderView lightView = frameRecord.LightInfo.View;
+	Renderable lastRenderableCfg{};
+	for (auto& renderable : frameRecord.Commands)
+		renderable.DepthOnlyPass(lightView, passData);
+}
+void DeferredRenderingPipeline::DeferredRenderPass(CommandContext cmdContext, RenderFrameRecord& frameRecord)
+{
+	cmdContext->RSSetViewports(1, &Viewport);
+	TransitionVec(AlbedoBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(NormalBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(DepthBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE)
+		.Execute(cmdContext);
+
+	// Clear Render Targets
+	{
+		auto rtv = AlbedoBufferRTV.GetCPUHandle();
+		auto rtv2 = NormalBufferRTV.GetCPUHandle();
+		auto dsv = DepthBufferDSV.GetCPUHandle();
+		float clearColor[] = { 0, 0, 0, 1 };
+		cmdContext->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+		cmdContext->ClearRenderTargetView(rtv2, clearColor, 0, nullptr);
+		cmdContext->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	}
+
+	// Set Render Targets
+	{
+		D3D12_CPU_DESCRIPTOR_HANDLE rtv[2] = { AlbedoBufferRTV.GetCPUHandle(), NormalBufferRTV.GetCPUHandle() };
+		auto dsv = DepthBufferDSV.GetCPUHandle();
+		cmdContext->OMSetRenderTargets(2, rtv, FALSE, &dsv);
+	}
+
+	cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	DeferredPassData passData{ .CmdContext = cmdContext, .OutAlbedo = &AlbedoBuffer, .OutNormal = &NormalBuffer, .OutDepth = &DepthBuffer};
+	for (auto& renderable : frameRecord.Commands)
+		renderable.DeferredPass(frameRecord.View, passData);
+}
+void DeferredRenderingPipeline::LightingPass(CommandContext cmdContext, RenderFrameRecord& frameRecord)
+{
+
+	cmdContext->RSSetViewports(1, &Viewport);
+
+	TransitionVec{}.Add(AlbedoBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(NormalBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Execute(cmdContext);
+
+	// Set Render Targets
+	{
+		auto rtv = OutputBufferRTV.GetCPUHandle();
+		cmdContext->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+	}
+
+	cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+
+	// Update Light Data
+	{
+		TransitionVec(LightBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdContext);
+		// Update Light Buffer
+		hlsl::LightDataBuffer lightData{ .DirectionOrPosition = frameRecord.LightInfo.View.ViewDirection, .Color = frameRecord.LightInfo.Color, .Intensity = frameRecord.LightInfo.Intensity, .AmbientColor = frameRecord.LightInfo.AmbientColor };
+		constexpr size_t paramCount = sizeof(rad::hlsl::LightDataBuffer) / sizeof(UINT);
+		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+		for (size_t i = 0; i < paramCount; i++)
+		{
+			params[i].Dest = LightBuffer.GPUAddress(i * sizeof(UINT));
+			params[i].Value = reinterpret_cast<const UINT*>(&lightData)[i];
+		}
+		cmdContext->WriteBufferImmediate(paramCount, params, nullptr);
+		TransitionVec(LightBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmdContext);
+	}
+
+	// Update Light Transformation Matrices
+	{
+		TransitionVec(LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdContext);
+		rad::hlsl::LightTransformBuffer lighTransform{};
+		lighTransform.LightViewProjection = frameRecord.LightInfo.View.ViewProjectionMatrix;
+		lighTransform.CamInverseView = glm::inverse(frameRecord.View.ViewMatrix);
+		lighTransform.CamInverseProjection = glm::inverse(frameRecord.View.ProjectionMatrix);
+
+		// Update Light Buffer
+		constexpr size_t paramCount = sizeof(lighTransform) / sizeof(UINT);
+		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+		for (size_t i = 0; i < paramCount; i++)
+		{
+			params[i].Dest = LightTransformationMatricesBuffer.GPUAddress(i * sizeof(UINT));
+			params[i].Value = reinterpret_cast<const UINT*>(&lighTransform)[i];
+		}
+		cmdContext->WriteBufferImmediate(paramCount, params, nullptr);
+		TransitionVec(LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmdContext);
+	}
+	rad::hlsl::LightingResources lightingResources{};
+	lightingResources.AlbedoTextureIndex = GBuffersSRV.Index;
+	lightingResources.NormalTextureIndex = GBuffersSRV.GetView(1).GetIndex();
+	lightingResources.DepthTextureIndex = GBuffersSRV.GetView(2).GetIndex();
+	lightingResources.ShadowMapTextureIndex = ShadowMapSRV.Index;
+	lightingResources.ShadowMapSamplerIndex = ShadowMapSampler.Index;
+	lightingResources.LightDataBufferIndex = LightBufferCBV.Index;
+	lightingResources.LightTransformBufferIndex = LightTransformationMatricesBufferCBV.Index;
+
+	LightingPipelineState.BindWithResources(cmdContext, lightingResources);
+	cmdContext->DrawInstanced(4, 1, 0, 0);
+}
+#if RAD_ENABLE_EXPERIMENTAL
 void DeferredRenderingPipeline::RunStaticMeshPipeline(ID3D12GraphicsCommandList2* cmd, ViewData const& viewData, SceneDataView const& scene)
 {
 	// Transition Resources
@@ -428,4 +546,5 @@ void DeferredRenderingPipeline::RunLightingPipeline(ID3D12GraphicsCommandList2* 
 
 	cmd->DrawInstanced(4, 1, 0, 0);
 }
+#endif
 }

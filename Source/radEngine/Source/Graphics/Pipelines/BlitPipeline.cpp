@@ -1,11 +1,10 @@
 #include "BlitPipeline.h"
-#include "ShaderManager.h"
-#include "DXResource.h"
+#include "Graphics/ShaderManager.h"
+#include "Graphics/Renderer.h"
 namespace rad
 {
-bool BlitPipeline::Setup(ID3D12Device2* dev)
+bool BlitPipeline::Setup()
 {
-	Device = dev;
 
 	struct BlitPipelineStream : PipelineStateStreamBase
 	{
@@ -18,7 +17,7 @@ bool BlitPipeline::Setup(ID3D12Device2* dev)
 
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-	auto [vertexShader, pixelShader] = ShaderManager::Get().CompileBindlessGraphicsShader(L"Blit", RAD_SHADERS_DIR L"Graphics/Blit.hlsl");
+	auto [vertexShader, pixelShader] = Renderer.ShaderManager->CompileBindlessGraphicsShader(L"Blit", RAD_SHADERS_DIR L"Graphics/Blit.hlsl");
 
 	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
@@ -30,31 +29,29 @@ bool BlitPipeline::Setup(ID3D12Device2* dev)
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	PipelineState = PipelineState::Create("BlitPipeline", Device, pipelineStateStream, &ShaderManager::Get().BindlessRootSignature, false);
+	PipelineState = PipelineState::Create("BlitPipeline", Renderer.GetDevice(), pipelineStateStream, &Renderer.ShaderManager->BindlessRootSignature);
 	return true;
 }
 
-void BlitPipeline::Blit(ID3D12GraphicsCommandList2* cmdList, struct DXTexture* dstTex, struct DXTexture* srcTex, D3D12_CPU_DESCRIPTOR_HANDLE dstRTV, uint32_t srcSRVIndex)
+void BlitPipeline::Blit(CommandContext& commandCtx, struct DXTexture* dstTex, struct DXTexture* srcTex, D3D12_CPU_DESCRIPTOR_HANDLE dstRTV, uint32_t srcSRVIndex)
 {
 	D3D12_VIEWPORT viewport = {};
 	viewport.Width = static_cast<float>(dstTex->Info.Width);
 	viewport.Height = static_cast<float>(dstTex->Info.Height);
-	cmdList->RSSetViewports(1, &viewport);
+	commandCtx->RSSetViewports(1, &viewport);
 	TransitionVec{}.Add(*dstTex, D3D12_RESOURCE_STATE_RENDER_TARGET)
 		.Add(*srcTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-		.Execute(cmdList);
+		.Execute(commandCtx);
 
-	PipelineState.Bind(cmdList);
 
-	cmdList->OMSetRenderTargets(1, &dstRTV, FALSE, nullptr);
+	commandCtx->OMSetRenderTargets(1, &dstRTV, FALSE, nullptr);
 
-	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	commandCtx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
 	rad::hlsl::BlitResources blitResources{};
 	blitResources.SourceTextureIndex = srcSRVIndex;
-	cmdList->SetGraphicsRoot32BitConstants(0, sizeof(blitResources) / 4, &blitResources, 0);
-
-	cmdList->DrawInstanced(4, 1, 0, 0);
+	PipelineState.BindWithResources(commandCtx, blitResources);
+	commandCtx->DrawInstanced(4, 1, 0, 0);
 }
 
 }

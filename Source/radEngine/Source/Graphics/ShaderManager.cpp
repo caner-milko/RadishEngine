@@ -1,27 +1,27 @@
 #include "ShaderManager.h"
 
-#include <unordered_map>
+#include "Renderer.h"
 #include "RadishCommon.h"
+#include <unordered_map>
 #include <filesystem>
 
 namespace rad
 {
-std::unique_ptr<ShaderManager> ShaderManager::Instance = nullptr;
-ShaderManager::ShaderManager()
+ShaderManager::ShaderManager(rad::Renderer& renderer) : Renderer(renderer)
+{
+}
+
+bool ShaderManager::Init()
 {
 	ThrowIfFailed(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&Utils)));
 	ThrowIfFailed(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&Compiler)));
 	ThrowIfFailed(Utils->CreateDefaultIncludeHandler(&IncludeHandler));
-
-}
-
-void ShaderManager::Init(ID3D12Device* device)
-{
 	auto vertexShader = CompileBindlessVertexShader(L"Fullscreen", RAD_SHADERS_DIR L"FullscreenVS.hlsli");
-	ThrowIfFailed(device->CreateRootSignature(0u, vertexShader->RootSignatureBlob->GetBufferPointer(),
+	ThrowIfFailed(Renderer.GetDevice().CreateRootSignature(0u, vertexShader->RootSignatureBlob->GetBufferPointer(),
 		vertexShader->RootSignatureBlob->GetBufferSize(),
 		IID_PPV_ARGS(&BindlessRootSignature.DXSignature)));
 	BindlessRootSignature.DXSignature->SetName(L"BindlessRootSignature");
+	return true;
 }
 
 std::pair<Shader*, Shader*> ShaderManager::CompileBindlessGraphicsShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders)

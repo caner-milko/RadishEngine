@@ -10,20 +10,29 @@
 namespace rad
 {
 
-struct ObjModel
+struct ObjModel;
+
+struct Mesh
 {
-	VertexBuffer Vertices;
-	std::unordered_map<std::string, IndexedModel> ModelViews;
-	std::unordered_map<std::string, Material> Materials;
-	std::vector<std::pair<IndexedModel*, Material*>> Objects;
+	std::string Name;
+	OptionalRef<DXTypedBuffer<Vertex>> Model = std::nullopt;
+	DXTypedBuffer<uint32_t> Indices;
+	OptionalRef<Material> Material;
 };
 
-struct ModelManager : Singleton<ModelManager>
+struct ObjModel
 {
-	void Init(ID3D12Device* device);
-	ObjModel* LoadModel(const std::string& modelPath, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList);
+	DXTypedBuffer<Vertex> Vertices;
+	std::unordered_map<std::string, Mesh> Meshes;
+	std::unordered_map<std::string, Material> Materials;
+};
 
-	ID3D12Device* Device = nullptr;
-	std::unordered_map<std::string, std::unique_ptr<ObjModel>> Models;
+struct ModelManager
+{
+	ModelManager(Renderer& renderer) : Renderer(renderer) {}
+	OptionalRef<ObjModel> LoadModel(const std::string& modelPath, CommandContext& commandContext);
+
+	Renderer& Renderer;
+	std::unordered_map<std::string, ObjModel> Models;
 };
 }

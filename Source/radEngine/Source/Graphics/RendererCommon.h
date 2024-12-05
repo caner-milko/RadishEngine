@@ -6,34 +6,20 @@
 
 namespace rad
 {
-struct ViewData
+struct CommandContext
 {
-    Matrix4x4 View;
-    Matrix4x4 Projection;
-	Matrix4x4 ViewProjection;
-	Vector4 Position;
-	Vector4 Direction;
+	RadDevice& Device;
+	RadGraphicsCommandList& CommandList;
+	std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, DescriptorHeapPage*>& GPUHeapPages;
+	std::vector<ComPtr<ID3D12Resource>>& IntermediateResources;
+	operator RadGraphicsCommandList& () { return CommandList; }
+	RadGraphicsCommandList* operator->() { return &CommandList; }
 };
-
-struct FrameContext
-{
-    bool Ready = false;
-    ComPtr<ID3D12CommandAllocator> CommandAllocator;
-    UINT64                  FenceValue;
-    std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, DescriptorHeapPage*> GPUHeapPages = {};
-    std::unordered_map<DescriptorAllocation*, DescriptorAllocation> CPUViewsToGPUViews = {};
-
-	std::vector<ComPtr<ID3D12Resource>> IntermediateResources;
-
-    DescriptorAllocation GetGPUAllocation(DescriptorAllocation* cpuAllocation)
-    {
-        assert(cpuAllocation);
-        auto it = CPUViewsToGPUViews.find(cpuAllocation);
-        if (it == CPUViewsToGPUViews.end())
-            return CPUViewsToGPUViews[cpuAllocation] = GPUHeapPages[cpuAllocation->Heap->Desc.Type]->CopyFrom(cpuAllocation);
-        return it->second;
-    }
-};
+struct Renderer;
+struct ShaderManager;
+struct TextureManager;
+struct ModelManager;
+struct RenderFrameRecord;
 
 struct Renderable
 {
@@ -50,12 +36,4 @@ struct Renderable
 		return IndexBufferView.SizeInBytes / sizeof(uint32_t);
 	}
 };
-
-struct SceneDataView
-{
-    std::vector<Renderable> RenderableList;
-    rad::hlsl::LightDataBuffer Light;
-    ViewData LightView;
-};
-
 }

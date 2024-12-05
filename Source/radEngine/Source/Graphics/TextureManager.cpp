@@ -1,23 +1,23 @@
 #include "TextureManager.h"
 
+#include "Renderer.h"
+
 #include <stb_image.h>
 
 namespace rad
 {
 
-std::unique_ptr<TextureManager> TextureManager::Instance = nullptr;
-void TextureManager::Init(ID3D12Device2* device)
+bool TextureManager::Init()
 {
-	Device = device;
-	GenerateMipsPipeline.Setup(device);
+	return GenerateMipsPipeline.Setup();
 }
 
-void TextureManager::GenerateMips(FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, DXTexture& texture)
+void TextureManager::GenerateMips(CommandContext& commandCtx, DXTexture& texture)
 {
-	GenerateMipsPipeline.GenerateMips(frameCtx, cmdList, texture);
+	GenerateMipsPipeline.GenerateMips(commandCtx, texture);
 }
 
-DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, TextureManager::TextureLoadInfo const& info, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, bool generateMips)
+DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, TextureManager::TextureLoadInfo const& info, CommandContext& commandCtx, bool generateMips)
 {
 	auto it = LoadedTextures.find(path);
 	if (it != LoadedTextures.end())
@@ -55,19 +55,19 @@ DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, T
 		return { 0 };
 	}
 
-	auto texture = DXTexture::Create(Device, path.filename().wstring(), createInfo, D3D12_RESOURCE_STATE_COPY_DEST);
+	auto texture = DXTexture::Create(Renderer.GetDevice(), path.filename().wstring(), createInfo, D3D12_RESOURCE_STATE_COPY_DEST);
 
 	// Copy the data to the texture
 	{
 		size_t size = width * height * desiredComp;
-		texture.UploadData(frameCtx, cmdList, std::span<const std::byte>(reinterpret_cast<const std::byte*>(data), size_t(width * height * desiredComp)), desiredComp);
+		texture.UploadData(commandCtx, std::span<const std::byte>(reinterpret_cast<const std::byte*>(data), size_t(width * height * desiredComp)), desiredComp);
 	}
 
 	stbi_image_free(data);
 
 	if (generateMips)
 	{
-		GenerateMips(frameCtx, cmdList, texture);
+		GenerateMips(commandCtx, texture);
 	}
 
 

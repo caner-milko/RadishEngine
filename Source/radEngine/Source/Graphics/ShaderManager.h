@@ -4,7 +4,7 @@
 #include "Shader.h"
 #include "RadishCommon.h"
 #include "RootSignature.h"
-
+#include "RendererCommon.h"
 
 #include <dxcapi.h>
 #include <d3d12shader.h>
@@ -12,10 +12,10 @@
 namespace rad
 {
 
-struct ShaderManager : Singleton<ShaderManager>
+struct ShaderManager
 {
-	ShaderManager();
-	void Init(ID3D12Device* device);
+	ShaderManager(Renderer& renderer);
+	bool Init();
 
 	std::pair<Shader*, Shader*> CompileBindlessGraphicsShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders = {});
 	Shader* CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath, std::wstring_view entryPoint = L"VSMain", std::span<const std::wstring_view> includeFolders = {});
@@ -29,6 +29,7 @@ struct ShaderManager : Singleton<ShaderManager>
 	RootSignature BindlessRootSignature;
 
 private:
+	Renderer& Renderer;
 	ComPtr<IDxcUtils> Utils;
 	ComPtr<IDxcCompiler3> Compiler;
 	ComPtr<IDxcIncludeHandler> IncludeHandler;

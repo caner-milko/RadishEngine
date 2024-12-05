@@ -1,11 +1,12 @@
 #pragma once
 
 #include "RadishCommon.h"
-#include "DXResource.h"
-#include "RendererCommon.h"
-#include "Model.h"
-#include "PipelineState.h"
+#include "Graphics/DXResource.h"
+#include "Graphics/RendererCommon.h"
+#include "Graphics/Model.h"
+#include "Graphics/PipelineState.h"
 
+#if RAD_ENABLE_EXPERIMENTAL
 namespace rad::proc
 {
 
@@ -103,3 +104,4 @@ private:
 };
 
 }
+#endif

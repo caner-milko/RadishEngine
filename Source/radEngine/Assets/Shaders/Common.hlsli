@@ -1,16 +1,17 @@
 #pragma once
 
 #ifdef __cplusplus
+#include <glm/glm.hpp>
 
-#define float4 DirectX::XMFLOAT4
-#define float3 DirectX::XMFLOAT3
-#define float2 DirectX::XMFLOAT2
+#define float4 glm::vec4
+#define float3 glm::vec3
+#define float2 glm::vec2
 
 #define uint uint32_t
 
 // Note : using the typedef of matrix (float4x4) and struct (ConstantBufferStruct) to prevent name collision on the cpp
 // code side.
-#define float4x4 DirectX::XMMATRIX
+#define float4x4 glm::mat4
 
 
 #define DEFAULT_VALUE(x) = x

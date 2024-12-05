@@ -7,6 +7,11 @@
 #include <cassert>
 #include <stack>
 #include <bit>
+#include <optional>
+#include <unordered_map>
+#include <variant>
+
+#define RAD_ENABLE_EXPERIMENTAL 0
 
 namespace rad
 {
@@ -67,6 +72,40 @@ struct Singleton
 	}
 
 	static std::unique_ptr<T> Instance;
+};
+
+/*
+This is purely for syntactic sugar. It allows you to use the -> operator on a reference_wrapper.
+*/
+template<typename T>
+struct Ref : public std::reference_wrapper<T>
+{
+	using std::reference_wrapper<T>::reference_wrapper;
+
+	//Define -> operator
+	T* operator->() const noexcept
+	{
+		return &this->get();
+	}
+	T* Ptr() const noexcept
+	{
+		return &this->get();
+	}
+};
+
+template<typename T>
+struct OptionalRef
+{
+	T* Ptr = nullptr;
+
+	OptionalRef() = default;
+	OptionalRef(T& ref) : Ptr(&ref) {}
+	OptionalRef(Ref<T> ref) : Ptr(&ref.get()) {}
+	OptionalRef(std::optional<T>& opt) : Ptr(opt ? &opt.value() : nullptr) {}
+	OptionalRef(std::nullopt_t) : Ptr(nullptr) {}
+	operator bool() const { return Ptr != nullptr; }
+	T& operator*() const { return *Ptr; }
+	T* operator->() const { return Ptr; }
 };
 
 }

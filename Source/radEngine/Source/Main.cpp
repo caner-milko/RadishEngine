@@ -1,8 +1,6 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_dx12.h"
-//#include <d3d12.h>
-#include <dxgi1_4.h>
 #include <tchar.h>
 #include <iostream>
 #include <span>
@@ -14,21 +12,14 @@
 #include <filesystem>
 #include <variant>
 
-#include "DXResource.h"
 #include <Shlwapi.h>
 
-#include <tiny_obj_loader.h>
+#include "Graphics/TextureManager.h"
+#include "Graphics/ModelManager.h"
 
-#include "RendererCommon.h"
-#include "Pipelines/DeferredRenderingPipeline.h"
-#include "Pipelines/BlitPipeline.h"
-#include "ShaderManager.h"
-#include "TextureManager.h"
-#include "ModelManager.h"
-
-#include "SceneTree.h"
+#include "Graphics/Renderer.h"
 #include "ProcGen/TerrainGenerator.h"
-#include <entt/entt.hpp>
+#include "Systems.h"
 
 extern "C" { __declspec(dllexport) extern const unsigned int D3D12SDKVersion = DIRECT3D_AGILITY_SDK_VERSION; }
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
@@ -37,45 +28,23 @@ namespace rad
 {
 
 // Data
-static int const                    NUM_FRAMES_IN_FLIGHT = 3;
-static FrameContext                 g_frameContext[NUM_FRAMES_IN_FLIGHT] = {};
-static UINT                         g_frameIndex = 0;
-
-static int const                    NUM_BACK_BUFFERS = 3;
-static ComPtr<ID3D12Device2> g_pd3dDevice = nullptr;
-
-static ComPtr<ID3D12CommandQueue> g_pd3dCommandQueue = nullptr;
-static ComPtr<ID3D12GraphicsCommandList2> g_pd3dCommandList = nullptr;
-static ComPtr<ID3D12Fence> g_fence = nullptr;
-static HANDLE                       g_fenceEvent = nullptr;
-static UINT64                       g_fenceLastSignaledValue = 0;
-static ComPtr<IDXGISwapChain3> g_pSwapChain = nullptr;
-static HANDLE                       g_hSwapChainWaitableObject = nullptr;
-static DXTexture g_mainRenderTargetResource[NUM_BACK_BUFFERS];
-static RenderTargetView g_mainRTVs = {};
-static RenderTargetView g_mainRTVSRGBs = {};
-
-static FrameContext FrameIndependentCtx = {};
 static HWND g_hWnd = nullptr;
-
-DeferredRenderingPipeline g_DeferredRenderingPipeline;
-BlitPipeline g_BlitPipeline;
-proc::TerrainGenerator g_TerrainGenerator;
-SceneTree g_SceneTree;
-std::queue<std::function<void()>> g_RenderingTasks;
-
+static Renderer g_Renderer;
+static entt::registry g_EnttRegistry;
+static entt::entity g_Camera;
+static entt::entity g_DirectionalLight;
 
 static int g_Width = 1920;
 static int g_Height = 1080;
 
-struct TerrainRenderData
-{
-    rad::proc::TerrainData Terrain{};
-};
-
-std::unique_ptr<TerrainRenderData> Terrain;
-proc::ErosionParameters ErosionParams = {};
-
+//proc::TerrainGenerator g_TerrainGenerator;
+//struct TerrainRenderData
+//{
+//    rad::proc::TerrainData Terrain{};
+//};
+//
+//std::unique_ptr<TerrainRenderData> Terrain;
+//proc::ErosionParameters ErosionParams = {};
 
 struct IO
 {
@@ -119,143 +88,10 @@ struct IO
 
 } static g_IO;
 
-struct ViewPoint
-{
-	float MoveSpeed = 10.0f;
-	float RotSpeed = 2.0f;
-    Vector4 Position = { };
-    Vector4 Rotation = { };
-
-    ViewPoint()
-    {
-    }
-
-	Matrix4x4 GetRotationMatrix()
-	{
-		return DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
-	}
-    Vector4 GetDirection()
-    {
-        return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 0, 1, 0), GetRotationMatrix());
-    }
-    Vector4 GetRight()
-    {
-        return DirectX::XMVector4Transform(DirectX::XMVectorSet(1, 0, 0, 0), GetRotationMatrix());
-    }
-    Vector4 GetUp()
-    {
-        return DirectX::XMVector4Transform(DirectX::XMVectorSet(0, 1, 0, 0), GetRotationMatrix());
-    }
-
-    Matrix4x4 GetViewMatrix()
-    {
-        const Vector4 upDirection = { 0, 1, 0, 0 };
-        return DirectX::XMMatrixLookToLH(Position, GetDirection(), upDirection);
-    }
-
-    virtual Matrix4x4 GetProjectionMatrix() = 0;
-    virtual void Reset() = 0;
-
-    ViewData ToViewData()
-    {
-        auto view = GetViewMatrix();
-        auto proj = GetProjectionMatrix();
-        return { view, proj, XMMatrixMultiply(view, proj), Position, GetDirection() };
-    }
-
-};
-
-struct Camera : ViewPoint
-{
-    float FoV = 45.0f;
-    
-    Camera()
-    {
-        Reset();
-    }
-    
-	Matrix4x4 GetRotationMatrix()
-	{
-		return DirectX::XMMatrixRotationRollPitchYawFromVector(Rotation);
-	}
-
-    void SetFoV(float fov)
-    {
-		FoV = std::clamp(fov, 30.0f, 90.0f);
-	}
-
-	Matrix4x4 GetProjectionMatrix() override
-	{
-		float aspectRatio = static_cast<float>(g_Width) / static_cast<float>(g_Height);
-		return DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(FoV), aspectRatio, 0.1f, 100.0f);
-	}
-
-	void Reset() override
-	{
-		Position = { 6, 2.50f, -1.50f, 1 };
-		Rotation = { 0, -3.f * XM_PIDIV4 / 2.f, 0, 0 };
-		FoV = 45.0f;
-	}
-} g_Cam = {};
-
-struct DirectionalLight : ViewPoint
-{
-	// In degrees
-    Vector3 Color = { 1.0f, 1.0f, 1.0f };
-    float Intensity = 1.0f;
-	Vector3 AmbientColor = { 0.1f, 0.1f, 0.1f };
-	float InverseZoom = 1.0f;
-
-    DirectionalLight()
-    {
-        Reset();
-    }
-
-    Matrix4x4 GetProjectionMatrix() override
-    {
-        return DirectX::XMMatrixOrthographicLH(InverseZoom, InverseZoom, 0.1f, 100.0f);
-    }
-
-	void Reset() override
-	{
-        Position = { 0, 23.2, -1.8 };
-		Rotation = { 1.127, -0.964f, 0.218f };
-        InverseZoom = 46.0f;
-    }
-
-	rad::hlsl::LightDataBuffer ToLightData()
-	{
-		return rad::hlsl::LightDataBuffer
-		{
-			.DirectionOrPosition = Vector3(GetDirection().m128_f32),
-			.Color = Color,
-			.Intensity = Intensity,
-			.AmbientColor = AmbientColor
-		};
-	}
-
-	void SetInverseZoom(float zoom)
-	{
-		InverseZoom = max(0.1f, zoom);
-	}
-
-
-} g_DirectionalLight = {};
-ViewPoint* g_Controlled = &g_Cam;
 std::unordered_map<std::string, std::function<std::pair<rad::DXTexture*, rad::DescriptorAllocationView>()>> g_TextureSelections;
 std::string g_SelectedTexture = "None";
 
-// Forward declarations of helper functions
-bool CreateDeviceD3D();
-void CleanupDeviceD3D();
-void CreateSwapchainRTVDSV(bool resized);
-void CleanupRenderTarget();
-void WaitForLastSubmittedFrame();
-FrameContext* WaitForNextFrameResources();
-
 void LoadSceneData();
-void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t size, void* data);
-void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t width, size_t height, size_t componentCount, void* data);
 
 void CreateConsole()
 {
@@ -287,53 +123,64 @@ void CreateConsole()
     std::wcin.clear();
 }
 
-void BeginFrame(FrameContext& frameCtx)
+//void BeginFrame(FrameContext& frameCtx)
+//{
+//    g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
+//    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
+//    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
+//    frameCtx.Ready = true;
+//    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
+//    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
+//}
+//
+//void EndFrame(FrameContext& frameCtx)
+//{
+//    frameCtx.Ready = false;
+//}
+//
+//void ClearFrame(FrameContext& frameCtx)
+//{
+//    for (auto& [type, heapPage] : frameCtx.GPUHeapPages)
+//    {
+//        g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
+//    }
+//	frameCtx.GPUHeapPages.clear();
+//	frameCtx.CPUViewsToGPUViews.clear();
+//    frameCtx.CommandAllocator->Reset();
+//	frameCtx.IntermediateResources.clear();
+//}
+
+//void UIDrawMeshTree(MeshObject* object)
+//{
+//    ImGui::PushID(object->Name.c_str());
+//
+//	if (ImGui::TreeNodeEx(object->Name.c_str(), ImGuiTreeNodeFlags_Framed))
+//    {
+//		ImGui::InputFloat3("Position", &object->Position.m128_f32[0], "%.3f");
+//		ImGui::InputFloat3("Rotation", &object->Rotation.m128_f32[0], "%.3f");
+//		ImGui::InputFloat3("Scale", &object->Scale.m128_f32[0], "%.3f");
+//
+//        ImGui::Checkbox("TransformOnly", &object->TransformOnly);
+//	    for (auto& child : object->Children)
+//        {
+//		    UIDrawMeshTree(&child);
+//	    }
+//		ImGui::TreePop();
+//	}   
+//
+//    ImGui::PopID();
+//}
+
+entt::entity GetCamera()
 {
-    g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
-    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
-    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
-    frameCtx.Ready = true;
-    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
-    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
+	auto view = g_EnttRegistry.view<ecs::CCamera>();
+	for (auto entity : view)
+	{
+		return entity;
+	}
+	return entt::null;
 }
 
-void EndFrame(FrameContext& frameCtx)
-{
-    frameCtx.Ready = false;
-}
-
-void ClearFrame(FrameContext& frameCtx)
-{
-    for (auto& [type, heapPage] : frameCtx.GPUHeapPages)
-    {
-        g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
-    }
-	frameCtx.GPUHeapPages.clear();
-	frameCtx.CPUViewsToGPUViews.clear();
-    frameCtx.CommandAllocator->Reset();
-	frameCtx.IntermediateResources.clear();
-}
-
-void UIDrawMeshTree(MeshObject* object)
-{
-    ImGui::PushID(object->Name.c_str());
-
-	if (ImGui::TreeNodeEx(object->Name.c_str(), ImGuiTreeNodeFlags_Framed))
-    {
-		ImGui::InputFloat3("Position", &object->Position.m128_f32[0], "%.3f");
-		ImGui::InputFloat3("Rotation", &object->Rotation.m128_f32[0], "%.3f");
-		ImGui::InputFloat3("Scale", &object->Scale.m128_f32[0], "%.3f");
-
-        ImGui::Checkbox("TransformOnly", &object->TransformOnly);
-	    for (auto& child : object->Children)
-        {
-		    UIDrawMeshTree(&child);
-	    }
-		ImGui::TreePop();
-	}   
-
-    ImGui::PopID();
-}
 
 void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
 {
@@ -346,16 +193,22 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
         if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
         {
 			ImGui::PushID("Camera");
-            ImGui::InputFloat3("Position", &g_Cam.Position.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
-            ImGui::InputFloat3("Rotation", &g_Cam.Rotation.m128_f32[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
-			auto dir = g_Cam.GetDirection();
-			ImGui::InputFloat3("Direction", dir.m128_f32, "%.3f", ImGuiInputTextFlags_ReadOnly);
-            ImGui::InputFloat("FoV", &g_Cam.FoV, 0.f, 0.f, "%.3f", ImGuiInputTextFlags_ReadOnly);
-
-            ImGui::SliderFloat("Move Speed", &g_Cam.MoveSpeed, 0.0f, 10000.0f);
-            ImGui::SliderFloat("Rotation Speed", &g_Cam.RotSpeed, 0.1f, 10.0f);
-			if (ImGui::Button("Reset"))
-				g_Cam.Reset();
+			auto& sceneTransform = g_EnttRegistry.get<ecs::CSceneTransform>(g_Camera);
+			auto transform = sceneTransform.LocalTransform();
+            ImGui::InputFloat3("Position", &transform.Position.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+            ImGui::InputFloat3("Rotation", &transform.Rotation.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			auto dir = sceneTransform.GetWorldTransform().GetForward();
+			ImGui::InputFloat3("Direction", &dir.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			auto& viewpoint = g_EnttRegistry.get<ecs::CViewpoint>(g_Camera);
+			if(auto* perspective = std::get_if<ecs::CViewpoint::Perspective>(&viewpoint.Projection))
+				ImGui::InputFloat("FoV", &perspective->Fov, 0.f, 0.f, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			if (auto* cameraController = g_EnttRegistry.try_get<ecs::CCameraController>(g_Camera))
+			{
+				ImGui::SliderFloat("Move Speed", &cameraController->MoveSpeed, 0.0f, 10000.0f);
+				ImGui::SliderFloat("Rotation Speed", &cameraController->RotateSpeed, 0.1f, 10.0f);
+				if (ImGui::Button("Reset"))
+					viewpoint = cameraController->OriginalViewpoint;
+			}
 			ImGui::PopID();
         }
 
@@ -363,17 +216,20 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 		if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			ImGui::PushID("Light");
-			ImGui::InputFloat3("Position", &g_DirectionalLight.Position.m128_f32[0], "%.3f");
-			ImGui::InputFloat3("Rotation", &g_DirectionalLight.Rotation.m128_f32[0], "%.3f");
-            auto dir = g_DirectionalLight.GetDirection();
-			ImGui::InputFloat3("Direction", dir.m128_f32, "%.3f", ImGuiSliderFlags_NoInput);
-			ImGui::InputFloat("Inverse Zoom", &g_DirectionalLight.InverseZoom, 1.0f, 100.0f, "%.3f");
-            ImGui::ColorEdit3("Color", &g_DirectionalLight.Color.x);
-			ImGui::SliderFloat("Intensity", &g_DirectionalLight.Intensity, 0.0f, 10.0f);
-			ImGui::ColorEdit3("Ambient Color", &g_DirectionalLight.AmbientColor.x);
+			auto& sceneTransform = g_EnttRegistry.get<ecs::CSceneTransform>(g_DirectionalLight);
+			auto transform = sceneTransform.LocalTransform();
+			bool transformChanged = ImGui::InputFloat3("Position", &transform.Position.x, "%.3f");
+			transformChanged |= ImGui::InputFloat3("Rotation", &transform.Rotation.x, "%.3f");
+            auto dir = sceneTransform.GetWorldTransform().GetForward();
+			ImGui::InputFloat3("Direction", &dir.x, "%.3f", ImGuiSliderFlags_NoInput);
+
+			auto& light = g_EnttRegistry.get<ecs::CLight>(g_DirectionalLight);
+            ImGui::ColorEdit3("Color", &light.Color.x);
+			ImGui::SliderFloat("Intensity", &light.Intensity, 0.0f, 10.0f);
+			ImGui::ColorEdit3("Ambient Color", &light.Ambient.x);
 
 
-
+#if RAD_ENABLE_EXPERIMENTAL
             float yawDegrees = XMConvertToDegrees(g_DirectionalLight.Rotation.m128_f32[0]);
             ImGui::SliderFloat("Yaw", &yawDegrees, 0.0f, 360.0f, "%.3f", ImGuiSliderFlags_NoInput);
 			g_DirectionalLight.Rotation.m128_f32[0] = XMConvertToRadians(yawDegrees);
@@ -382,9 +238,11 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 			g_DirectionalLight.Rotation.m128_f32[1] = XMConvertToRadians(pitchDegress);
 			if (ImGui::Button("Reset"))
 				g_DirectionalLight.Reset();
-            ImGui::PopID();
+#endif
+			ImGui::PopID();
         }
 
+#if RAD_ENABLE_EXPERIMENTAL
 		if (ImGui::CollapsingHeader("Terrain", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			ImGui::PushID("Terrain");
@@ -450,7 +308,7 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
         }
 
 		UIDrawMeshTree(&g_SceneTree.Root);
-
+#endif
         ImGui::End();
     }
 
@@ -458,36 +316,9 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
     ImGui::Render();
 }
 
-struct int2
-{
-    int x, y;
-    bool operator==(const int2& other) const
-    {
-        return x == other.x && y == other.y;
-    };
-};
-
-int2 IndexToOffset(int index)
-{
-    return int2(((index + 1) % 2) * ((index / 2) * 2 - 1), (index % 2) * ((index / 2) * 2 - 1));
-}
-
-int OffsetToIndex(int2 offset)
-{
-    return abs(offset.x) * (offset.x + 1) + abs(offset.y) * (offset.y + 2);
-}
-
 void InitGame()
 {
     memset(g_IO.CUR_KEYS, 0, sizeof(g_IO.CUR_KEYS));
-    assert((IndexToOffset(0) == int2(-1, 0)));
-    assert((IndexToOffset(1) == int2(0, -1)));
-	assert((IndexToOffset(2) == int2(1, 0)));
-	assert((IndexToOffset(3) == int2(0, 1)));
-	assert((OffsetToIndex(int2(-1, 0)) == 0));
-	assert((OffsetToIndex(int2(0, -1)) == 1));
-	assert((OffsetToIndex(int2(1, 0)) == 2));
-	assert((OffsetToIndex(int2(0, 1)) == 3));
 }
 
 void UpdateGame(float deltaTime)
@@ -508,6 +339,7 @@ void UpdateGame(float deltaTime)
     if (g_IO.CursorEnabled)
         return;
     // Switch controlled object on Tab
+#if RAD_ENABLE_EXPERIMENTAL
 	if (g_IO.IsKeyPressed(SDL_SCANCODE_TAB))
 	{
         if (g_Controlled == &g_Cam)
@@ -550,6 +382,19 @@ void UpdateGame(float deltaTime)
         controlled.Rotation = controlled.Rotation + XMVectorSet(g_IO.Immediate.MouseDelta.y, g_IO.Immediate.MouseDelta.x, 0, 0) * controlled.RotSpeed * deltaTime;
         controlled.Rotation = XMVectorSetX(controlled.Rotation, std::clamp(XMVectorGetX(controlled.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
     }
+#endif 
+}
+
+bool InitRenderer(HWND window, uint32_t width, uint32_t height)
+{
+	g_Renderer.Initialize(
+#ifdef NDEBUG
+		false,
+#else
+		true,
+#endif
+		window, width, height
+	);
 }
 
 void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
@@ -557,7 +402,7 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     FrameContext* frameCtx = WaitForNextFrameResources();
     BeginFrame(*frameCtx);
     UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
-    static uint32_t frameCount = 0;
+	static uint32_t frameCount = 0;
 	if (g_IO.IsKeyPressed(SDL_SCANCODE_K) || ErosionParams.ErodeEachFrame)
     {
 		g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
@@ -622,203 +467,6 @@ void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& 
     EndFrame(*frameCtx);
 }
 
-
-// Helper functions
-
-bool CreateDeviceD3D()
-{
-    // [DEBUG] Enable debug interface
-#ifdef DX12_ENABLE_DEBUG_LAYER
-    ComPtr<ID3D12Debug> pdx12Debug = nullptr;
-    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
-        pdx12Debug->EnableDebugLayer();
-#endif
-
-    // Create device
-    D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_12_0;
-    if (D3D12CreateDevice(nullptr, featureLevel, IID_PPV_ARGS(&g_pd3dDevice)) != S_OK)
-        return false;
-
-    // [DEBUG] Setup debug interface to break on any warnings/errors
-#ifdef DX12_ENABLE_DEBUG_LAYER
-    if (pdx12Debug != nullptr)
-    {
-        ComPtr<ID3D12InfoQueue> pInfoQueue = nullptr;
-        g_pd3dDevice->QueryInterface(IID_PPV_ARGS(&pInfoQueue));
-        pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
-        pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
-        pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
-    }
-#endif
-
-    ShaderManager::Create();
-	ShaderManager::Get().Init(g_pd3dDevice.Get());
-    {
-        g_CPUDescriptorAllocator = CPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
-		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1024);
-		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024);
-		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1024);
-		g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
-
-        g_GPUDescriptorAllocator = GPUDescriptorHeapAllocator::Create(g_pd3dDevice.Get());
-		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048*12, NUM_BACK_BUFFERS, 2048*8);
-		g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024, NUM_BACK_BUFFERS);
-
-    }
-
-    TextureManager::Create();
-    TextureManager::Get().Init(g_pd3dDevice.Get());
-
-	ModelManager::Create();
-	ModelManager::Get().Init(g_pd3dDevice.Get());
-
-    {
-        D3D12_COMMAND_QUEUE_DESC desc = {};
-        desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-        desc.NodeMask = 1;
-        if (g_pd3dDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&g_pd3dCommandQueue)) != S_OK)
-            return false;
-    }
-
-    for (UINT i = 0; i < NUM_FRAMES_IN_FLIGHT; i++)
-        if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_frameContext[i].CommandAllocator)) != S_OK)
-            return false;
-
-    if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&FrameIndependentCtx.CommandAllocator)) != S_OK)
-			return false;
-
-    if (g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, FrameIndependentCtx.CommandAllocator.Get(), nullptr, IID_PPV_ARGS(&g_pd3dCommandList)) != S_OK ||
-        g_pd3dCommandList->Close() != S_OK)
-        return false;
-
-    if (g_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence)) != S_OK)
-        return false;
-
-    g_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    if (g_fenceEvent == nullptr)
-        return false;
-
-    g_DeferredRenderingPipeline.Setup(g_pd3dDevice.Get());
-	g_BlitPipeline.Setup(g_pd3dDevice.Get());
-	g_TerrainGenerator.Setup(g_pd3dDevice.Get());
-
-    CreateSwapchainRTVDSV(false);
-    return true;
-}
-
-void CleanupDeviceD3D()
-{
-	ModelManager::Destroy();
-    TextureManager::Destroy();
-    CleanupRenderTarget();
-    if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain = nullptr; }
-    if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
-    for (UINT i = 0; i < NUM_FRAMES_IN_FLIGHT; i++)
-        g_frameContext[i].CommandAllocator = nullptr;
-    FrameIndependentCtx.CommandAllocator = nullptr;
-    g_DeferredRenderingPipeline = {};
-	g_BlitPipeline = {};
-	g_TerrainGenerator = {};
-    g_pd3dCommandQueue = nullptr;
-    g_pd3dCommandList = nullptr;
-    g_fence = nullptr;
-    g_CPUDescriptorAllocator = nullptr;
-    g_GPUDescriptorAllocator = nullptr;
-    if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
-	ShaderManager::Destroy();
-    g_pd3dDevice = nullptr;
-
-
-
-#ifdef DX12_ENABLE_DEBUG_LAYER
-    
-    if (ComPtr<IDXGIDebug1> pDebug = nullptr; SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
-    {
-        pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY);
-    }
-#endif
-}
-
-void CreateSwapchainRTVDSV(bool resized)
-{
-    if(!resized){
-        //Allocate RTV, SRGB RTV
-		g_mainRTVs = static_cast<RenderTargetView>(g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, NUM_BACK_BUFFERS));
-		g_mainRTVSRGBs = static_cast<RenderTargetView>(g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, NUM_BACK_BUFFERS));
-
-        // Setup swap chain
-        DXGI_SWAP_CHAIN_DESC1 sd;
-        {
-            ZeroMemory(&sd, sizeof(sd));
-            sd.BufferCount = NUM_BACK_BUFFERS;
-            sd.Width = g_Width;
-            sd.Height = g_Height;
-            sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-            sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-            sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-            sd.SampleDesc.Count = 1;
-            sd.SampleDesc.Quality = 0;
-            sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-            sd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-            sd.Scaling = DXGI_SCALING_STRETCH;
-            sd.Stereo = FALSE;
-        }
-        ComPtr<IDXGIFactory4> dxgiFactory = nullptr;
-        ComPtr<IDXGISwapChain1> swapChain1 = nullptr;
-        ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)));
-        ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(g_pd3dCommandQueue.Get(), g_hWnd, &sd, nullptr, nullptr, &swapChain1));
-        ThrowIfFailed(swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain)));
-        g_pSwapChain->SetMaximumFrameLatency(NUM_BACK_BUFFERS);
-        g_hSwapChainWaitableObject = g_pSwapChain->GetFrameLatencyWaitableObject();
-    }
-    else
-    {
-		for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
-            g_mainRenderTargetResource[i] = {};
-
-        DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
-        ThrowIfFailed(g_pSwapChain->GetDesc(&swapChainDesc));
-        ThrowIfFailed(g_pSwapChain->ResizeBuffers(NUM_BACK_BUFFERS, g_Width, g_Height,
-            swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
-    }
-
-    //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
-    for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
-    {
-        ComPtr<ID3D12Resource> res;
-        g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&res));
-		DXTexture::TextureCreateInfo info = {};
-		info.Width = g_Width;
-		info.Height = g_Height;
-		info.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		info.MipLevels = 1;
-
-		auto& swapchainTex = g_mainRenderTargetResource[i] = DXTexture::FromExisting(g_pd3dDevice.Get(), L"Swapchain_" + std::to_wstring(i), res, info);
-
-		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-		rtvDesc.Texture2D.MipSlice = 0;
-		swapchainTex.CreatePlacedRTV(g_mainRTVs.GetView(i), &rtvDesc);
-		auto srgbDesc = rtvDesc;
-		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-        swapchainTex.CreatePlacedRTV(g_mainRTVSRGBs.GetView(i), &srgbDesc);
-    }
-    g_DeferredRenderingPipeline.OnResize(g_Width, g_Height);
-}
-
-void CleanupRenderTarget()
-{
-    WaitForLastSubmittedFrame();
-
-    for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
-        g_mainRenderTargetResource[i] = {};
-
-    //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]->StaticPage->Reset();
-    //g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]->StaticPage->Reset();
-}
-
 void WaitForLastSubmittedFrame()
 {
     FrameContext* frameCtx = &g_frameContext[g_frameIndex % NUM_FRAMES_IN_FLIGHT];
@@ -864,20 +512,30 @@ FrameContext* WaitForNextFrameResources()
 
 void LoadSceneData()
 {
+	OptionalRef<ObjModel> sponzaObj{};
+	g_Renderer.FrameIndependentCommand([&](CommandContext commmandCtx)
+		{
+			sponzaObj = g_Renderer.ModelManager->LoadModel(RAD_SPONZA_DIR "sponza.obj", commmandCtx);
+		});
+	if (!sponzaObj)
+	{
+		std::cout << "Failed to load sponza model" << std::endl;
+		return;
+	}
+	entt::entity sponzaRoot = g_EnttRegistry.create();
+	g_EnttRegistry.emplace<ecs::CEntityInfo>(sponzaRoot, "SponzaRoot");
+	auto& rootTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(sponzaRoot);
+	rootTransform.SetTransform(ecs::Transform{ .Scale = glm::vec3(0.01f) });
+	for (auto& [name, meshInfo] : sponzaObj->Meshes)
+	{
+		entt::entity mesh = g_EnttRegistry.create();
+		g_EnttRegistry.emplace<ecs::CEntityInfo>(mesh, name);
+		g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh);
+		assert(meshInfo.Model && meshInfo.Material);
+		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{ .Vertices = *meshInfo.Model, .Indices = meshInfo.Indices, .Material = *meshInfo.Material });
+	}
 
-    ClearFrame(FrameIndependentCtx);
-    BeginFrame(FrameIndependentCtx);
-
-
-    {
-        //auto sponzaObj = ModelManager::Get().LoadModel(RAD_SPONZA_DIR "sponza.obj", FrameIndependentCtx, g_pd3dCommandList.Get());
-        //auto* sponzaRoot = g_SceneTree.AddObject(MeshObject("SponzaRoot"));
-        //sponzaRoot->Scale /= 100.0f;
-        //for (auto& [indexed, materialInfo] : sponzaObj->Objects)
-		//	auto* mesh = g_SceneTree.AddObject(MeshObject(indexed->Name, indexed->ToModelView(), materialInfo), sponzaRoot);
-    }
-
-
+#if RAD_ENABLE_EXPERIMENTAL
     g_Cam.Position = { -20, 38, -19, 0};
     g_Cam.Rotation = { 0.7, 0.75, 0 };
     Terrain = std::make_unique<TerrainRenderData>();
@@ -928,7 +586,7 @@ void LoadSceneData()
         {
             return std::pair{ &Terrain->Terrain.ThermalPipe2, Terrain->Terrain.ThermalPipe2.SRV.GetView() };
         };
-
+#endif
     //Execute and flush
     EndFrame(FrameIndependentCtx);
     g_pd3dCommandList->Close();
@@ -1023,10 +681,10 @@ int main(int argv, char** args)
     SDL_GetWindowWMInfo(window, &wmInfo);
     HWND hwnd = (HWND)wmInfo.info.win.window;
     g_hWnd = hwnd;
-    // Initialize Direct3D
-    if (!CreateDeviceD3D())
+    // Initialize the Renderer
+    if (!InitRenderer())
     {
-        CleanupDeviceD3D();
+		g_Renderer.Deinitialize();
         return 1;
     }
 
