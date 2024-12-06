@@ -63,7 +63,7 @@ struct IO
     struct Immediate
     {
         float MouseWheelDelta = 0.0f;
-        Vector2 MouseDelta = { 0, 0 };
+        glm::vec2 MouseDelta = { 0, 0 };
     } Immediate;
 
     bool IsKeyDown(SDL_Scancode key)
@@ -122,33 +122,6 @@ void CreateConsole()
     std::wcerr.clear();
     std::wcin.clear();
 }
-
-//void BeginFrame(FrameContext& frameCtx)
-//{
-//    g_pd3dCommandList->Reset(frameCtx.CommandAllocator.Get(), nullptr);
-//    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
-//    frameCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
-//    frameCtx.Ready = true;
-//    auto heaps = g_GPUDescriptorAllocator->GetHeaps();
-//    g_pd3dCommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
-//}
-//
-//void EndFrame(FrameContext& frameCtx)
-//{
-//    frameCtx.Ready = false;
-//}
-//
-//void ClearFrame(FrameContext& frameCtx)
-//{
-//    for (auto& [type, heapPage] : frameCtx.GPUHeapPages)
-//    {
-//        g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
-//    }
-//	frameCtx.GPUHeapPages.clear();
-//	frameCtx.CPUViewsToGPUViews.clear();
-//    frameCtx.CommandAllocator->Reset();
-//	frameCtx.IntermediateResources.clear();
-//}
 
 //void UIDrawMeshTree(MeshObject* object)
 //{
@@ -319,9 +292,23 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 void InitGame()
 {
     memset(g_IO.CUR_KEYS, 0, sizeof(g_IO.CUR_KEYS));
+
+	g_Camera = g_EnttRegistry.create();
+	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_Camera, "Camera");
+	g_EnttRegistry.emplace<ecs::CSceneTransform>(g_Camera);
+	g_EnttRegistry.emplace<ecs::CCamera>(g_Camera);
+	auto& viewpoint =  g_EnttRegistry.emplace<ecs::CViewpoint>(g_Camera, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Perspective{.Fov = glm::radians(60.0f), 
+		.Near = 0.1f, .Far = 1000.0f, .AspectRatio = 16.0f / 9.0f, }});
+	auto& controller = g_EnttRegistry.emplace<ecs::CCameraController>(g_Camera, ecs::CCameraController(viewpoint));
+
+	g_DirectionalLight = g_EnttRegistry.create();
+	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_DirectionalLight, "DirectionalLight");
+	g_EnttRegistry.emplace<ecs::CSceneTransform>(g_DirectionalLight);
+	g_EnttRegistry.emplace<ecs::CLight>(g_DirectionalLight);
+	g_EnttRegistry.emplace<ecs::CViewpoint>(g_DirectionalLight, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Orthographic{.Width = 100.0f, .Height = 100.0f} });
 }
 
-void UpdateGame(float deltaTime)
+void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
 {
     if (g_IO.IsKeyPressed(SDL_SCANCODE_ESCAPE))
 	{
@@ -383,11 +370,12 @@ void UpdateGame(float deltaTime)
         controlled.Rotation = XMVectorSetX(controlled.Rotation, std::clamp(XMVectorGetX(controlled.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
     }
 #endif 
+
 }
 
 bool InitRenderer(HWND window, uint32_t width, uint32_t height)
 {
-	g_Renderer.Initialize(
+	return g_Renderer.Initialize(
 #ifdef NDEBUG
 		false,
 #else
@@ -397,123 +385,10 @@ bool InitRenderer(HWND window, uint32_t width, uint32_t height)
 	);
 }
 
-void Render(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4& clearCol)
-{
-    FrameContext* frameCtx = WaitForNextFrameResources();
-    BeginFrame(*frameCtx);
-    UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
-	static uint32_t frameCount = 0;
-	if (g_IO.IsKeyPressed(SDL_SCANCODE_K) || ErosionParams.ErodeEachFrame)
-    {
-		g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-    }
-    if (g_IO.IsKeyPressed(SDL_SCANCODE_T))
-    {
-        g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), *frameCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-    }
-
-    SceneDataView sceneDataView{.RenderableList = g_SceneTree.SceneToRenderableList(), .Light = g_DirectionalLight.ToLightData(), .LightView = g_DirectionalLight.ToViewData()};
-	g_DeferredRenderingPipeline.Run(g_pd3dCommandList.Get(), g_Cam.ToViewData(), sceneDataView, *frameCtx);
-
-    DXTexture* selectedView = nullptr;
-	DescriptorAllocationView selectedSRVView = {};
-    if(g_SelectedTexture == "None"){
-        if (g_Controlled == &g_Cam)
-        {
-            selectedView = &g_DeferredRenderingPipeline.GetOutputBuffer();
-            selectedSRVView = g_DeferredRenderingPipeline.GetOutputBufferSRV();
-        }
-        else
-        {
-			selectedView = &g_DeferredRenderingPipeline.GetShadowMap();
-            selectedSRVView = g_DeferredRenderingPipeline.GetShadowMapSRV();
-        }
-    }
-    else
-    {
-		auto [view, srv] = g_TextureSelections[g_SelectedTexture]();
-		selectedView = view;
-		selectedSRVView = srv;
-    }
-
-    g_BlitPipeline.Blit(g_pd3dCommandList.Get(), &g_mainRenderTargetResource[backBufferIdx],
-        selectedView, g_mainRTVSRGBs.GetCPUHandle(backBufferIdx), selectedSRVView.GetIndex());
-	
-    TransitionVec(g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_RENDER_TARGET)
-		.Execute(g_pd3dCommandList.Get());
-    // ImGui
-    {
-        auto rtvHandle = g_mainRTVs.GetCPUHandle(backBufferIdx);
-
-        g_pd3dCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
-
-        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList.Get());
-    }
-	TransitionVec(g_mainRenderTargetResource[backBufferIdx], D3D12_RESOURCE_STATE_PRESENT)
-		.Execute(g_pd3dCommandList.Get());
-    g_pd3dCommandList->Close();
-
-    ID3D12CommandList* ppCommandLists[] = { g_pd3dCommandList.Get() };
-
-    g_pd3dCommandQueue->ExecuteCommandLists(1, ppCommandLists);
-
-    g_pSwapChain->Present(1, 0); // Present with vsync
-    //g_pSwapChain->Present(0, 0); // Present without vsync
-
-    UINT64 fenceValue = g_fenceLastSignaledValue + 1;
-    g_pd3dCommandQueue->Signal(g_fence.Get(), fenceValue);
-    g_fenceLastSignaledValue = fenceValue;
-    frameCtx->FenceValue = fenceValue;
-    EndFrame(*frameCtx);
-}
-
-void WaitForLastSubmittedFrame()
-{
-    FrameContext* frameCtx = &g_frameContext[g_frameIndex % NUM_FRAMES_IN_FLIGHT];
-
-    UINT64 fenceValue = frameCtx->FenceValue;
-    if (fenceValue == 0)
-        return; // No fence was signaled
-
-    frameCtx->FenceValue = 0;
-    if (g_fence->GetCompletedValue() >= fenceValue)
-        return;
-
-    g_fence->SetEventOnCompletion(fenceValue, g_fenceEvent);
-    WaitForSingleObject(g_fenceEvent, INFINITE);
-
-    for (UINT i = 0; i < NUM_FRAMES_IN_FLIGHT; i++)
-        ClearFrame(g_frameContext[i]);
-}
-
-FrameContext* WaitForNextFrameResources()
-{
-    UINT nextFrameIndex = g_frameIndex + 1;
-    g_frameIndex = nextFrameIndex;
-
-    HANDLE waitableObjects[] = { g_hSwapChainWaitableObject, nullptr };
-    DWORD numWaitableObjects = 1;
-
-    FrameContext* frameCtx = &g_frameContext[nextFrameIndex % NUM_FRAMES_IN_FLIGHT];
-    UINT64 fenceValue = frameCtx->FenceValue;
-    if (fenceValue != 0) // means no fence was signaled
-    {
-        frameCtx->FenceValue = 0;
-        g_fence->SetEventOnCompletion(fenceValue, g_fenceEvent);
-        waitableObjects[1] = g_fenceEvent;
-        numWaitableObjects = 2;
-    }
-
-    WaitForMultipleObjects(numWaitableObjects, waitableObjects, TRUE, INFINITE);
-    ClearFrame(*frameCtx);
-    
-    return frameCtx;
-}
-
 void LoadSceneData()
 {
 	OptionalRef<ObjModel> sponzaObj{};
-	g_Renderer.FrameIndependentCommand([&](CommandContext commmandCtx)
+	g_Renderer.FrameIndependentCommand([&](CommandContext& commmandCtx)
 		{
 			sponzaObj = g_Renderer.ModelManager->LoadModel(RAD_SPONZA_DIR "sponza.obj", commmandCtx);
 		});
@@ -587,64 +462,11 @@ void LoadSceneData()
             return std::pair{ &Terrain->Terrain.ThermalPipe2, Terrain->Terrain.ThermalPipe2.SRV.GetView() };
         };
 #endif
-    //Execute and flush
-    EndFrame(FrameIndependentCtx);
-    g_pd3dCommandList->Close();
-    ID3D12CommandList* ppCommandLists[] = { g_pd3dCommandList.Get() };
-    g_pd3dCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-    ComPtr<ID3D12Fence> fence;
-    g_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-    g_pd3dCommandQueue->Signal(fence.Get(), 1);
-    HANDLE fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    fence->SetEventOnCompletion(1, fenceEvent);
-    WaitForSingleObject(fenceEvent, INFINITE);
-	CloseHandle(fenceEvent);
-    ClearFrame(FrameIndependentCtx);
+	auto fence = DXFence::Create(L"SceneLoadFence", g_Renderer.GetDevice());
+	g_Renderer.SubmitFrameIndependentCommands(fence, 1, true);
+	CloseHandle(fence.FenceEvent);
 }
 
-void UploadToBuffer(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t size, void* data)
-{
-    // Create the intermediate upload heap
-    auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(size);
-    g_pd3dDevice->CreateCommittedResource(
-		&intermediateHeapProp,
-		D3D12_HEAP_FLAG_NONE,
-        &intermediateResDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(intermediateBuf));
-
-    D3D12_SUBRESOURCE_DATA subresourceData = {};
-    subresourceData.pData = data;
-    subresourceData.RowPitch = size;
-    subresourceData.SlicePitch = subresourceData.RowPitch;
-
-    UpdateSubresources(cmd, dest, *intermediateBuf, 0, 0, 1, &subresourceData);
-}
-
-
-void UploadToTexture(ID3D12GraphicsCommandList* cmd, ID3D12Resource* dest, ID3D12Resource** intermediateBuf, size_t width, size_t height, size_t componentCount, void* data)
-{
-    // Create the intermediate upload heap
-    auto intermediateHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    auto intermediateResDesc = CD3DX12_RESOURCE_DESC::Buffer(width*height*componentCount);
-    g_pd3dDevice->CreateCommittedResource(
-        &intermediateHeapProp,
-        D3D12_HEAP_FLAG_NONE,
-        &intermediateResDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(intermediateBuf));
-
-    D3D12_SUBRESOURCE_DATA subresourceData = {};
-    subresourceData.pData = data;
-    subresourceData.RowPitch = width * componentCount;
-    subresourceData.SlicePitch = height * subresourceData.RowPitch;
-
-    UpdateSubresources(cmd, dest, *intermediateBuf, 0, 0, 1, &subresourceData);
-}
 }
 
 // Main code
@@ -682,7 +504,7 @@ int main(int argv, char** args)
     HWND hwnd = (HWND)wmInfo.info.win.window;
     g_hWnd = hwnd;
     // Initialize the Renderer
-    if (!InitRenderer())
+	if (!InitRenderer(hwnd, g_Width, g_Height))
     {
 		g_Renderer.Deinitialize();
         return 1;
@@ -707,7 +529,7 @@ int main(int argv, char** args)
     // Setup Platform/Renderer backends
     ImGui_ImplSDL2_InitForD3D(window);
     auto fontAllocation = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-    ImGui_ImplDX12_Init(g_pd3dDevice.Get(), NUM_FRAMES_IN_FLIGHT,
+    ImGui_ImplDX12_Init(&g_Renderer.GetDevice(), g_Renderer.FramesInFlight,
         DXGI_FORMAT_R8G8B8A8_UNORM, fontAllocation.Heap->Heap.Get(),
         fontAllocation.GetCPUHandle(),
         fontAllocation.GetGPUHandle());
@@ -755,8 +577,7 @@ int main(int argv, char** args)
                 g_Width = sdlEvent.window.data1;
                 g_Height = sdlEvent.window.data2;
                 // Release all outstanding references to the swap chain's buffers before resizing.
-                CleanupRenderTarget();
-                CreateSwapchainRTVDSV(true);
+				g_Renderer.OnWindowResized(g_Width, g_Height);
             }
             if (sdlEvent.type == SDL_KEYDOWN)
                 g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? IO::KEY_DOWN : IO::KEY_PRESSED;
@@ -773,10 +594,11 @@ int main(int argv, char** args)
         ImGui_ImplSDL2_NewFrame();
 
         UIUpdate(io, show_demo_window, show_another_window, clear_color);
+		auto frameRec = g_Renderer.BeginFrame();
+        UpdateGame(io.DeltaTime, frameRec);
 
-        UpdateGame(io.DeltaTime);
-
-        Render(io, show_demo_window, show_another_window, clear_color);
+		g_Renderer.EnqueueFrame(std::move(frameRec));
+		g_Renderer.RenderPendingFrameRecods();
 
         for (int i = 0; i < 322; i++)
         {
@@ -789,15 +611,14 @@ int main(int argv, char** args)
         g_IO.Immediate = {};
     }
 
-
-    WaitForLastSubmittedFrame();
+	g_Renderer.WaitAllCommandContexts();
 
     // Cleanup
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
 
-    CleanupDeviceD3D();
+    g_Renderer.Deinitialize();
     SDL_DestroyWindow(window);
     SDL_Quit();
 

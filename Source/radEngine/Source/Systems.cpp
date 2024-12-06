@@ -34,7 +34,7 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 		renderData.WorldMatrix = transform.GetWorldTransform().WorldMatrix;
 		renderData.Vertices = renderable.Vertices;
 		renderData.Indices = renderable.Indices;
-		renderData.Material = renderable.Material;
+		renderData.Material = renderable.Material.MaterialInfoBuffer;
 
 		renderObjects.push_back(renderData);
 	}
@@ -44,6 +44,13 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 		.DeferredPass = [this](auto span, auto view, auto passData) {DeferredPass(span, view, passData); }
 	});
 }
+void CStaticRenderSystem::DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData)
+{
+}
+void CStaticRenderSystem::DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DeferredPassData& passData)
+{
+}
+
 glm::mat4 CViewpoint::ViewMatrix(CSceneTransform const& sceneTransform) const
 {
 	return glm::inverse(sceneTransform.GetWorldTransform().WorldMatrix);

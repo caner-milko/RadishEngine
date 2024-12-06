@@ -20,20 +20,4 @@ struct ShaderManager;
 struct TextureManager;
 struct ModelManager;
 struct RenderFrameRecord;
-
-struct Renderable
-{
-    std::string Name;
-    uint32_t MaterialBufferIndex;
-	uint32_t DiffuseTextureIndex;
-	uint32_t NormalMapTextureIndex;
-    D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
-    D3D12_INDEX_BUFFER_VIEW IndexBufferView;
-    Matrix4x4 GlobalModelMatrix;
-
-	__forceinline uint32_t GetIndexCount() const
-	{
-		return IndexBufferView.SizeInBytes / sizeof(uint32_t);
-	}
-};
 }

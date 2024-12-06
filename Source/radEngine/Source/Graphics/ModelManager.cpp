@@ -4,23 +4,22 @@
 #include <filesystem>
 #include <tiny_obj_loader.h>
 #include "TextureManager.h"
-using namespace DirectX;
 
 // Hash function for Vertex
 namespace std
 {
-	template<> struct hash<DirectX::XMFLOAT2>
+	template<> struct hash<glm::vec2>
 	{
-		size_t operator()(DirectX::XMFLOAT2 const& v) const
+		size_t operator()(glm::vec2 const& v) const
 		{
 			size_t seed = 0;
 			rad::HashCombine(seed, v.x, v.y);
 			return seed;
 		}
 	};
-	template<> struct hash<DirectX::XMFLOAT3>
+	template<> struct hash<glm::vec3>
 	{
-		size_t operator()(DirectX::XMFLOAT3 const& v) const
+		size_t operator()(glm::vec3 const& v) const
 		{
 			size_t seed = 0;
 			rad::HashCombine(seed, v.x, v.y, v.z);
@@ -57,7 +56,7 @@ void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Ve
 			//hardcode loading to triangles
 			int fv = 3;
 			Vertex newVertices[3];
-			Vector4 bitangent;
+			glm::vec3 bitangent;
 			// Loop over vertices in the face.
 			for (size_t v = 0; v < fv; v++) 
 			{
@@ -87,34 +86,34 @@ void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Ve
 				newVertices[v] = new_vert;
 			}
 
-			XMVECTOR deltaPos1 = XMLoadFloat3(&newVertices[1].Position) - XMLoadFloat3(&newVertices[0].Position);
-			XMVECTOR deltaPos2 = XMLoadFloat3(&newVertices[2].Position) - XMLoadFloat3(&newVertices[0].Position);
+			glm::vec3 deltaPos1 = newVertices[1].Position - newVertices[0].Position;
+			glm::vec3 deltaPos2 = newVertices[2].Position - newVertices[0].Position;
 
-			XMVECTOR deltaUV1 = XMLoadFloat2(&newVertices[1].TexCoord) - XMLoadFloat2(&newVertices[0].TexCoord);
-			XMVECTOR deltaUV2 = XMLoadFloat2(&newVertices[2].TexCoord) - XMLoadFloat2(&newVertices[0].TexCoord);
+			glm::vec2 deltaUV1 = newVertices[1].TexCoord - newVertices[0].TexCoord;
+			glm::vec2 deltaUV2 = newVertices[2].TexCoord - newVertices[0].TexCoord;
 
-			float r = 1.0F / (DirectX::XMVectorGetX(deltaUV1) * DirectX::XMVectorGetY(deltaUV2) - DirectX::XMVectorGetY(deltaUV1) * DirectX::XMVectorGetX(deltaUV2));
-			XMVECTOR tangent = (deltaPos1 * DirectX::XMVectorGetY(deltaUV2) - deltaPos2 * DirectX::XMVectorGetY(deltaUV1)) * r;
-			bitangent = (deltaPos2 * DirectX::XMVectorGetX(deltaUV1) - deltaPos1 * DirectX::XMVectorGetX(deltaUV2)) * r;
-			DirectX::XMStoreFloat3(&newVertices[0].Tangent, tangent);
-			DirectX::XMStoreFloat3(&newVertices[1].Tangent, tangent);
-			DirectX::XMStoreFloat3(&newVertices[2].Tangent, tangent);
+			float r = 1.0F / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
+			glm::vec3 tangent = (deltaPos1 * deltaUV2.y - deltaPos2 * deltaUV1.y) * r;
+			bitangent = (deltaPos2 * deltaUV1.x - deltaPos1 * deltaUV2.x) * r;
+			newVertices[0].Tangent = tangent;
+			newVertices[1].Tangent = tangent;
+			newVertices[2].Tangent = tangent;
 
 			for (size_t v = 0; v < fv; v++)
 			{
 				Vertex& vtx = newVertices[v];
 
-				XMVECTOR n = XMLoadFloat3(&vtx.Normal);
-				XMVECTOR t = XMLoadFloat3(&vtx.Tangent);
+				glm::vec3 n = vtx.Normal;
+				glm::vec3 t = vtx.Tangent;
 
 				// Gram-Schmidt orthogonalize
-				t = XMVector3Normalize(t - n * XMVector3Dot(n, t));
+				t = glm::normalize(t - n * glm::dot(n, t));
 
 				// Calculate handedness
-				if(XMVectorGetX(XMVector3Dot(XMVector3Cross(n, t), bitangent)) < 0.0f)
+				if(glm::dot(glm::cross(n, t), bitangent) < 0.0f)
 					t *= -1;
 				
-				XMStoreFloat3(&vtx.Tangent, t);
+				vtx.Tangent = t;
 			}
 
 			for (size_t v = 0; v < fv; v++) 
@@ -125,7 +124,7 @@ void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Ve
 				{
 					index = it->second;
 					Vertex& existing = vertices[index];
-					XMStoreFloat3(&existing.Tangent, XMLoadFloat3(&existing.Tangent) + XMLoadFloat3(&vtx.Tangent));
+					existing.Tangent = existing.Tangent + vtx.Tangent;
 				}
 				else
 				{
@@ -197,8 +196,8 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Comm
         }
         if (!difTexLoaded)
         {
-            matInfo.Diffuse = XMFLOAT4{ mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], 1.0f };
-            material.DiffuseColor = Vector3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
+            matInfo.Diffuse = glm::vec4{ mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], 1.0f };
+            material.DiffuseColor = glm::vec3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
         }
 		if (!mat.displacement_texname.empty())
 		{
@@ -228,6 +227,7 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Comm
 		auto& shape = shapes[i];
 		auto& indices = indicesPerShape[i];
 		auto& mesh = objModel.Meshes[shape.name];
+		mesh.Model = objModel.Vertices;
         mesh.Name = shape.name;
         mesh.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(Renderer.GetDevice(), s2ws(shape.name), commandCtx, indices, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 		mesh.Material = objModel.Materials[reader.GetMaterials()[shape.mesh.material_ids[0]].name];

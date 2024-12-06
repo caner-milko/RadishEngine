@@ -114,9 +114,9 @@ struct CStaticRenderSystem
 	struct StaticRenderData
 	{
 		glm::mat4 WorldMatrix;
-		std::shared_ptr<DXTypedBuffer<Vertex>> Vertices;
-		std::shared_ptr<DXTypedBuffer<uint32_t>> Indices;
-		std::shared_ptr<DXTypedSingularBuffer<Material>> Material;
+		DXTypedBuffer<Vertex> Vertices;
+		DXTypedBuffer<uint32_t> Indices;
+		DXTypedSingularBuffer<hlsl::MaterialBuffer> Material;
 	};
 	void DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData);
 	void DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DeferredPassData& passData);

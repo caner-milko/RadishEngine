@@ -8,8 +8,8 @@
 
 namespace rad
 {
-std::unique_ptr<Renderer> Renderer::Instance = nullptr;
-
+Renderer::Renderer() = default;
+Renderer::~Renderer() = default;
 bool Renderer::InitializeDevice(bool debug)
 {
 	// [DEBUG] Enable debug interface
@@ -71,7 +71,10 @@ bool Renderer::InitializeDevice(bool debug)
 		CommandContexts.push_back(std::make_unique<CommandContextData>(*CreateCommandContext()));
 	// For frame independent commands
 	CommandContexts.push_back(std::make_unique<CommandContextData>(*CreateCommandContext()));
-	
+
+	for (auto& cmdContext : CommandContexts)
+		AvailableCommandContexts.push_back(*cmdContext);
+
 	if (Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, CommandContexts[0]->CommandAllocator.Get(), nullptr, IID_PPV_ARGS(&CommandList)) != S_OK ||
 		CommandList->Close() != S_OK)
 		return false;
@@ -207,36 +210,53 @@ void Renderer::EnqueueFrame(RenderFrameRecord record)
 	PendingFrameRecords.push(std::move(record));
 }
 
-void Renderer::RenderQueue(RenderFrameRecord& queue)
+void Renderer::Render(RenderFrameRecord& record)
 {
-	auto cmdContext = GetNewCommandContext();
-	if(!cmdContext)
+	auto activeCmdContext = GetNewCommandContext();
+	if(!activeCmdContext)
 	{
 		std::cerr << "No command context available" << std::endl;
 		return;
 	}
-	for(auto& cmd : queue.PreFrameCommands)
-		cmd(cmdContext->AsCommandContext());
-	for (auto& cmd : FramePipelineCommands)
-		cmd(cmdContext->AsCommandContext(), queue);
-	for (auto& cmd : queue.PostFrameCommands)
-		cmd(cmdContext->AsCommandContext());
+	auto cmdContext = activeCmdContext->AsCommandContext();
+	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
+	DeferredPipeline->ShadowMapPass(cmdContext, record);
+	DeferredPipeline->DeferredRenderPass(cmdContext, record);
+	DeferredPipeline->LightingPass(cmdContext, record);
+	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
+	BlitPipeline->Blit(cmdContext, Swapchain.BackBuffers[backbufferIndex],
+		DeferredPipeline->GetOutputBuffer(),
+		Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex),
+		DeferredPipeline->GetOutputBufferSRV());
+	// TODO: Render ImGui
+	
+	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
+	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
+	// Present
+	Swapchain.Swapchain->Present(1, 0);
+
 }
 
-void Renderer::FrameIndependentCommand(std::move_only_function<void(CommandContext)> command)
+void Renderer::FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command)
 {
 	if (!FrameIndependentCommandContext.has_value())
 	{
 		FrameIndependentCommandContext = GetNewCommandContext();
+		if (!FrameIndependentCommandContext.has_value())
+		{
+			std::cerr << "No command context available" << std::endl;
+			return;
+		}
 	}
-	command(FrameIndependentCommandContext->AsCommandContext());
+	auto cmdContext = FrameIndependentCommandContext->AsCommandContext();
+	command(cmdContext);
 }
 
-void Renderer::SubmitFrameIndependentCommands(Ref<DXFence> fence, uint64_t signalValue)
+void Renderer::SubmitFrameIndependentCommands(Ref<DXFence> fence, uint64_t signalValue, bool wait)
 {
 	if (FrameIndependentCommandContext.has_value())
 	{
-		SubmitCommandContext(std::move(*FrameIndependentCommandContext), fence, signalValue, true);
+		SubmitCommandContext(std::move(*FrameIndependentCommandContext), fence, signalValue, wait);
 		FrameIndependentCommandContext = std::nullopt;
 	}
 }
@@ -252,15 +272,14 @@ std::optional<Renderer::ActiveCommandContext> Renderer::GetNewCommandContext()
 	}
 	if (!cmdContext)
 		return std::nullopt;
-	auto context = AvailableCommandContexts.front();
 	AvailableCommandContexts.pop_front();
-	CommandList->Reset(context->CommandAllocator.Get(), nullptr);
-	context->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
-	context->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
+	CommandList->Reset(cmdContext->CommandAllocator.Get(), nullptr);
+	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
+	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
 
 	auto heaps = g_GPUDescriptorAllocator->GetHeaps(); 
 	CommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
-	return ActiveCommandContext{ *CommandList.Get(), context};
+	return ActiveCommandContext{ *CommandList.Get(), *cmdContext };
 }
 std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(ActiveCommandContext&& context, Ref<DXFence> fence, uint64_t signalValue, bool wait)
 {

@@ -24,9 +24,9 @@ namespace rad
 		DXTexture& GetNormalBuffer() { return NormalBuffer; }
 		DescriptorAllocationView GetNormalBufferSRV() { return GBuffersSRV.GetView(1); }
 
-		void ShadowMapPass(CommandContext cmdContext, RenderFrameRecord& frameRecord);
-		void DeferredRenderPass(CommandContext cmdContext, RenderFrameRecord& frameRecord);
-		void LightingPass(CommandContext cmdContext, RenderFrameRecord& frameRecord);
+		void ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+		void DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+		void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 
 	private:
 		bool SetupDeferredRenderPass();

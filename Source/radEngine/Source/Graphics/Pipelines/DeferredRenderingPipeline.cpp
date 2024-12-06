@@ -262,7 +262,7 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 	OutputBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 	return true;
 }
-void DeferredRenderingPipeline::ShadowMapPass(CommandContext cmdContext, RenderFrameRecord& frameRecord)
+void DeferredRenderingPipeline::ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
 	cmdContext->RSSetViewports(1, &ShadowMapViewport);
 	TransitionVec(ShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE).Execute(cmdContext);
@@ -281,11 +281,11 @@ void DeferredRenderingPipeline::ShadowMapPass(CommandContext cmdContext, RenderF
 
 	DepthOnlyPassData passData{ .CmdContext = cmdContext, .OutDepth = &ShadowMap };
 	RenderView lightView = frameRecord.LightInfo.View;
-	Renderable lastRenderableCfg{};
-	for (auto& renderable : frameRecord.Commands)
-		renderable.DepthOnlyPass(lightView, passData);
+
+	for (auto& renderCommand : frameRecord.Commands)
+		renderCommand.DepthOnlyPass(lightView, passData);
 }
-void DeferredRenderingPipeline::DeferredRenderPass(CommandContext cmdContext, RenderFrameRecord& frameRecord)
+void DeferredRenderingPipeline::DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
 	cmdContext->RSSetViewports(1, &Viewport);
 	TransitionVec(AlbedoBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
@@ -314,13 +314,14 @@ void DeferredRenderingPipeline::DeferredRenderPass(CommandContext cmdContext, Re
 	cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	DeferredPassData passData{ .CmdContext = cmdContext, .OutAlbedo = &AlbedoBuffer, .OutNormal = &NormalBuffer, .OutDepth = &DepthBuffer};
-	for (auto& renderable : frameRecord.Commands)
-		renderable.DeferredPass(frameRecord.View, passData);
+	for (auto& renderCommand : frameRecord.Commands)
+		renderCommand.DeferredPass(frameRecord.View, passData);
 }
-void DeferredRenderingPipeline::LightingPass(CommandContext cmdContext, RenderFrameRecord& frameRecord)
+void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
 
 	cmdContext->RSSetViewports(1, &Viewport);
+	cmdContext->RSSetScissorRects(1, &ScissorRect);
 
 	TransitionVec{}.Add(AlbedoBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)

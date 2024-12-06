@@ -33,23 +33,23 @@ bool BlitPipeline::Setup()
 	return true;
 }
 
-void BlitPipeline::Blit(CommandContext& commandCtx, struct DXTexture* dstTex, struct DXTexture* srcTex, D3D12_CPU_DESCRIPTOR_HANDLE dstRTV, uint32_t srcSRVIndex)
+void BlitPipeline::Blit(CommandContext& commandCtx, DXTexture& dstTex, DXTexture& srcTex, DescriptorAllocationView dstRTV, DescriptorAllocationView srcSRV)
 {
 	D3D12_VIEWPORT viewport = {};
-	viewport.Width = static_cast<float>(dstTex->Info.Width);
-	viewport.Height = static_cast<float>(dstTex->Info.Height);
+	viewport.Width = static_cast<float>(dstTex.Info.Width);
+	viewport.Height = static_cast<float>(dstTex.Info.Height);
 	commandCtx->RSSetViewports(1, &viewport);
-	TransitionVec{}.Add(*dstTex, D3D12_RESOURCE_STATE_RENDER_TARGET)
-		.Add(*srcTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+	TransitionVec{}.Add(dstTex, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(srcTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Execute(commandCtx);
 
-
-	commandCtx->OMSetRenderTargets(1, &dstRTV, FALSE, nullptr);
+	auto rtvHandle = dstRTV.GetCPUHandle();
+	commandCtx->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
 	commandCtx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
 	rad::hlsl::BlitResources blitResources{};
-	blitResources.SourceTextureIndex = srcSRVIndex;
+	blitResources.SourceTextureIndex = srcSRV.GetIndex();
 	PipelineState.BindWithResources(commandCtx, blitResources);
 	commandCtx->DrawInstanced(4, 1, 0, 0);
 }

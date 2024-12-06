@@ -39,13 +39,13 @@ struct RenderLightInfo
 
 struct DepthOnlyPassData
 {
-	CommandContext CmdContext;
+	Ref<CommandContext> CmdContext;
 	const DXTexture* OutDepth;
 };
 
 struct DeferredPassData
 {
-	CommandContext CmdContext;
+	Ref<CommandContext> CmdContext;
 	const DXTexture* OutAlbedo;
 	const DXTexture* OutNormal;
 	const DXTexture* OutDepth;
@@ -79,7 +79,7 @@ struct TypedRenderCommand
 /*
 Create a FrameResource struct that is used by pipeline commands to pass resources between each other. It is unique per frame so multiple frames can be processed in parallel.
 */
-using FramePipelineCommand = std::function<void(CommandContext, RenderFrameRecord&)>;
+//using FramePipelineCommand = std::function<void(CommandContext, RenderFrameRecord&)>;
 
 
 struct RenderFrameRecord
@@ -89,7 +89,7 @@ struct RenderFrameRecord
 	RenderView View;
 	RenderLightInfo LightInfo;
 	std::deque<RenderCommand> Commands;
-	std::deque<std::function<void(CommandContext)>> PreFrameCommands, PostFrameCommands;
+	//std::deque<FramePipelineCommand> FramePipelineCommands;
 
 	template<typename T>
 	void Push(TypedRenderCommand<T> command)
@@ -123,10 +123,12 @@ struct Swapchain
 /*
 Ideally, seperate device creation, command queue/list creation, and swapchain creation into seperate structs.
 */
-struct Renderer : Singleton<Renderer>
+struct Renderer
 {
+	Renderer();
+	~Renderer();
 	bool Initialize(bool debug, HWND window, uint32_t width, uint32_t height);
-	bool OnWindowResized(uint32_t width, uint32_t height, bool initial);
+	bool OnWindowResized(uint32_t width, uint32_t height, bool initial = false);
 
 	bool Deinitialize();
 
@@ -161,16 +163,16 @@ struct Renderer : Singleton<Renderer>
 	RenderFrameRecord BeginFrame();
 	void EnqueueFrame(RenderFrameRecord frame);
 
-	void RenderQueue(RenderFrameRecord& queue);
-	void FrameIndependentCommand(std::move_only_function<void(CommandContext)> command);
-	void SubmitFrameIndependentCommands(Ref<DXFence> fence, uint64_t signalValue);
+	void Render(RenderFrameRecord& queue);
+	void FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command);
+	void SubmitFrameIndependentCommands(Ref<DXFence> fence, uint64_t signalValue, bool wait);
 
-	void RenderPendingQueues()
+	void RenderPendingFrameRecods()
 	{
 		while (!PendingFrameRecords.empty())
 		{
 			auto& queue = PendingFrameRecords.front();
-			RenderQueue(queue);
+			Render(queue);
 			PendingFrameRecords.pop();
 		}
 	}
@@ -192,8 +194,6 @@ struct Renderer : Singleton<Renderer>
 	std::deque<PendingCommandContext> PendingCommandContexts;
 
 	std::optional<ActiveCommandContext> FrameIndependentCommandContext = std::nullopt;
-
-	std::deque<FramePipelineCommand> FramePipelineCommands;
 
 	uint32_t BackBufferCount = 3;
 	uint32_t FramesInFlight = 3;

@@ -14,7 +14,7 @@ struct Material
     std::optional<std::string> DiffuseTextureName;
 	std::optional<std::string> NormalMapTextureName;
 
-    Vector3 DiffuseColor = { 1, 1, 1 };
+    glm::vec3 DiffuseColor = { 1, 1, 1 };
 
     DXTypedSingularBuffer<rad::hlsl::MaterialBuffer> MaterialInfoBuffer;
     DescriptorAllocation MaterialInfo;
@@ -24,10 +24,10 @@ struct Material
 
 struct Vertex
 {
-	DirectX::XMFLOAT3 Position;
-	DirectX::XMFLOAT3 Normal;
-	DirectX::XMFLOAT2 TexCoord;
-	DirectX::XMFLOAT3 Tangent;
+	glm::vec3 Position;
+	glm::vec3 Normal;
+	glm::vec2 TexCoord;
+	glm::vec3 Tangent;
 
 	bool operator==(const Vertex& other) const
 	{
