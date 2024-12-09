@@ -48,8 +48,8 @@ bool Renderer::InitializeDevice(bool debug)
 	g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
 
 	g_GPUDescriptorAllocator = GPUDescriptorHeapAllocator::Create(GetDevice());
-	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048 * 12, FramesInFlight, 2048 * 8);
-	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024, FramesInFlight);
+	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048 * (8 + FramesInFlight + 1), FramesInFlight + 1, 2048 * 8);
+	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 128*(FramesInFlight + 2), FramesInFlight + 1, 128);
 
 	TextureManager = std::make_unique<rad::TextureManager>(*this);
 	if(!TextureManager->Init())
@@ -264,15 +264,18 @@ std::optional<Renderer::ActiveCommandContext> Renderer::GetNewCommandContext()
 {
 	OptionalRef<CommandContextData> cmdContext = std::nullopt;
 	if (AvailableCommandContexts.empty())
+	{
 		cmdContext = WaitAndClearCommandContext(std::move(PendingCommandContexts.front()));
+		PendingCommandContexts.pop_front();
+	}
 	else
 	{
 		cmdContext = AvailableCommandContexts.front();
-		AvailableCommandContexts.pop_front();
 	}
 	if (!cmdContext)
 		return std::nullopt;
-	AvailableCommandContexts.pop_front();
+	else
+		AvailableCommandContexts.pop_front();
 	CommandList->Reset(cmdContext->CommandAllocator.Get(), nullptr);
 	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
 	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
@@ -287,12 +290,13 @@ std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(Ac
 	ID3D12CommandList* cmdLists[] = { &context.CommandList.get()};
 	CommandQueue->ExecuteCommandLists(1, cmdLists);
 	CommandQueue->Signal(fence->Fence.Get(), signalValue);
-	PendingCommandContexts.push_back({ context.CmdContext, fence, signalValue });
+	PendingCommandContext pendingContext{ context.CmdContext, fence, signalValue };
 	if (wait)
 	{
-		WaitAndClearCommandContext(std::move(PendingCommandContexts.front()));
+		WaitAndClearCommandContext(std::move(pendingContext));
 		return std::nullopt;
 	}
+	PendingCommandContexts.push_back(std::move(pendingContext));
 	return PendingCommandContexts.back();
 }
 Renderer::CommandContextData& Renderer::WaitAndClearCommandContext(PendingCommandContext&& pendingContext)
@@ -300,7 +304,7 @@ Renderer::CommandContextData& Renderer::WaitAndClearCommandContext(PendingComman
 	pendingContext.Fence->Fence->SetEventOnCompletion(pendingContext.FenceValue, pendingContext.Fence->FenceEvent);
 	WaitForSingleObject(pendingContext.Fence->FenceEvent, INFINITE);
 	auto cmdContext = pendingContext.CmdContext;
-	for (auto& [type, heapPage] : cmdContext->GPUHeapPages)
+	for (auto const& [type, heapPage] : cmdContext->GPUHeapPages)
 		g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
 	
 	cmdContext->GPUHeapPages.clear();
@@ -308,8 +312,6 @@ Renderer::CommandContextData& Renderer::WaitAndClearCommandContext(PendingComman
 	cmdContext->IntermediateResources.clear();
 
 	// Delete from PendingCommandContexts
-	auto it = std::find_if(PendingCommandContexts.begin(), PendingCommandContexts.end(), [&](const auto& ctx) { return ctx.CmdContext.Ptr() == cmdContext.Ptr(); });
-	PendingCommandContexts.erase(it);
 	AvailableCommandContexts.push_back(cmdContext);
 	return cmdContext;
 }
@@ -317,8 +319,7 @@ void Renderer::WaitAllCommandContexts()
 {
 	while (!PendingCommandContexts.empty())
 	{
-		auto& pendingContext = PendingCommandContexts.front();
-		WaitAndClearCommandContext(std::move(pendingContext));
+		WaitAndClearCommandContext(std::move(PendingCommandContexts.front()));
 		PendingCommandContexts.pop_front();
 	}
 }

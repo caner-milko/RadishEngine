@@ -196,7 +196,10 @@ struct DescriptorHeapPageCollection
     DescriptorHeapPage* AllocatePage()
     {
 		if (FreePages.empty())
+		{
+			assert(false);
 			return nullptr;
+		}
 		auto page = FreePages.back();
 		FreePages.pop_back();
 		UsedPages.push_back(page);
