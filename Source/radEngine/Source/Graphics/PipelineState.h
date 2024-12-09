@@ -52,13 +52,17 @@ struct TypedPipelineState : PipelineState
 		else
 			cmdList.SetComputeRootSignature(RootSignature->DXSignature.Get());
 	}
-	inline void BindWithResources(RadGraphicsCommandList& cmdList, T const& resources) const
+	inline void SetResources(RadGraphicsCommandList& cmdList, T const& resources) const
 	{
-		Bind(cmdList);
 		if constexpr (!IsCompute)
 			cmdList.SetGraphicsRoot32BitConstants(0, sizeof(T) / sizeof(uint32_t), &resources, 0);
 		else
 			cmdList.SetComputeRoot32BitConstants(0, sizeof(T) / sizeof(uint32_t), &resources, 0);
+	}
+	inline void BindWithResources(RadGraphicsCommandList& cmdList, T const& resources) const
+	{
+		Bind(cmdList);
+		SetResources(cmdList, resources);
 	}
 
 	template<bool _ = false>

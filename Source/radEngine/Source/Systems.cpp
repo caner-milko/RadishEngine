@@ -5,6 +5,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "Graphics/Renderer.h"
+#include "Graphics/ShaderManager.h"
+
 namespace rad::ecs
 {
 glm::mat4 Transform::GetModelMatrix(glm::mat4 parentWorldMatrix) const
@@ -15,9 +18,75 @@ glm::mat4 Transform::GetModelMatrix(glm::mat4 parentWorldMatrix) const
 	return parentWorldMatrix;
 }
 
-bool CStaticRenderSystem::Init(ID3D12Device& device)
+bool CStaticRenderSystem::Init(Renderer& renderer)
 {
-	return false;
+	// Static Mesh Pipeline
+	{
+		struct StaticMeshPipelineStateStream : PipelineStateStreamBase
+		{
+			CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+			CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+			CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+			CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+			CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+			CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+			CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
+		} pipelineStateStream;
+
+		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		};
+
+		pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+		pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+		auto [vertexShader, pixelShader] = renderer.ShaderManager->CompileBindlessGraphicsShader(L"Triangle", RAD_SHADERS_DIR L"Graphics/StaticMesh.hlsl");
+
+		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
+		pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
+
+		pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+		D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+		rtvFormats.NumRenderTargets = 2;
+		rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+		rtvFormats.RTFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		pipelineStateStream.RTVFormats = rtvFormats;
+
+		pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+		StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", renderer.GetDevice(), pipelineStateStream, &renderer.ShaderManager->BindlessRootSignature);
+	}
+	// Shadow Map Pipeline
+	{
+		struct ShadowMapPipelineStateStream : PipelineStateStreamBase
+		{
+			CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+			CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+			CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+			CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+		} pipelineStateStream;
+
+		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		};
+
+		pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+		pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(renderer.ShaderManager->CompileBindlessVertexShader(L"ShadowMap", RAD_SHADERS_DIR L"Graphics/Shadowmap.hlsl")->Blob.Get());
+
+		pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+
+		ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", renderer.GetDevice(), pipelineStateStream, &renderer.ShaderManager->BindlessRootSignature);
+	}
+
+	return true;
 }
 
 void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& frameRecord)
@@ -32,9 +101,10 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 
 		StaticRenderData renderData;
 		renderData.WorldMatrix = transform.GetWorldTransform().WorldMatrix;
-		renderData.Vertices = renderable.Vertices;
-		renderData.Indices = renderable.Indices;
-		renderData.Material = renderable.Material.MaterialInfoBuffer;
+		renderData.IndexCount = renderable.Indices.Size / sizeof(uint32_t);
+		renderData.VertexBufferView = renderable.Vertices.VertexBufferView();
+		renderData.IndexBufferView = renderable.Indices.IndexBufferView();
+		renderData.Material = renderable.Material.MaterialInfo.GetView();
 
 		renderObjects.push_back(renderData);
 	}
@@ -46,9 +116,57 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 }
 void CStaticRenderSystem::DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData)
 {
+	auto& cmd = passData.CmdContext;
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	ShadowMapPipelineState.Bind(cmd);
+
+	StaticRenderData lastRenderData{};
+	for (auto& renderObj : renderObjects)
+	{
+		if (renderObj.VertexBufferView.BufferLocation != lastRenderData.VertexBufferView.BufferLocation)
+		{
+			lastRenderData.VertexBufferView = renderObj.VertexBufferView;
+			cmd->IASetVertexBuffers(0, 1, &renderObj.VertexBufferView);
+		}
+
+		if (renderObj.IndexBufferView.BufferLocation != lastRenderData.IndexBufferView.BufferLocation)
+		{
+			lastRenderData.IndexBufferView = renderObj.IndexBufferView;
+			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
+		}
+		rad::hlsl::ShadowMapResources shadowMapResources{};
+		shadowMapResources.MVP = renderObj.WorldMatrix * view.ViewProjectionMatrix;
+		ShadowMapPipelineState.SetResources(cmd, shadowMapResources);
+		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+	}
 }
 void CStaticRenderSystem::DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DeferredPassData& passData)
 {
+	auto& cmd = passData.CmdContext;
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	StaticMeshPipelineState.Bind(cmd);
+
+	StaticRenderData lastRenderData{};
+	for (auto& renderObj : renderObjects)
+	{
+		if (renderObj.VertexBufferView.BufferLocation != lastRenderData.VertexBufferView.BufferLocation)
+		{
+			lastRenderData.VertexBufferView = renderObj.VertexBufferView;
+			cmd->IASetVertexBuffers(0, 1, &renderObj.VertexBufferView);
+		}
+
+		if (renderObj.IndexBufferView.BufferLocation != lastRenderData.IndexBufferView.BufferLocation)
+		{
+			lastRenderData.IndexBufferView = renderObj.IndexBufferView;
+			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
+		}
+		rad::hlsl::StaticMeshResources staticMeshResources{};
+		staticMeshResources.MVP = renderObj.WorldMatrix * view.ViewProjectionMatrix;
+		staticMeshResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
+		staticMeshResources.MaterialBufferIndex = renderObj.Material.GetIndex();
+		cmd->SetGraphicsRoot32BitConstants(0, sizeof(staticMeshResources) / 4, &staticMeshResources, 0);
+		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+	}
 }
 
 glm::mat4 CViewpoint::ViewMatrix(CSceneTransform const& sceneTransform) const

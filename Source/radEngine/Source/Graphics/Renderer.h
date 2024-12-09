@@ -39,13 +39,13 @@ struct RenderLightInfo
 
 struct DepthOnlyPassData
 {
-	Ref<CommandContext> CmdContext;
+	CommandContext& CmdContext;
 	const DXTexture* OutDepth;
 };
 
 struct DeferredPassData
 {
-	Ref<CommandContext> CmdContext;
+	CommandContext& CmdContext;
 	const DXTexture* OutAlbedo;
 	const DXTexture* OutNormal;
 	const DXTexture* OutDepth;

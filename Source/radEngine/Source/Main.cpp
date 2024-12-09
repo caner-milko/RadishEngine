@@ -34,6 +34,13 @@ static entt::registry g_EnttRegistry;
 static entt::entity g_Camera;
 static entt::entity g_DirectionalLight;
 
+static struct EnttSystems
+{
+	ecs::CCameraSystem CameraSystem{};
+	ecs::CLightSystem LightSystem{};
+	ecs::CStaticRenderSystem StaticRenderSystem{};
+} g_EnttSystems;
+
 static int g_Width = 1920;
 static int g_Height = 1080;
 
@@ -293,6 +300,9 @@ void InitGame()
 {
     memset(g_IO.CUR_KEYS, 0, sizeof(g_IO.CUR_KEYS));
 
+	g_EnttSystems = {};
+	g_EnttSystems.StaticRenderSystem.Init(g_Renderer);
+
 	g_Camera = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_Camera, "Camera");
 	g_EnttRegistry.emplace<ecs::CSceneTransform>(g_Camera);
@@ -370,6 +380,10 @@ void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
         controlled.Rotation = XMVectorSetX(controlled.Rotation, std::clamp(XMVectorGetX(controlled.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
     }
 #endif 
+	
+	g_EnttSystems.CameraSystem.Update(g_EnttRegistry, frameRecord);
+	g_EnttSystems.LightSystem.Update(g_EnttRegistry, frameRecord);
+	g_EnttSystems.StaticRenderSystem.Update(g_EnttRegistry, frameRecord);
 
 }
 

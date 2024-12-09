@@ -8,6 +8,7 @@
 #include "Graphics/Model.h"
 #include "Graphics/Renderer.h"
 #include "Graphics/Model.h"
+#include "Graphics/PipelineState.h"
 
 namespace rad::ecs
 {
@@ -106,17 +107,18 @@ struct CStaticRenderable
 
 struct CStaticRenderSystem
 {
-	std::shared_ptr<DXPipelineState> PipelineState;
-	std::shared_ptr<DXRootSignature> RootSignature;
-	bool Init(ID3D12Device& device);
+	GraphicsPipelineState<hlsl::StaticMeshResources> StaticMeshPipelineState;
+	GraphicsPipelineState<hlsl::ShadowMapResources> ShadowMapPipelineState;
+	bool Init(Renderer& renderer);
 	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
 
 	struct StaticRenderData
 	{
 		glm::mat4 WorldMatrix;
-		DXTypedBuffer<Vertex> Vertices;
-		DXTypedBuffer<uint32_t> Indices;
-		DXTypedSingularBuffer<hlsl::MaterialBuffer> Material;
+		uint32_t IndexCount;
+		D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
+		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		DescriptorAllocationView Material;
 	};
 	void DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData);
 	void DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DeferredPassData& passData);

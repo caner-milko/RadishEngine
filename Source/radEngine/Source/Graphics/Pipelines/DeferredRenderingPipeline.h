@@ -29,7 +29,6 @@ namespace rad
 		void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 
 	private:
-		bool SetupDeferredRenderPass();
 		bool SetupLightingPass();
 		bool SetupShadowMapPass();
 
@@ -37,7 +36,6 @@ namespace rad
 
 
 		Renderer& Renderer;
-		//GraphicsPipelineState<hlsl::StaticMeshResources> StaticMeshPipelineState{};
 
 		DXTexture DepthBuffer{};
 		DXTexture AlbedoBuffer{};
@@ -48,7 +46,6 @@ namespace rad
 		DescriptorAllocation NormalBufferRTV{};
 		DescriptorAllocation GBuffersSRV{};
 
-		//GraphicsPipelineState<hlsl::ShadowMapResources> ShadowMapPipelineState{};
 		DXTexture ShadowMap{};
 		DescriptorAllocation ShadowMapDSV{};
 		DescriptorAllocation ShadowMapSRV{};
