@@ -1,6 +1,7 @@
 #pragma once
 
 #ifdef __cplusplus
+#define GLM_FORCE_LEFT_HANDED
 #include <glm/glm.hpp>
 
 #define float4 glm::vec4

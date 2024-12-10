@@ -3,12 +3,12 @@
 #include "Graphics/Model.h"
 #include <entt/entt.hpp>
 #include "RadishCommon.h"
-#include <glm/glm.hpp>
 #include "ConstantBuffers.hlsli"
 #include "Graphics/Model.h"
 #include "Graphics/Renderer.h"
 #include "Graphics/Model.h"
 #include "Graphics/PipelineState.h"
+#include "InputManager.h"
 
 namespace rad::ecs
 {
@@ -31,11 +31,14 @@ struct CSceneTransform
 	struct WorldTransform
 	{
 		glm::mat4 WorldMatrix = glm::mat4(1.0f);
+		// For directx, so row-major
 		glm::vec3 GetPosition() const { return glm::vec3(WorldMatrix[3]); }
-		glm::vec3 GetForward() const { return glm::vec3(WorldMatrix[2]); }
-		glm::vec3 GetRight() const { return glm::vec3(WorldMatrix[0]); }
-		glm::vec3 GetUp() const { return glm::vec3(WorldMatrix[1]); }
 		glm::vec3 GetScale() const { return glm::vec3(glm::length(glm::vec3(WorldMatrix[0])), glm::length(glm::vec3(WorldMatrix[1])), glm::length(glm::vec3(WorldMatrix[2]))); }
+		glm::vec3 GetForward() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 0, 1.0f); }
+		glm::vec3 GetRight() const { return glm::mat3(WorldMatrix) * glm::vec3(-1.0f, 0, 0);	}
+		glm::vec3 GetUp() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 1.0f, 0); }
+		glm::mat3 GetRotation() const { return glm::mat3(WorldMatrix); }
+		operator ecs::Transform() const;
 	};
 	CSceneTransform* Parent = nullptr;
 	std::vector<CSceneTransform*> Children;
@@ -145,13 +148,6 @@ struct CViewpoint
 struct CCamera
 {
 };
-struct CCameraController
-{
-	CCameraController(CViewpoint viewpoint) : OriginalViewpoint(std::move(viewpoint)) {}
-	CViewpoint OriginalViewpoint;
-	float MoveSpeed = 1.0f;
-	float RotateSpeed = 1.0f;
-};
 struct CCameraSystem
 {
 	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
@@ -166,6 +162,20 @@ struct CLightSystem
 {
 	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
 };
+struct CViewpointController
+{
+	CViewpointController(Transform transform, CViewpoint viewpoint) : OriginalTransform(transform), OriginalViewpoint(std::move(viewpoint)) {}
+	Transform OriginalTransform;
+	CViewpoint OriginalViewpoint;
+	float MoveSpeed = 1.0f;
+	float RotateSpeed = 1.0f;
+};
+struct CViewpointControllerSystem
+{
+	entt::entity ActiveViewpoint = entt::null;
+	void Update(entt::registry& registry, InputManager& io, float deltaTime);
+};
+
 struct CTerrain
 {
 	std::shared_ptr<DXTexture> HeightMap;

@@ -4,8 +4,6 @@
 #include "RadishCommon.h"
 #include "RendererCommon.h"
 
-#include <glm/glm.hpp>
-
 #include <queue>
 #include <vector>
 #include <string>

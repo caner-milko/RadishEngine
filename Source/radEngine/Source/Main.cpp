@@ -14,6 +14,8 @@
 
 #include <Shlwapi.h>
 
+#include "InputManager.h"
+
 #include "Graphics/TextureManager.h"
 #include "Graphics/ModelManager.h"
 
@@ -37,6 +39,7 @@ static entt::entity g_DirectionalLight;
 static struct EnttSystems
 {
 	ecs::CCameraSystem CameraSystem{};
+	ecs::CViewpointControllerSystem ViewpointControllerSystem{};
 	ecs::CLightSystem LightSystem{};
 	ecs::CStaticRenderSystem StaticRenderSystem{};
 } g_EnttSystems;
@@ -53,47 +56,7 @@ static int g_Height = 1080;
 //std::unique_ptr<TerrainRenderData> Terrain;
 //proc::ErosionParameters ErosionParams = {};
 
-struct IO
-{
-    // Keep last & current sdl key states
-    enum KEY_STATE
-    {
-        KEY_UP = 0,
-	    KEY_DOWN = 1,
-        KEY_PRESSED = 2,
-        KEY_RELEASED = 3
-    };
-    KEY_STATE CUR_KEYS[SDL_NUM_SCANCODES];
-    
-    bool CursorEnabled = false;
 
-    struct Immediate
-    {
-        float MouseWheelDelta = 0.0f;
-        glm::vec2 MouseDelta = { 0, 0 };
-    } Immediate;
-
-    bool IsKeyDown(SDL_Scancode key)
-    {
-	    return CUR_KEYS[key] == KEY_DOWN || CUR_KEYS[key] == KEY_PRESSED;
-    }
-
-    bool IsKeyPressed(SDL_Scancode key)
-    {
-	    return CUR_KEYS[key] == KEY_PRESSED;
-    }
-
-    bool IsKeyReleased(SDL_Scancode key)
-    {
-	    return CUR_KEYS[key] == KEY_RELEASED;
-    }
-
-    bool IsKeyUp(SDL_Scancode key)
-    {
-	    return CUR_KEYS[key] == KEY_UP || CUR_KEYS[key] == KEY_RELEASED;
-    }
-
-} static g_IO;
 
 std::unordered_map<std::string, std::function<std::pair<rad::DXTexture*, rad::DescriptorAllocationView>()>> g_TextureSelections;
 std::string g_SelectedTexture = "None";
@@ -182,7 +145,7 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 			auto& viewpoint = g_EnttRegistry.get<ecs::CViewpoint>(g_Camera);
 			if(auto* perspective = std::get_if<ecs::CViewpoint::Perspective>(&viewpoint.Projection))
 				ImGui::InputFloat("FoV", &perspective->Fov, 0.f, 0.f, "%.3f", ImGuiInputTextFlags_ReadOnly);
-			if (auto* cameraController = g_EnttRegistry.try_get<ecs::CCameraController>(g_Camera))
+			if (auto* cameraController = g_EnttRegistry.try_get<ecs::CViewpointController>(g_Camera))
 			{
 				ImGui::SliderFloat("Move Speed", &cameraController->MoveSpeed, 0.0f, 10000.0f);
 				ImGui::SliderFloat("Rotation Speed", &cameraController->RotateSpeed, 0.1f, 10.0f);
@@ -298,43 +261,29 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 
 void InitGame()
 {
-    memset(g_IO.CUR_KEYS, 0, sizeof(g_IO.CUR_KEYS));
-
+	InputManager::Create();
+	InputManager::Get().Init();
 	g_EnttSystems = {};
 	g_EnttSystems.StaticRenderSystem.Init(g_Renderer);
 
 	g_Camera = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_Camera, "Camera");
-	g_EnttRegistry.emplace<ecs::CSceneTransform>(g_Camera);
+	auto& transform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_Camera);
 	g_EnttRegistry.emplace<ecs::CCamera>(g_Camera);
-	auto& viewpoint =  g_EnttRegistry.emplace<ecs::CViewpoint>(g_Camera, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Perspective{.Fov = glm::radians(60.0f), 
+	auto& viewpoint =  g_EnttRegistry.emplace<ecs::CViewpoint>(g_Camera, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Perspective{.Fov = 60.0f, 
 		.Near = 0.1f, .Far = 1000.0f, .AspectRatio = 16.0f / 9.0f, }});
-	auto& controller = g_EnttRegistry.emplace<ecs::CCameraController>(g_Camera, ecs::CCameraController(viewpoint));
+	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(g_Camera, ecs::CViewpointController(transform.GetWorldTransform(), viewpoint));
 
 	g_DirectionalLight = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_DirectionalLight, "DirectionalLight");
-	g_EnttRegistry.emplace<ecs::CSceneTransform>(g_DirectionalLight);
+	auto& lightTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_DirectionalLight);
 	g_EnttRegistry.emplace<ecs::CLight>(g_DirectionalLight);
-	g_EnttRegistry.emplace<ecs::CViewpoint>(g_DirectionalLight, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Orthographic{.Width = 100.0f, .Height = 100.0f} });
+	auto& lightViewpoint = g_EnttRegistry.emplace<ecs::CViewpoint>(g_DirectionalLight, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Orthographic{.Width = 100.0f, .Height = 100.0f} });
+	g_EnttRegistry.emplace<ecs::CViewpointController>(g_DirectionalLight, ecs::CViewpointController(lightTransform.GetWorldTransform(), lightViewpoint));
 }
 
 void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
 {
-    if (g_IO.IsKeyPressed(SDL_SCANCODE_ESCAPE))
-	{
-		SDL_Event quitEvent;
-		quitEvent.type = SDL_QUIT;
-		SDL_PushEvent(&quitEvent);
-	}
-    if (g_IO.IsKeyPressed(SDL_SCANCODE_E))
-    {
-		//Disable imgui navigation
-		ImGui::GetIO().ConfigFlags ^= ImGuiConfigFlags_NavEnableKeyboard;
-        SDL_SetRelativeMouseMode((SDL_bool)g_IO.CursorEnabled);
-        g_IO.CursorEnabled = !g_IO.CursorEnabled;
-    }
-    if (g_IO.CursorEnabled)
-        return;
     // Switch controlled object on Tab
 #if RAD_ENABLE_EXPERIMENTAL
 	if (g_IO.IsKeyPressed(SDL_SCANCODE_TAB))
@@ -381,6 +330,7 @@ void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
     }
 #endif 
 	
+	g_EnttSystems.ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime);
 	g_EnttSystems.CameraSystem.Update(g_EnttRegistry, frameRecord);
 	g_EnttSystems.LightSystem.Update(g_EnttRegistry, frameRecord);
 	g_EnttSystems.StaticRenderSystem.Update(g_EnttRegistry, frameRecord);
@@ -419,7 +369,8 @@ void LoadSceneData()
 	{
 		entt::entity mesh = g_EnttRegistry.create();
 		g_EnttRegistry.emplace<ecs::CEntityInfo>(mesh, name);
-		g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh);
+		auto& meshTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh);
+		meshTransform.SetParent(&rootTransform);
 		assert(meshInfo.Model && meshInfo.Material);
 		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{ .Vertices = *meshInfo.Model, .Indices = meshInfo.Indices, .Material = *meshInfo.Material });
 	}
@@ -570,6 +521,7 @@ int main(int argv, char** args)
     bool done = false;
 
     std::chrono::high_resolution_clock::time_point lastTime = std::chrono::high_resolution_clock::now();
+	auto& inputMan = InputManager::Get();
 
     while (!done)
     {
@@ -594,13 +546,13 @@ int main(int argv, char** args)
 				g_Renderer.OnWindowResized(g_Width, g_Height);
             }
             if (sdlEvent.type == SDL_KEYDOWN)
-                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? IO::KEY_DOWN : IO::KEY_PRESSED;
+				inputMan.CUR_KEYS[sdlEvent.key.keysym.scancode] = sdlEvent.key.repeat ? InputManager::KEY_DOWN : InputManager::KEY_PRESSED;
             if (sdlEvent.type == SDL_KEYUP)
-                g_IO.CUR_KEYS[sdlEvent.key.keysym.scancode] = IO::KEY_RELEASED;
+				inputMan.CUR_KEYS[sdlEvent.key.keysym.scancode] = InputManager::KEY_RELEASED;
             if (sdlEvent.type == SDL_MOUSEMOTION)
-                g_IO.Immediate.MouseDelta = { float(sdlEvent.motion.xrel), float(sdlEvent.motion.yrel) };
+				inputMan.Immediate.MouseDelta = { float(sdlEvent.motion.xrel), float(sdlEvent.motion.yrel) };
             if (sdlEvent.type == SDL_MOUSEWHEEL)
-                g_IO.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
+				inputMan.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
         }
 
         // Start the Dear ImGui frame
@@ -616,13 +568,13 @@ int main(int argv, char** args)
 
         for (int i = 0; i < 322; i++)
         {
-            if (g_IO.CUR_KEYS[i] == IO::KEY_PRESSED)
-                g_IO.CUR_KEYS[i] = IO::KEY_DOWN;
-            if (g_IO.CUR_KEYS[i] == IO::KEY_RELEASED)
-                g_IO.CUR_KEYS[i] = IO::KEY_UP;
+            if (inputMan.CUR_KEYS[i] == InputManager::KEY_PRESSED)
+				inputMan.CUR_KEYS[i] = InputManager::KEY_DOWN;
+            if (inputMan.CUR_KEYS[i] == InputManager::KEY_RELEASED)
+				inputMan.CUR_KEYS[i] = InputManager::KEY_UP;
         }
 
-        g_IO.Immediate = {};
+        inputMan.Immediate = {};
     }
 
 	g_Renderer.WaitAllCommandContexts();
