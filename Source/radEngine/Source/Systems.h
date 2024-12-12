@@ -10,6 +10,8 @@
 #include "Graphics/PipelineState.h"
 #include "InputManager.h"
 
+struct SDL_Window;
+
 namespace rad::ecs
 {
 struct CEntityInfo
@@ -174,6 +176,13 @@ struct CViewpointControllerSystem
 {
 	entt::entity ActiveViewpoint = entt::null;
 	void Update(entt::registry& registry, InputManager& io, float deltaTime);
+};
+
+struct CUISystem
+{
+	void Init(Renderer& renderer, SDL_Window* window);
+	void Destroy();
+	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
 };
 
 struct CTerrain

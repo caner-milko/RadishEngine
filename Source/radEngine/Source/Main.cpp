@@ -1,6 +1,4 @@
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
-#include "imgui_impl_dx12.h"
 #include <tchar.h>
 #include <iostream>
 #include <span>
@@ -42,6 +40,7 @@ static struct EnttSystems
 	ecs::CViewpointControllerSystem ViewpointControllerSystem{};
 	ecs::CLightSystem LightSystem{};
 	ecs::CStaticRenderSystem StaticRenderSystem{};
+	ecs::CUISystem UISystem{};
 } g_EnttSystems;
 
 static int g_Width = 1920;
@@ -265,6 +264,7 @@ void InitGame()
 	InputManager::Get().Init();
 	g_EnttSystems = {};
 	g_EnttSystems.StaticRenderSystem.Init(g_Renderer);
+	g_EnttSystems.UISystem.Init(g_Renderer);
 
 	g_Camera = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_Camera, "Camera");
@@ -475,45 +475,6 @@ int main(int argv, char** args)
         return 1;
     }
 
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-
-    // Our state
-    bool show_demo_window = true;
-    bool show_another_window = false;
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplSDL2_InitForD3D(window);
-    auto fontAllocation = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-    ImGui_ImplDX12_Init(&g_Renderer.GetDevice(), g_Renderer.FramesInFlight,
-        DXGI_FORMAT_R8G8B8A8_UNORM, fontAllocation.Heap->Heap.Get(),
-        fontAllocation.GetCPUHandle(),
-        fontAllocation.GetGPUHandle());
-    // Load Fonts
-    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-    // - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-    // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-    // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
-    // - Read 'docs/FONTS.md' for more instructions and details.
-    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    //io.Fonts->AddFontDefault();
-    //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-    //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
-    //IM_ASSERT(font != nullptr);
-
     InitGame();
     LoadSceneData();
     SDL_SetRelativeMouseMode(SDL_TRUE);
@@ -555,8 +516,6 @@ int main(int argv, char** args)
 				inputMan.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
         }
 
-        // Start the Dear ImGui frame
-        ImGui_ImplDX12_NewFrame();
         ImGui_ImplSDL2_NewFrame();
 
         UIUpdate(io, show_demo_window, show_another_window, clear_color);
