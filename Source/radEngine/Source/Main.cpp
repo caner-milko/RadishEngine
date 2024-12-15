@@ -28,6 +28,7 @@ namespace rad
 {
 
 // Data
+static SDL_Window* g_SDLWindow = nullptr;
 static HWND g_hWnd = nullptr;
 static Renderer g_Renderer;
 static entt::registry g_EnttRegistry;
@@ -92,26 +93,7 @@ void CreateConsole()
     std::wcin.clear();
 }
 
-//void UIDrawMeshTree(MeshObject* object)
-//{
-//    ImGui::PushID(object->Name.c_str());
-//
-//	if (ImGui::TreeNodeEx(object->Name.c_str(), ImGuiTreeNodeFlags_Framed))
-//    {
-//		ImGui::InputFloat3("Position", &object->Position.m128_f32[0], "%.3f");
-//		ImGui::InputFloat3("Rotation", &object->Rotation.m128_f32[0], "%.3f");
-//		ImGui::InputFloat3("Scale", &object->Scale.m128_f32[0], "%.3f");
-//
-//        ImGui::Checkbox("TransformOnly", &object->TransformOnly);
-//	    for (auto& child : object->Children)
-//        {
-//		    UIDrawMeshTree(&child);
-//	    }
-//		ImGui::TreePop();
-//	}   
-//
-//    ImGui::PopID();
-//}
+
 
 entt::entity GetCamera()
 {
@@ -129,130 +111,6 @@ void UIUpdate(ImGuiIO& io, bool& showDemoWindow, bool& showAnotherWindow, ImVec4
 
     ImGui::NewFrame();
 
-    {
-        ImGui::Begin("Scene");
-        //Camera
-        if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-			ImGui::PushID("Camera");
-			auto& sceneTransform = g_EnttRegistry.get<ecs::CSceneTransform>(g_Camera);
-			auto transform = sceneTransform.LocalTransform();
-            ImGui::InputFloat3("Position", &transform.Position.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
-            ImGui::InputFloat3("Rotation", &transform.Rotation.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
-			auto dir = sceneTransform.GetWorldTransform().GetForward();
-			ImGui::InputFloat3("Direction", &dir.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
-			auto& viewpoint = g_EnttRegistry.get<ecs::CViewpoint>(g_Camera);
-			if(auto* perspective = std::get_if<ecs::CViewpoint::Perspective>(&viewpoint.Projection))
-				ImGui::InputFloat("FoV", &perspective->Fov, 0.f, 0.f, "%.3f", ImGuiInputTextFlags_ReadOnly);
-			if (auto* cameraController = g_EnttRegistry.try_get<ecs::CViewpointController>(g_Camera))
-			{
-				ImGui::SliderFloat("Move Speed", &cameraController->MoveSpeed, 0.0f, 10000.0f);
-				ImGui::SliderFloat("Rotation Speed", &cameraController->RotateSpeed, 0.1f, 10.0f);
-				if (ImGui::Button("Reset"))
-					viewpoint = cameraController->OriginalViewpoint;
-			}
-			ImGui::PopID();
-        }
-
-		//Light
-		if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
-		{
-			ImGui::PushID("Light");
-			auto& sceneTransform = g_EnttRegistry.get<ecs::CSceneTransform>(g_DirectionalLight);
-			auto transform = sceneTransform.LocalTransform();
-			bool transformChanged = ImGui::InputFloat3("Position", &transform.Position.x, "%.3f");
-			transformChanged |= ImGui::InputFloat3("Rotation", &transform.Rotation.x, "%.3f");
-            auto dir = sceneTransform.GetWorldTransform().GetForward();
-			ImGui::InputFloat3("Direction", &dir.x, "%.3f", ImGuiSliderFlags_NoInput);
-
-			auto& light = g_EnttRegistry.get<ecs::CLight>(g_DirectionalLight);
-            ImGui::ColorEdit3("Color", &light.Color.x);
-			ImGui::SliderFloat("Intensity", &light.Intensity, 0.0f, 10.0f);
-			ImGui::ColorEdit3("Ambient Color", &light.Ambient.x);
-
-
-#if RAD_ENABLE_EXPERIMENTAL
-            float yawDegrees = XMConvertToDegrees(g_DirectionalLight.Rotation.m128_f32[0]);
-            ImGui::SliderFloat("Yaw", &yawDegrees, 0.0f, 360.0f, "%.3f", ImGuiSliderFlags_NoInput);
-			g_DirectionalLight.Rotation.m128_f32[0] = XMConvertToRadians(yawDegrees);
-            float pitchDegress = XMConvertToDegrees(g_DirectionalLight.Rotation.m128_f32[1]);
-			ImGui::SliderFloat("Pitch", &pitchDegress, -90.0f, 90.0f, "%.3f", ImGuiSliderFlags_NoInput);
-			g_DirectionalLight.Rotation.m128_f32[1] = XMConvertToRadians(pitchDegress);
-			if (ImGui::Button("Reset"))
-				g_DirectionalLight.Reset();
-#endif
-			ImGui::PopID();
-        }
-
-#if RAD_ENABLE_EXPERIMENTAL
-		if (ImGui::CollapsingHeader("Terrain", ImGuiTreeNodeFlags_DefaultOpen))
-		{
-			ImGui::PushID("Terrain");
-			if (ImGui::Button("Generate Base Height Map"))
-				g_RenderingTasks.push([]()
-					{
-						g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-					});
-			if (ImGui::Button("Erode Terrain"))
-				g_RenderingTasks.push([]()
-					{
-						g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-					});
-			ImGui::Checkbox("With Water", &ErosionParams.MeshWithWater);
-			ImGui::Checkbox("Base from File", &ErosionParams.BaseFromFile);
-            if (!ErosionParams.BaseFromFile)
-            {
-                ImGui::SliderFloat("Initial Roughness", &ErosionParams.InitialRoughness, 0.0f, 2.0f);
-			    ImGui::Checkbox("Random", &ErosionParams.Random);
-			    if (!ErosionParams.Random)
-			    	ImGui::SliderInt("Seed", &ErosionParams.Seed, 0, 100000);
-            }
-			ImGui::SliderFloat("Min Height", &ErosionParams.MinHeight, 0.0f, 100.0f);
-			ImGui::SliderFloat("Max Height", &ErosionParams.MaxHeight, 0.0f, 200.0f);
-			ImGui::Checkbox("Erode Each Frame", &ErosionParams.ErodeEachFrame);
-            ImGui::SliderInt("Iterations", &ErosionParams.Iterations, 1, 1024);
-			ImGui::SliderFloat("Total Length", &ErosionParams.TotalLength, 100.0f, 2048.0f);
-
-
-			ImGui::SliderFloat("Rain Rate", &ErosionParams.RainRate, 0.0f, 0.1f);
-			ImGui::SliderFloat("Pipe Cross Section", &ErosionParams.PipeCrossSection, 0.0f, 100.0f);
-			ImGui::SliderFloat("Evaporation Rate", &ErosionParams.EvaporationRate, 0.0f, 0.1f);
-			ImGui::SliderFloat("Sediment Capacity", &ErosionParams.SedimentCapacity, 0.0f, 2.0f);
-			ImGui::SliderFloat("Soil Suspension Rate", &ErosionParams.SoilSuspensionRate, 0.0f, 2.f);
-			ImGui::SliderFloat("Sediment Deposition Rate", &ErosionParams.SedimentDepositionRate, 0.0f, 3.0f);
-            ImGui::SliderFloat("Soil Hardening Rate", &ErosionParams.SoilHardeningRate, 0.0f, 2.0f);
-            ImGui::SliderFloat("Soil Softening Rate", &ErosionParams.SoilSofteningRate, 0.0f, 2.0f);
-            ImGui::SliderFloat("Minimum Soil Softness", &ErosionParams.MinimumSoilSoftness, 0.0f, 1.0f);
-			ImGui::SliderFloat("Maximal Erosion Depth", &ErosionParams.MaximalErosionDepth, 0.0f, 40.0f);
-			
-            ImGui::SliderFloat("Softness Talus Coefficient", &ErosionParams.SoftnessTalusCoefficient, 0.0f, 1.0f);
-			ImGui::SliderFloat("Min Talus Coefficient", &ErosionParams.MinTalusCoefficient, 0.0f, 1.0f);
-			ImGui::SliderFloat("Thermal Erosion Rate", &ErosionParams.ThermalErosionRate, 0.0f, 5.0f);
-			
-            ImGui::PopID();
-		}
-
-        if (ImGui::CollapsingHeader("Texture View"))
-        {
-			if (ImGui::BeginCombo("Textures", g_SelectedTexture.c_str()))
-			{
-				for (auto& [name, func] : g_TextureSelections)
-				{
-					if (ImGui::Selectable(name.c_str()))
-						g_SelectedTexture = name;
-				}
-                if (ImGui::Selectable("None"))
-                {
-					g_SelectedTexture = "None";
-                }
-				ImGui::EndCombo();
-			}
-        }
-
-		UIDrawMeshTree(&g_SceneTree.Root);
-#endif
-        ImGui::End();
-    }
 
     // Rendering
     ImGui::Render();
@@ -264,77 +122,39 @@ void InitGame()
 	InputManager::Get().Init();
 	g_EnttSystems = {};
 	g_EnttSystems.StaticRenderSystem.Init(g_Renderer);
-	g_EnttSystems.UISystem.Init(g_Renderer);
+	g_EnttSystems.UISystem.Init(g_Renderer, g_SDLWindow);
 
 	g_Camera = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_Camera, "Camera");
-	auto& transform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_Camera);
+	auto& camSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_Camera, g_Camera);
 	g_EnttRegistry.emplace<ecs::CCamera>(g_Camera);
 	auto& viewpoint =  g_EnttRegistry.emplace<ecs::CViewpoint>(g_Camera, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Perspective{.Fov = 60.0f, 
 		.Near = 0.1f, .Far = 1000.0f, .AspectRatio = 16.0f / 9.0f, }});
-	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(g_Camera, ecs::CViewpointController(transform.GetWorldTransform(), viewpoint));
+	ecs::Transform camTransform{};
+	camTransform.Position = { 5.3f, 2.f, -1.2f };
+	camTransform.Rotation = { 0.15f, -1.348f, 0.f };
+	camSceneTransform.SetTransform(camTransform);
+	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(g_Camera, ecs::CViewpointController(camSceneTransform.GetWorldTransform(), viewpoint));
 
 	g_DirectionalLight = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_DirectionalLight, "DirectionalLight");
-	auto& lightTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_DirectionalLight);
+	auto& lightSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_DirectionalLight, g_DirectionalLight);
+	ecs::Transform lightTransform{};
+	lightTransform.Position = { 10.0f, 24.5f, -3.5f };
+	lightTransform.Rotation = { 1.0f, -1.2f, 0.f };
+	lightSceneTransform.SetTransform(lightTransform);
 	g_EnttRegistry.emplace<ecs::CLight>(g_DirectionalLight);
-	auto& lightViewpoint = g_EnttRegistry.emplace<ecs::CViewpoint>(g_DirectionalLight, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Orthographic{.Width = 100.0f, .Height = 100.0f} });
-	g_EnttRegistry.emplace<ecs::CViewpointController>(g_DirectionalLight, ecs::CViewpointController(lightTransform.GetWorldTransform(), lightViewpoint));
+	auto& lightViewpoint = g_EnttRegistry.emplace<ecs::CViewpoint>(g_DirectionalLight, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Orthographic{.Width = 50.0f, .Height = 50.0f} });
+	g_EnttRegistry.emplace<ecs::CViewpointController>(g_DirectionalLight, ecs::CViewpointController(lightSceneTransform.GetWorldTransform(), lightViewpoint));
 }
 
 void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
 {
-    // Switch controlled object on Tab
-#if RAD_ENABLE_EXPERIMENTAL
-	if (g_IO.IsKeyPressed(SDL_SCANCODE_TAB))
-	{
-        if (g_Controlled == &g_Cam)
-            g_Controlled = &g_DirectionalLight;
-        else
-            g_Controlled = &g_Cam;
-	}
-
-	if (g_IO.IsKeyPressed(SDL_SCANCODE_L))
-    {
-		g_DirectionalLight.Position = g_Cam.Position;
-		g_DirectionalLight.Rotation = g_Cam.Rotation;
-    }
-    
-    auto& controlled = *g_Controlled;
-    if (g_IO.IsKeyPressed(SDL_SCANCODE_R))
-        controlled.Reset();
-    if (g_Controlled == &g_Cam)
-    {
-		auto& cam = static_cast<Camera&>(*g_Controlled);
-		cam.SetFoV(cam.FoV - g_IO.Immediate.MouseWheelDelta * 2.0f);
-    }
-    else
-    {
-		g_DirectionalLight.SetInverseZoom(g_DirectionalLight.InverseZoom - g_IO.Immediate.MouseWheelDelta * 2.0f);
-    }
-    Vector4 moveDir = { float(g_IO.IsKeyDown(SDL_SCANCODE_D)) - float(g_IO.IsKeyDown(SDL_SCANCODE_A)), 0
-        , float(g_IO.IsKeyDown(SDL_SCANCODE_W)) - float(g_IO.IsKeyDown(SDL_SCANCODE_S)), 0 };
-        
-	Vector4 moveVec = XMVector4Transform(XMVector4Normalize(moveDir), controlled.GetRotationMatrix());
-
-    moveVec.m128_f32[1] += float(g_IO.IsKeyDown(SDL_SCANCODE_SPACE)) - float(g_IO.IsKeyDown(SDL_SCANCODE_LCTRL));
-    
-    moveVec = XMVector4Normalize(moveVec);
-
-    controlled.Position = controlled.Position + moveVec * deltaTime * controlled.MoveSpeed;
-        
-    if(!g_IO.CursorEnabled)
-    {
-        controlled.Rotation = controlled.Rotation + XMVectorSet(g_IO.Immediate.MouseDelta.y, g_IO.Immediate.MouseDelta.x, 0, 0) * controlled.RotSpeed * deltaTime;
-        controlled.Rotation = XMVectorSetX(controlled.Rotation, std::clamp(XMVectorGetX(controlled.Rotation), -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f));
-    }
-#endif 
-	
-	g_EnttSystems.ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime);
+	g_EnttSystems.ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime, g_Renderer);
 	g_EnttSystems.CameraSystem.Update(g_EnttRegistry, frameRecord);
 	g_EnttSystems.LightSystem.Update(g_EnttRegistry, frameRecord);
 	g_EnttSystems.StaticRenderSystem.Update(g_EnttRegistry, frameRecord);
-
+	g_EnttSystems.UISystem.Update(g_EnttRegistry, g_Renderer);
 }
 
 bool InitRenderer(HWND window, uint32_t width, uint32_t height)
@@ -363,13 +183,13 @@ void LoadSceneData()
 	}
 	entt::entity sponzaRoot = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(sponzaRoot, "SponzaRoot");
-	auto& rootTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(sponzaRoot);
+	auto& rootTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(sponzaRoot, sponzaRoot);
 	rootTransform.SetTransform(ecs::Transform{ .Scale = glm::vec3(0.01f) });
 	for (auto& [name, meshInfo] : sponzaObj->Meshes)
 	{
 		entt::entity mesh = g_EnttRegistry.create();
 		g_EnttRegistry.emplace<ecs::CEntityInfo>(mesh, name);
-		auto& meshTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh);
+		auto& meshTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh, mesh);
 		meshTransform.SetParent(&rootTransform);
 		assert(meshInfo.Model && meshInfo.Material);
 		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{ .Vertices = *meshInfo.Model, .Indices = meshInfo.Indices, .Material = *meshInfo.Material });
@@ -457,15 +277,15 @@ int main(int argv, char** args)
 
     // Setup window
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    SDL_Window* window = SDL_CreateWindow("DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_Width, g_Height, window_flags);
-    if (window == nullptr)
+    g_SDLWindow = SDL_CreateWindow("DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_Width, g_Height, window_flags);
+    if (g_SDLWindow == nullptr)
     {
         printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
         return -1;
     }
     SDL_SysWMinfo wmInfo;
     SDL_VERSION(&wmInfo.version);
-    SDL_GetWindowWMInfo(window, &wmInfo);
+    SDL_GetWindowWMInfo(g_SDLWindow, &wmInfo);
     HWND hwnd = (HWND)wmInfo.info.win.window;
     g_hWnd = hwnd;
     // Initialize the Renderer
@@ -494,12 +314,12 @@ int main(int argv, char** args)
         SDL_Event sdlEvent;
         while (SDL_PollEvent(&sdlEvent))
         {
-            ImGui_ImplSDL2_ProcessEvent(&sdlEvent);
+            g_EnttSystems.UISystem.ProcessEvent(sdlEvent);
             if (sdlEvent.type == SDL_QUIT)
                 done = true;
-            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_CLOSE && sdlEvent.window.windowID == SDL_GetWindowID(window))
+            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_CLOSE && sdlEvent.window.windowID == SDL_GetWindowID(g_SDLWindow))
                 done = true;
-            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_RESIZED && sdlEvent.window.windowID == SDL_GetWindowID(window))
+            if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_RESIZED && sdlEvent.window.windowID == SDL_GetWindowID(g_SDLWindow))
             {
                 g_Width = sdlEvent.window.data1;
                 g_Height = sdlEvent.window.data2;
@@ -515,12 +335,12 @@ int main(int argv, char** args)
             if (sdlEvent.type == SDL_MOUSEWHEEL)
 				inputMan.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
         }
+		auto now = std::chrono::high_resolution_clock::now();
+		auto deltaTime = std::chrono::duration<float>(now - lastTime).count();
+		lastTime = now;
 
-        ImGui_ImplSDL2_NewFrame();
-
-        UIUpdate(io, show_demo_window, show_another_window, clear_color);
 		auto frameRec = g_Renderer.BeginFrame();
-        UpdateGame(io.DeltaTime, frameRec);
+        UpdateGame(deltaTime, frameRec);
 
 		g_Renderer.EnqueueFrame(std::move(frameRec));
 		g_Renderer.RenderPendingFrameRecods();
@@ -539,12 +359,10 @@ int main(int argv, char** args)
 	g_Renderer.WaitAllCommandContexts();
 
     // Cleanup
-    ImGui_ImplDX12_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
+	g_EnttSystems.UISystem.Destroy();
 
     g_Renderer.Deinitialize();
-    SDL_DestroyWindow(window);
+    SDL_DestroyWindow(g_SDLWindow);
     SDL_Quit();
 
     return 0;

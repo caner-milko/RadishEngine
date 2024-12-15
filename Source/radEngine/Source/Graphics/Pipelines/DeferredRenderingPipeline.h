@@ -32,9 +32,6 @@ namespace rad
 		bool SetupLightingPass();
 		bool SetupShadowMapPass();
 
-
-
-
 		Renderer& Renderer;
 
 		DXTexture DepthBuffer{};

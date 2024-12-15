@@ -5,6 +5,7 @@
 #include "ModelManager.h"
 #include "Pipelines/DeferredRenderingPipeline.h"
 #include "Pipelines/BlitPipeline.h"
+#include "imgui_impl_dx12.h"
 
 namespace rad
 {
@@ -224,12 +225,16 @@ void Renderer::Render(RenderFrameRecord& record)
 	DeferredPipeline->DeferredRenderPass(cmdContext, record);
 	DeferredPipeline->LightingPass(cmdContext, record);
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
+	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
 	BlitPipeline->Blit(cmdContext, Swapchain.BackBuffers[backbufferIndex],
-		DeferredPipeline->GetOutputBuffer(),
+		viewingTexture,
 		Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex),
-		DeferredPipeline->GetOutputBufferSRV());
+		viewingTextureSRV);
 	// TODO: Render ImGui
-	
+	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
+	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
+	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);
+	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), &cmdContext.CommandList);
 	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
 	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
 	// Present
@@ -322,6 +327,13 @@ void Renderer::WaitAllCommandContexts()
 		WaitAndClearCommandContext(std::move(PendingCommandContexts.front()));
 		PendingCommandContexts.pop_front();
 	}
+}
+std::pair<Ref<DXTexture>, DescriptorAllocationView> Renderer::GetViewingTexture()
+{
+	if (ViewingTexture)
+		if (auto it = ViewableTextures.find(*ViewingTexture); it != ViewableTextures.end())
+			return it->second;
+	return { DeferredPipeline->GetOutputBuffer(), DeferredPipeline->GetOutputBufferSRV()};
 }
 std::optional<Renderer::CommandContextData> Renderer::CreateCommandContext()
 {

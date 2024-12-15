@@ -144,6 +144,8 @@ bool DeferredRenderingPipeline::SetupShadowMapPass()
 	
 	Renderer.GetDevice().CreateSampler(&shadowSampler, ShadowMapSampler.GetCPUHandle());
 	
+	Renderer.ViewableTextures.emplace("ShadowMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>(Ref<DXTexture>(ShadowMap), ShadowMapSRV.GetView()));
+
 	return true;
 }
 
@@ -192,6 +194,12 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 	GBuffersSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 3);
 
 	OutputBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	
+	Renderer.ViewableTextures.emplace("Albedo", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ AlbedoBuffer, GBuffersSRV.GetView() });
+	Renderer.ViewableTextures.emplace("Normal", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ NormalBuffer, GBuffersSRV.GetView(1) });
+	Renderer.ViewableTextures.emplace("Depth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ DepthBuffer, GBuffersSRV.GetView(2) });
+	Renderer.ViewableTextures.emplace("Output", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ OutputBuffer, OutputBufferSRV.GetView() });
+
 	return true;
 }
 void DeferredRenderingPipeline::ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)

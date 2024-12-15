@@ -20,7 +20,7 @@ glm::mat4 Transform::GetModelMatrix(glm::mat4 parentWorldMatrix) const
 	parentWorldMatrix = glm::scale(parentWorldMatrix, Scale);
 	return parentWorldMatrix;
 }
-CSceneTransform::WorldTransform::operator ecs::Transform() const
+WorldTransform::operator ecs::Transform() const
 {
 	ecs::Transform transform;
 	transform.Position = GetPosition();
@@ -133,7 +133,7 @@ void CStaticRenderSystem::DepthOnlyPass(std::span<StaticRenderData> renderObject
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	ShadowMapPipelineState.Bind(cmd);
 
-	StaticRenderData lastRenderData{};
+ 	StaticRenderData lastRenderData{};
 	for (auto& renderObj : renderObjects)
 	{
 		if (renderObj.VertexBufferView.BufferLocation != lastRenderData.VertexBufferView.BufferLocation)
@@ -237,7 +237,7 @@ void CLightSystem::Update(entt::registry& registry, RenderFrameRecord& frameReco
 		frameRecord.LightInfo = { .View = ViewpointToRenderView(viewpoint, transform), .Color = light.Color, .Intensity = light.Intensity };
 	}
 }
-void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& io, float deltaTime)
+void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& io, float deltaTime, Renderer& renderer)
 {
 
 	if (io.IsKeyPressed(SDL_SCANCODE_ESCAPE))
@@ -274,8 +274,12 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 	if (ActiveViewpoint == entt::null)
 		ActiveViewpoint = cameraEntity;
 	
-	if(io.IsKeyPressed(SDL_SCANCODE_TAB))
+	if (io.IsKeyPressed(SDL_SCANCODE_TAB))
+	{
 		ActiveViewpoint = ActiveViewpoint == cameraEntity ? lightEntity : cameraEntity;
+		if(!renderer.ViewingTexture || renderer.ViewingTexture == "ShadowMap")
+		renderer.ViewingTexture = ActiveViewpoint == cameraEntity ? std::nullopt : std::optional<std::string>("ShadowMap");
+	}
 
 	auto& controlledViewpoint = registry.get<CViewpoint>(ActiveViewpoint);
 	auto& controlledController = registry.get<CViewpointController>(ActiveViewpoint);
@@ -367,7 +371,41 @@ void CUISystem::Destroy()
 	ImGui_ImplSDL2_Shutdown();
 	ImGui::DestroyContext();
 }
-void CUISystem::Update(entt::registry& registry, RenderFrameRecord& frameRecord)
+void CUISystem::ProcessEvent(const SDL_Event& event)
+{
+	ImGui_ImplSDL2_ProcessEvent(&event);
+}
+static void UIDrawMeshTree(entt::registry& registry, entt::entity curEntity)
+{
+	std::string name = "Unknown";
+	if(auto* entityName = registry.try_get<CEntityInfo>(curEntity))
+		name = entityName->Name;
+	ImGui::PushID(name.c_str());
+		
+	if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_Framed))
+	{
+		auto* sceneTransform = registry.try_get<CSceneTransform>(curEntity);
+		if (sceneTransform)
+		{
+			auto transform = sceneTransform->LocalTransform();
+			ImGui::InputFloat3("Local Position", &transform.Position.x, "%.3f");
+			ImGui::InputFloat3("Local Rotation", &transform.Rotation.x, "%.3f");
+			ImGui::InputFloat3("Local Scale", &transform.Scale.x, "%.3f");
+			sceneTransform->SetTransform(transform);
+		}
+		if (auto* staticRenderable = registry.try_get<CStaticRenderable>(curEntity))
+		{
+			ImGui::Checkbox("Hidden", &staticRenderable->Hidden);
+		}
+		if(sceneTransform)
+			for (auto& child : sceneTransform->Children)
+				UIDrawMeshTree(registry, child->Entity);
+		ImGui::TreePop();
+	}   
+		
+	ImGui::PopID();
+}
+void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 {
 	// Start the Dear ImGui frame
 	ImGui_ImplDX12_NewFrame();
@@ -375,9 +413,156 @@ void CUISystem::Update(entt::registry& registry, RenderFrameRecord& frameRecord)
 	
 	// Draw UI
 	ImGui::NewFrame();
-	ImGui::ShowDemoWindow();
-	ImGui::Render();
-	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), frameRecord.CmdContext);
+	
 
+	{
+		ImGui::Begin("Scene");
+		//Camera
+		auto camera = registry.view<CCamera, CViewpoint, CSceneTransform>().front();
+		if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::PushID("Camera");
+			auto& sceneTransform = registry.get<ecs::CSceneTransform>(camera);
+			auto transform = sceneTransform.LocalTransform();
+			ImGui::InputFloat3("Position", &transform.Position.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			ImGui::InputFloat3("Rotation", &transform.Rotation.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			auto dir = sceneTransform.GetWorldTransform().GetForward();
+			ImGui::InputFloat3("Direction", &dir.x, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			auto& viewpoint = registry.get<ecs::CViewpoint>(camera);
+			if (auto* perspective = std::get_if<ecs::CViewpoint::Perspective>(&viewpoint.Projection))
+				ImGui::InputFloat("FoV", &perspective->Fov, 0.f, 0.f, "%.3f", ImGuiInputTextFlags_ReadOnly);
+			if (auto* cameraController = registry.try_get<ecs::CViewpointController>(camera))
+			{
+				ImGui::SliderFloat("Move Speed", &cameraController->MoveSpeed, 0.0f, 10000.0f);
+				ImGui::SliderFloat("Rotation Speed", &cameraController->RotateSpeed, 0.1f, 10.0f);
+				if (ImGui::Button("Reset"))
+					viewpoint = cameraController->OriginalViewpoint;
+			}
+			ImGui::PopID();
+		}
+
+		//Light
+		auto dirLight = registry.view<CLight, CViewpoint, CSceneTransform, CViewpointController>().front();
+		if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::PushID("Light");
+			auto& sceneTransform = registry.get<ecs::CSceneTransform>(dirLight);
+			auto transform = sceneTransform.LocalTransform();
+			bool transformChanged = ImGui::InputFloat3("Position", &transform.Position.x, "%.3f");
+			transformChanged |= ImGui::InputFloat3("Rotation", &transform.Rotation.x, "%.3f");
+			auto dir = sceneTransform.GetWorldTransform().GetForward();
+			ImGui::InputFloat3("Direction", &dir.x, "%.3f", ImGuiSliderFlags_NoInput);
+
+			auto& light = registry.get<ecs::CLight>(dirLight);
+			ImGui::ColorEdit3("Color", &light.Color.x);
+			ImGui::SliderFloat("Intensity", &light.Intensity, 0.0f, 10.0f);
+			ImGui::ColorEdit3("Ambient Color", &light.Ambient.x);
+
+			auto& viewpoint = registry.get<ecs::CViewpoint>(dirLight);
+			if (auto* ortographic = std::get_if<ecs::CViewpoint::Orthographic>(&viewpoint.Projection))
+			{
+				ImGui::SliderFloat("Width", &ortographic->Width, 0.0f, 100.0f);
+				ImGui::SliderFloat("Height", &ortographic->Height, 0.0f, 100.0f);
+			}
+
+			float yawDegrees = glm::degrees(transform.Rotation.x);
+			ImGui::SliderFloat("Yaw", &yawDegrees, 0.0f, 360.0f, "%.3f", ImGuiSliderFlags_NoInput);
+			transform.Rotation.x = glm::radians(yawDegrees);
+			float pitchDegress = glm::degrees(transform.Rotation.y);
+			ImGui::SliderFloat("Pitch", &pitchDegress, -90.0f, 90.0f, "%.3f", ImGuiSliderFlags_NoInput);
+			transform.Rotation.y = glm::radians(pitchDegress);
+			
+			if(transformChanged)
+				sceneTransform.SetTransform(transform);
+			if (ImGui::Button("Reset"))
+			{
+				auto& controller = registry.get<ecs::CViewpointController>(dirLight);
+				sceneTransform.SetTransform(controller.OriginalTransform);
+				viewpoint = controller.OriginalViewpoint;
+			}
+			ImGui::PopID();
+		}
+#if RAD_ENABLE_EXPERIMENTAL
+		if (ImGui::CollapsingHeader("Terrain", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::PushID("Terrain");
+			if (ImGui::Button("Generate Base Height Map"))
+				g_RenderingTasks.push([]()
+					{
+						g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
+					});
+			if (ImGui::Button("Erode Terrain"))
+				g_RenderingTasks.push([]()
+					{
+						g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
+					});
+			ImGui::Checkbox("With Water", &ErosionParams.MeshWithWater);
+			ImGui::Checkbox("Base from File", &ErosionParams.BaseFromFile);
+			if (!ErosionParams.BaseFromFile)
+			{
+				ImGui::SliderFloat("Initial Roughness", &ErosionParams.InitialRoughness, 0.0f, 2.0f);
+				ImGui::Checkbox("Random", &ErosionParams.Random);
+				if (!ErosionParams.Random)
+					ImGui::SliderInt("Seed", &ErosionParams.Seed, 0, 100000);
+			}
+			ImGui::SliderFloat("Min Height", &ErosionParams.MinHeight, 0.0f, 100.0f);
+			ImGui::SliderFloat("Max Height", &ErosionParams.MaxHeight, 0.0f, 200.0f);
+			ImGui::Checkbox("Erode Each Frame", &ErosionParams.ErodeEachFrame);
+			ImGui::SliderInt("Iterations", &ErosionParams.Iterations, 1, 1024);
+			ImGui::SliderFloat("Total Length", &ErosionParams.TotalLength, 100.0f, 2048.0f);
+
+
+			ImGui::SliderFloat("Rain Rate", &ErosionParams.RainRate, 0.0f, 0.1f);
+			ImGui::SliderFloat("Pipe Cross Section", &ErosionParams.PipeCrossSection, 0.0f, 100.0f);
+			ImGui::SliderFloat("Evaporation Rate", &ErosionParams.EvaporationRate, 0.0f, 0.1f);
+			ImGui::SliderFloat("Sediment Capacity", &ErosionParams.SedimentCapacity, 0.0f, 2.0f);
+			ImGui::SliderFloat("Soil Suspension Rate", &ErosionParams.SoilSuspensionRate, 0.0f, 2.f);
+			ImGui::SliderFloat("Sediment Deposition Rate", &ErosionParams.SedimentDepositionRate, 0.0f, 3.0f);
+			ImGui::SliderFloat("Soil Hardening Rate", &ErosionParams.SoilHardeningRate, 0.0f, 2.0f);
+			ImGui::SliderFloat("Soil Softening Rate", &ErosionParams.SoilSofteningRate, 0.0f, 2.0f);
+			ImGui::SliderFloat("Minimum Soil Softness", &ErosionParams.MinimumSoilSoftness, 0.0f, 1.0f);
+			ImGui::SliderFloat("Maximal Erosion Depth", &ErosionParams.MaximalErosionDepth, 0.0f, 40.0f);
+
+			ImGui::SliderFloat("Softness Talus Coefficient", &ErosionParams.SoftnessTalusCoefficient, 0.0f, 1.0f);
+			ImGui::SliderFloat("Min Talus Coefficient", &ErosionParams.MinTalusCoefficient, 0.0f, 1.0f);
+			ImGui::SliderFloat("Thermal Erosion Rate", &ErosionParams.ThermalErosionRate, 0.0f, 5.0f);
+
+			ImGui::PopID();
+		}
+#endif
+
+		if (ImGui::CollapsingHeader("Texture View"))
+		{
+			
+			if (ImGui::BeginCombo("Textures", renderer.ViewingTexture ? renderer.ViewingTexture->c_str() : "None"))
+			{
+				for (auto& [name, func] : renderer.ViewableTextures)
+				{
+					if (ImGui::Selectable(name.c_str()))
+						renderer.ViewingTexture = name;
+				}
+				if (ImGui::Selectable("None"))
+				{
+					renderer.ViewingTexture = std::nullopt;
+				}
+				ImGui::EndCombo();
+			}
+		}
+
+		if (ImGui::TreeNodeEx("Entities", ImGuiTreeNodeFlags_Framed))
+		{
+			auto view = registry.view<CSceneTransform>();
+			for (auto entity : view)
+			{
+				auto& transform = view.get<CSceneTransform>(entity);
+				if (transform.Parent == nullptr)
+					UIDrawMeshTree(registry, entity);
+			}
+			ImGui::TreePop();
+		}
+		ImGui::End();
+	}
+	
+	ImGui::Render();
 }
 };

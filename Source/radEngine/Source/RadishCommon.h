@@ -11,8 +11,8 @@
 #include <unordered_map>
 #include <variant>
 
-#define GLM_FORCE_ROW_MAJOR
 #define GLM_FORCE_LEFT_HANDED
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
 #define RAD_ENABLE_EXPERIMENTAL 0

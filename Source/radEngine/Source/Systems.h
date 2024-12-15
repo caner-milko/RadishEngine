@@ -27,67 +27,31 @@ struct Transform
 
 	glm::mat4 GetModelMatrix(glm::mat4 parentWorldMatrix = glm::mat4(1.0f)) const;
 };
-
+struct WorldTransform
+{
+	glm::mat4 WorldMatrix = glm::mat4(1.0f);
+	// For directx, so row-major
+	glm::vec3 GetPosition() const { return glm::vec3(WorldMatrix[3]); }
+	glm::vec3 GetScale() const { return glm::vec3(glm::length(glm::vec3(WorldMatrix[0])), glm::length(glm::vec3(WorldMatrix[1])), glm::length(glm::vec3(WorldMatrix[2]))); }
+	glm::vec3 GetForward() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 0, 1.0f); }
+	glm::vec3 GetRight() const { return glm::mat3(WorldMatrix) * glm::vec3(-1.0f, 0, 0); }
+	glm::vec3 GetUp() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 1.0f, 0); }
+	glm::mat3 GetRotation() const { return glm::mat3(WorldMatrix); }
+	operator ecs::Transform() const;
+};
 struct CSceneTransform
 {
-	struct WorldTransform
-	{
-		glm::mat4 WorldMatrix = glm::mat4(1.0f);
-		// For directx, so row-major
-		glm::vec3 GetPosition() const { return glm::vec3(WorldMatrix[3]); }
-		glm::vec3 GetScale() const { return glm::vec3(glm::length(glm::vec3(WorldMatrix[0])), glm::length(glm::vec3(WorldMatrix[1])), glm::length(glm::vec3(WorldMatrix[2]))); }
-		glm::vec3 GetForward() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 0, 1.0f); }
-		glm::vec3 GetRight() const { return glm::mat3(WorldMatrix) * glm::vec3(-1.0f, 0, 0);	}
-		glm::vec3 GetUp() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 1.0f, 0); }
-		glm::mat3 GetRotation() const { return glm::mat3(WorldMatrix); }
-		operator ecs::Transform() const;
-	};
+	CSceneTransform(entt::entity entity) : Entity(entity) {}
 	CSceneTransform* Parent = nullptr;
-	std::vector<CSceneTransform*> Children;
+	std::vector<Ref<CSceneTransform>> Children;
+	entt::entity Entity = entt::null;
 
+	ecs::Transform const& LocalTransform() const { return Transform; }
 
 	WorldTransform GetWorldTransform() const
 	{
 		WorldTransform parentWorldTransform = GetParentWorldTransform();
 		return WorldTransform{ .WorldMatrix = Transform.GetModelMatrix(parentWorldTransform.WorldMatrix) };
-	}
-
-	ecs::Transform const& LocalTransform() const { return Transform; }
-
-	void SetParent(CSceneTransform* parent)
-	{
-		if (Parent != nullptr)
-		{
-			std::erase_if(Parent->Children, [this](auto child) { return child == this; });
-		}
-		Parent = parent;
-		if (parent != nullptr)
-		{
-			parent->Children.push_back(this);
-		}
-		InvalidateParentTransform();
-	}
-
-	void SetTransform(const ecs::Transform& transform)
-	{
-		Transform = transform;
-		InvalidateChildTransforms();
-	}
-
-private:
-	Transform Transform;
-	mutable std::optional<WorldTransform> CachedParentWorldTransform;
-
-	void InvalidateParentTransform() const
-	{
-		CachedParentWorldTransform.reset();
-		InvalidateChildTransforms();
-	}
-
-	void InvalidateChildTransforms() const
-	{
-		for (auto child : Children)
-			child->InvalidateParentTransform();
 	}
 
 	WorldTransform GetParentWorldTransform() const
@@ -101,10 +65,47 @@ private:
 		}
 		return *CachedParentWorldTransform;
 	}
+
+	void SetParent(CSceneTransform* parent)
+	{
+		if (Parent != nullptr)
+		{
+			std::erase_if(Parent->Children, [this](Ref<CSceneTransform> child) { return child.Ptr() == this; });
+		}
+		Parent = parent;
+		if (parent != nullptr)
+		{
+			parent->Children.push_back(*this);
+		}
+		InvalidateParentTransform();
+	}
+
+	void SetTransform(const ecs::Transform& transform)
+	{
+		Transform = transform;
+		InvalidateChildTransforms();
+	}
+
+	void InvalidateParentTransform() const
+	{
+		CachedParentWorldTransform.reset();
+		InvalidateChildTransforms();
+	}
+
+	void InvalidateChildTransforms() const
+	{
+		for (auto child : Children)
+			child->InvalidateParentTransform();
+	}
+
+private:
+	Transform Transform;
+	mutable std::optional<WorldTransform> CachedParentWorldTransform;
 };
 
 struct CStaticRenderable
 {
+	bool Hidden = false;
 	DXTypedBuffer<Vertex> Vertices;
 	DXTypedBuffer<uint32_t> Indices;
 	Material Material;
@@ -169,20 +170,21 @@ struct CViewpointController
 	CViewpointController(Transform transform, CViewpoint viewpoint) : OriginalTransform(transform), OriginalViewpoint(std::move(viewpoint)) {}
 	Transform OriginalTransform;
 	CViewpoint OriginalViewpoint;
-	float MoveSpeed = 1.0f;
-	float RotateSpeed = 1.0f;
+	float MoveSpeed = 5.0f;
+	float RotateSpeed = 2.0f;
 };
 struct CViewpointControllerSystem
 {
 	entt::entity ActiveViewpoint = entt::null;
-	void Update(entt::registry& registry, InputManager& io, float deltaTime);
+	void Update(entt::registry& registry, InputManager& io, float deltaTime, Renderer& renderer);
 };
 
 struct CUISystem
 {
 	void Init(Renderer& renderer, SDL_Window* window);
 	void Destroy();
-	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
+	void ProcessEvent(const SDL_Event& event);
+	void Update(entt::registry& registry, Renderer& renderer);
 };
 
 struct CTerrain
