@@ -26,7 +26,7 @@ struct PipelineState
 	}
 	
 	static PipelineState Create(std::string_view name, RadDevice& device, D3D12_PIPELINE_STATE_STREAM_DESC const& pssd, RootSignature* rs);
-	static PipelineState CreateComputePipeline(std::string_view name, Renderer& renderer, std::wstring_view shaderPath, RootSignature* rs, std::wstring_view entryPoint = L"CSMain", std::span<const std::wstring_view> includeFolders = {});
+	static PipelineState CreateBindlessComputePipeline(std::string_view name, Renderer& renderer, std::wstring_view shaderPath, std::wstring_view entryPoint = L"CSMain", std::span<const std::wstring_view> includeFolders = {});
 
 	std::string Name;
 

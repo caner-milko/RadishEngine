@@ -173,6 +173,11 @@ struct DXTypedBuffer : DXBuffer
 		return DXTypedBuffer(DXBuffer::CreateAndUpload(device, name, commandCtx, std::span<const std::byte>((std::byte const*)data.data(), data.size_bytes()), state, flags));
 	}
 
+	ComPtr<ID3D12Resource> Upload(CommandContext& commandCtx, std::span<const T> data, size_t offset = 0)
+	{
+		return Upload(commandCtx, std::span<const std::byte>((std::byte const*)data.data(), data.size_bytes()), offset);
+	}
+
 	UnorderedAccessView CreateTypedUAV(size_t firstElement = 0, D3D12_BUFFER_UAV_FLAGS flags = D3D12_BUFFER_UAV_FLAG_NONE)
 	{
 		return CreateUAV(Size / sizeof(T), sizeof(T), firstElement, flags);

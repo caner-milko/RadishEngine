@@ -221,6 +221,13 @@ void Renderer::Render(RenderFrameRecord& record)
 	}
 	auto cmdContext = activeCmdContext->AsCommandContext();
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
+	while (!record.CommandRecord.Queue.empty())
+	{
+		auto& command = record.CommandRecord.Queue.front();
+		command.Command(cmdContext);
+		record.CommandRecord.Queue.pop();
+	}
+
 	DeferredPipeline->ShadowMapPass(cmdContext, record);
 	DeferredPipeline->DeferredRenderPass(cmdContext, record);
 	DeferredPipeline->LightingPass(cmdContext, record);
@@ -230,7 +237,6 @@ void Renderer::Render(RenderFrameRecord& record)
 		viewingTexture,
 		Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex),
 		viewingTextureSRV);
-	// TODO: Render ImGui
 	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
 	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
 	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);

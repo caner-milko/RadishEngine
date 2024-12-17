@@ -5,8 +5,11 @@
 #include "Graphics/RendererCommon.h"
 #include "Graphics/Model.h"
 #include "Graphics/PipelineState.h"
+#include "Compute/Terrain/TerrainResources.hlsli"
+#include "InputManager.h"
+#include "Graphics/Renderer.h"
+#include "entt/entt.hpp"
 
-#if RAD_ENABLE_EXPERIMENTAL
 namespace rad::proc
 {
 
@@ -18,36 +21,46 @@ struct RWTexture : public DXTexture
 	DescriptorAllocation SRV{};
 };
 
-struct TerrainData
+struct CTerrain
 {
-	uint32_t MeshResX = 256, MeshResY = 256;
-	std::optional<StandaloneModel> TerrainModel = std::nullopt;
-	std::optional<Material> TerrainMaterial{};
-	std::optional<StandaloneModel> WaterModel = std::nullopt;
-	std::optional<Material> WaterMaterial{};
+	std::shared_ptr<RWTexture> HeightMap{};
 
-	RWTexture HeightMap{};
-	RWTexture TerrainAlbedoTex{};
-	RWTexture TerrainNormalMap{};
-	DescriptorAllocation TerrainVerticesUAV{};
+	std::shared_ptr<RWTexture> WaterHeightMap{};
 
-	RWTexture WaterHeightMap{};
-	RWTexture WaterAlbedoTex{};
-	RWTexture WaterNormalMap{};
-	DescriptorAllocation WaterVerticesUAV{};
-
-	RWTexture TempHeightMap{};
-	RWTexture SedimentMap{};
-	RWTexture TempSedimentMap{};
-	RWTexture WaterOutflux{};
-	RWTexture VelocityMap{};
-	RWTexture ThermalPipe1{};
-	RWTexture ThermalPipe2{};
-	RWTexture SoftnessMap{};
+	std::shared_ptr<RWTexture> TempHeightMap{};
+	std::shared_ptr<RWTexture> SedimentMap{};
+	std::shared_ptr<RWTexture> TempSedimentMap{};
+	std::shared_ptr<RWTexture> WaterOutflux{};
+	std::shared_ptr<RWTexture> VelocityMap{};
+	std::shared_ptr<RWTexture> ThermalPipe1{};
+	std::shared_ptr<RWTexture> ThermalPipe2{};
+	std::shared_ptr<RWTexture> SoftnessMap{};
 	uint32_t IterationCount = 0;
 };
 
-struct ErosionParameters
+struct CIndexedPlane
+{
+	uint32_t ResX = 256, ResY = 256;
+	std::shared_ptr<DXTypedBuffer<uint32_t>> Indices;
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
+};
+
+struct CTerrainRenderable
+{
+	std::shared_ptr<RWTexture> HeightMap{};
+	std::shared_ptr<RWTexture> TerrainAlbedoTex{};
+	std::shared_ptr<RWTexture> TerrainNormalMap{};
+};
+
+struct CWaterRenderable
+{
+	std::shared_ptr<RWTexture> HeightMap{};
+	std::shared_ptr<RWTexture> WaterHeightMap{};
+	std::shared_ptr<RWTexture> WaterAlbedoMap{};
+	std::shared_ptr<RWTexture> WaterNormalMap{};
+};
+
+struct CErosionParameters
 {
 	bool ErodeEachFrame = true;
 	bool Random = false;
@@ -75,33 +88,57 @@ struct ErosionParameters
 	bool MeshWithWater = false;
 };
 
-struct TerrainGenerator
+struct TerrainErosionSystem
 {
-	bool Setup(ID3D12Device2* dev);
+	TerrainErosionSystem(Renderer& renderer) : Renderer(renderer) {}
+	bool Setup();
 
 	std::vector<float> CreateDiamondSquareHeightMap(uint32_t width, float roughness);
-	TerrainData InitializeTerrain(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, uint32_t resX, uint32_t resY, uint32_t heightMapWidth);
-	void GenerateBaseHeightMap(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters, bool generateMeshAndMaterial = true);
-	void ErodeTerrain(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters, bool generateMeshAndMaterial = true);
-	void GenerateMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters);
-	void GenerateMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain, ErosionParameters const& parameters);
-	
-	ID3D12Device2* Device = nullptr;
-	PipelineState HeightMapToMeshPSO;
-	PipelineState HeightMapToMaterialPSO;
-	PipelineState ThermalOutfluxPSO;
-	PipelineState ThermalDepositPSO;
+	CTerrain CreateTerrain(uint32_t heightMapWidth);
+	CIndexedPlane CreatePlane(CommandRecord& cmdRecord, uint32_t resX, uint32_t resY);
+	CTerrainRenderable CreateTerrainRenderable(CTerrain& terrain);
+	CWaterRenderable CreateWaterRenderable(CTerrain& terrain);
+	void GenerateBaseHeightMap(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable);
+	void ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable);
+	void GenerateTerrainMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, CTerrainRenderable& terrainRenderable);
+	void GenerateWaterMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, CWaterRenderable& waterRenderable);
 
-	PipelineState HydrolicAddWaterPSO;
-	PipelineState HydrolicCalculateOutfluxPSO;
-	PipelineState HydrolicUpdateWaterVelocityPSO;
-	PipelineState HydrolicErosionAndDepositionPSO;
-	PipelineState HydrolicSedimentTransportationAndEvaporationPSO;
+	void Update(entt::registry& registry, InputManager& inputMan, RenderFrameRecord& frameRecord);
 
 private:
-	void InitializeMesh(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
-	void InitializeMaterial(ID3D12Device* device, FrameContext& frameCtx, ID3D12GraphicsCommandList2* cmdList, TerrainData& terrain);
+	Renderer& Renderer;
+	ComputePipelineState<hlsl::HeightToTerrainMaterialResources> HeightMapToTerrainMaterialPSO;
+	ComputePipelineState<hlsl::HeightToWaterMaterialResources> HeightMapToWaterMaterialPSO;
+	ComputePipelineState<hlsl::ThermalOutfluxResources> ThermalOutfluxPSO;
+	ComputePipelineState<hlsl::ThermalDepositResources> ThermalDepositPSO;
+
+	ComputePipelineState<hlsl::HydrolicAddWaterResources> HydrolicAddWaterPSO;
+	ComputePipelineState<hlsl::HydrolicCalculateOutfluxResources> HydrolicCalculateOutfluxPSO;
+	ComputePipelineState<hlsl::HydrolicUpdateWaterVelocityResources> HydrolicUpdateWaterVelocityPSO;
+	ComputePipelineState<hlsl::HydrolicErosionAndDepositionResources> HydrolicErosionAndDepositionPSO;
+	ComputePipelineState<hlsl::HydrolicSedimentTransportationAndEvaporationResources> HydrolicSedimentTransportationAndEvaporationPSO;
+
+	struct TerrainRenderData
+	{
+		glm::mat4 WorldMatrix;
+		uint32_t IndexCount;
+		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		hlsl::TerrainRenderResources Resources;
+	};
+
+	void TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData);
+	void TerrainDeferredPass(std::span<TerrainRenderData> renderObjects, const RenderView& view, DeferredPassData& passData);
+
+	struct WaterRenderData
+	{
+		glm::mat4 WorldMatrix;
+		uint32_t IndexCount;
+		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		hlsl::WaterRenderResources Resources;
+	};
+
+	void WaterDepthOnlyPass(std::span<WaterRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData);
+	void WaterDeferredPass(std::span<WaterRenderData> renderObjects, const RenderView& view, DeferredPassData& passData);
 };
 
 }
-#endif

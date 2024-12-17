@@ -18,7 +18,7 @@ PipelineState PipelineState::Create(std::string_view name, RadDevice& device, D3
 	return ps;
 }
 
-PipelineState PipelineState::CreateComputePipeline(std::string_view name, Renderer& renderer, std::wstring_view shaderPath, rad::RootSignature* rs, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
+PipelineState PipelineState::CreateBindlessComputePipeline(std::string_view name, Renderer& renderer, std::wstring_view shaderPath, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
 {
 	struct ComputePipelineStream : PipelineStateStreamBase
 	{
@@ -27,7 +27,7 @@ PipelineState PipelineState::CreateComputePipeline(std::string_view name, Render
 	std::wstring shaderName = s2ws(name) + L"_Shader";
 	auto cs = renderer.ShaderManager->CompileBindlessComputeShader(shaderName, shaderPath, entryPoint, includeFolders);
 	pipelineStateStream.CS = CD3DX12_SHADER_BYTECODE(cs->Blob.Get());
-	return Create(name, renderer.GetDevice(), pipelineStateStream, rs);
+	return Create(name, renderer.GetDevice(), pipelineStateStream, &renderer.ShaderManager->BindlessRootSignature);
 }
 
 }

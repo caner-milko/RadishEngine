@@ -122,7 +122,7 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 		renderObjects.push_back(renderData);
 	}
 
-	frameRecord.Push(TypedRenderCommand<StaticRenderData>{.Name = "StaticRender", .Data = renderObjects, 
+	frameRecord.Push(TypedRenderCommand<StaticRenderData>{.Name = "StaticRender", .Data = std::move(renderObjects), 
 		.DepthOnlyPass = [this](auto span, auto view, auto passData) {DepthOnlyPass(span, view, passData); },
 		.DeferredPass = [this](auto span, auto view, auto passData) {DeferredPass(span, view, passData); }
 	});

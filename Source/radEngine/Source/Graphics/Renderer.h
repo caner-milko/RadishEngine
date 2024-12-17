@@ -80,9 +80,24 @@ Create a FrameResource struct that is used by pipeline commands to pass resource
 //using FramePipelineCommand = std::function<void(CommandContext, RenderFrameRecord&)>;
 
 
+struct CommandRecord
+{
+	struct CommandRecordItem
+	{
+		std::string Name;
+		std::function<void(CommandContext&)> Command;
+	};
+	std::queue<CommandRecordItem> Queue;
+
+	void Push(std::string name, std::function<void(CommandContext&)> command)
+	{
+		Queue.push({ std::move(name), std::move(command) });
+	}
+};
+
 struct RenderFrameRecord
 {
-
+	CommandRecord CommandRecord;
 	uint64_t FrameNumber;
 	RenderView View;
 	RenderLightInfo LightInfo;

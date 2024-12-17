@@ -86,6 +86,8 @@ struct Ref : public std::reference_wrapper<T>
 {
 	using std::reference_wrapper<T>::reference_wrapper;
 
+	Ref(T& ref) : std::reference_wrapper<T>(ref) {}
+
 	//Define -> operator
 	T* operator->() const noexcept
 	{
@@ -105,6 +107,7 @@ struct OptionalRef
 	OptionalRef() = default;
 	OptionalRef(T& ref) : Ptr(&ref) {}
 	OptionalRef(Ref<T> ref) : Ptr(&ref.get()) {}
+	OptionalRef(T* ptr) : Ptr(ptr) {}
 	OptionalRef(std::optional<T>& opt) : Ptr(opt ? &opt.value() : nullptr) {}
 	OptionalRef(std::nullopt_t) : Ptr(nullptr) {}
 	operator bool() const { return Ptr != nullptr; }
