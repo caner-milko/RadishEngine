@@ -225,7 +225,8 @@ void DeferredRenderingPipeline::ShadowMapPass(CommandContext& cmdContext, Render
 	RenderView lightView = frameRecord.LightInfo.View;
 
 	for (auto& renderCommand : frameRecord.Commands)
-		renderCommand.DepthOnlyPass(lightView, passData);
+		if (renderCommand.DepthOnlyPass)
+			renderCommand.DepthOnlyPass(lightView, passData);
 }
 void DeferredRenderingPipeline::DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
@@ -259,7 +260,8 @@ void DeferredRenderingPipeline::DeferredRenderPass(CommandContext& cmdContext, R
 
 	DeferredPassData passData{ .CmdContext = cmdContext, .OutAlbedo = &AlbedoBuffer, .OutNormal = &NormalBuffer, .OutDepth = &DepthBuffer};
 	for (auto& renderCommand : frameRecord.Commands)
-		renderCommand.DeferredPass(frameRecord.View, passData);
+		if (renderCommand.DeferredPass)
+			renderCommand.DeferredPass(frameRecord.View, passData);
 }
 void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
@@ -327,5 +329,29 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 
 	LightingPipelineState.BindWithResources(cmdContext, lightingResources);
 	cmdContext->DrawInstanced(4, 1, 0, 0);
+}
+void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
+{
+	cmdContext->RSSetViewports(1, &Viewport);
+	cmdContext->RSSetScissorRects(1, &ScissorRect);
+
+	TransitionVec{}.Add(AlbedoBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(DepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ)
+		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Execute(cmdContext);
+
+	// Set Render Targets
+	{
+		auto rtv = OutputBufferRTV.GetCPUHandle();
+		auto dsv = DepthBufferDSV.GetCPUHandle();
+		cmdContext->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+	}
+
+	cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+
+	ForwardPassData passData{ .CmdContext = cmdContext, .OutColor = &OutputBuffer, .Depth = &DepthBuffer };
+	for (auto& renderCommand : frameRecord.Commands)
+		if (renderCommand.ForwardPass)
+			renderCommand.ForwardPass(frameRecord.View, passData);
 }
 }

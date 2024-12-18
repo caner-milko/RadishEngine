@@ -49,6 +49,13 @@ struct DeferredPassData
 	const DXTexture* OutDepth;
 };
 
+struct ForwardPassData
+{
+	CommandContext& CmdContext;
+	const DXTexture* OutColor;
+	const DXTexture* Depth;
+};
+
 struct RenderCommand
 {
 	std::string Name;
@@ -56,6 +63,7 @@ struct RenderCommand
 	size_t Size;
 	std::function<void(const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass;
 	std::function<void(const RenderView& view, DeferredPassData& passData)> DeferredPass;
+	std::function<void(const RenderView& view, ForwardPassData& passData)> ForwardPass;
 	std::move_only_function<void()> Destroy;
 };
 
@@ -69,8 +77,9 @@ struct TypedRenderCommand
 {
 	std::string Name;
 	std::vector<T> Data;
-	std::function<void(std::span<T> data, const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass;
-	std::function<void(std::span<T> data, const RenderView& view, DeferredPassData& passData)> DeferredPass;
+	std::function<void(std::span<T> data, const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass = nullptr;
+	std::function<void(std::span<T> data, const RenderView& view, DeferredPassData& passData)> DeferredPass = nullptr;
+	std::function<void(std::span<T> data, const RenderView& view, ForwardPassData& passData)> ForwardPass = nullptr;
 };
 
 
@@ -110,16 +119,28 @@ struct RenderFrameRecord
 		std::span<T> span(command.Data);
 		void* dataPtr = command.Data.data();
 		size_t size = command.Data.size() * sizeof(T);
-		Commands.emplace_back(std::move(command.Name), dataPtr, size,
-			[span, depthPass = std::move(command.DepthOnlyPass)](const RenderView& view, DepthOnlyPassData& passData)
+		RenderCommand renderCommand{
+			.Name = std::move(command.Name),
+			.Data = dataPtr,
+			.Size = size,
+			.Destroy = [vec = std::move(command.Data)]() mutable {},
+		};
+		if(command.DepthOnlyPass)
+			renderCommand.DepthOnlyPass = [span, depthPass = std::move(command.DepthOnlyPass)](const RenderView& view, DepthOnlyPassData& passData)
 			{
 				return depthPass(span, view, passData);
-			},
-			[span, deferredPass = std::move(command.DeferredPass)](const RenderView& view, DeferredPassData& passData)
+			};
+		if (command.DeferredPass)
+			renderCommand.DeferredPass = [span, deferredPass = std::move(command.DeferredPass)](const RenderView& view, DeferredPassData& passData)
 			{
 				return deferredPass(span, view, passData);
-			},
-			[vec = std::move(command.Data)]() mutable {});
+			};
+		if (command.ForwardPass)
+			renderCommand.ForwardPass = [span, forwardPass = std::move(command.ForwardPass)](const RenderView& view, ForwardPassData& passData)
+			{
+				return forwardPass(span, view, passData);
+			};
+		Commands.push_back(std::move(renderCommand));
 	}
 };
 

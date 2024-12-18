@@ -232,6 +232,7 @@ void Renderer::Render(RenderFrameRecord& record)
 	DeferredPipeline->ShadowMapPass(cmdContext, record);
 	DeferredPipeline->DeferredRenderPass(cmdContext, record);
 	DeferredPipeline->LightingPass(cmdContext, record);
+	DeferredPipeline->ForwardRenderPass(cmdContext, record);
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
 	BlitPipeline->Blit(cmdContext, Swapchain.BackBuffers[backbufferIndex],

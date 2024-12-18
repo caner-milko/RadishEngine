@@ -27,6 +27,7 @@ namespace rad
 		void ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 		void DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 		void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+		void ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 
 	private:
 		bool SetupLightingPass();

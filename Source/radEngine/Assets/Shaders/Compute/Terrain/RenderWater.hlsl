@@ -1,6 +1,6 @@
 #include "TerrainCommon.hlsli"
 
-ConstantBuffer<TerrainRenderResources> Resources : register(b0);
+ConstantBuffer<WaterRenderResources> Resources : register(b0);
 
 SamplerState MipMapSampler : register(s2);
 SamplerState linearSampler : register(s4);
@@ -20,13 +20,15 @@ struct VSOut
 VSOut VSMain(VSIn IN)
 {
     Texture2D<float> heightMap = GetBindlessResource(Resources.HeightMapTextureIndex);
+    Texture2D<float> waterHeightMap = GetBindlessResource(Resources.WaterHeightMapTextureIndex);
 	float2 meshPos = float2(IN.VertexId % Resources.MeshResY, IN.VertexId / Resources.MeshResY);
 	float2 texCoord = meshPos / float2(Resources.MeshResX, Resources.MeshResY);
 	uint2 heightMapSize;
 	heightMap.GetDimensions(heightMapSize.x, heightMapSize.y);
 	uint2 heightMapTexCoord = texCoord * heightMapSize;
-	float height = heightMap[heightMapTexCoord];
-	float4 pos = float4(texCoord.x, height, texCoord.y, 1.0f);
+    float height = heightMap[heightMapTexCoord];
+    float waterHeight = waterHeightMap[heightMapTexCoord];
+    float4 pos = float4(texCoord.x, height + waterHeight, texCoord.y, 1.0f);
 	VSOut OUT;
 	OUT.Pos = mul(Resources.MVP, pos);
 	OUT.TexCoord = texCoord;
@@ -35,28 +37,18 @@ VSOut VSMain(VSIn IN)
 
 struct PSOut
 {
-    float4 Albedo : SV_TARGET;
-    float4 Normal : SV_TARGET1;
+    float4 Color : SV_TARGET;
 };
 
 
 [RootSignature(BindlessRootSignature)]
 PSOut PSMain(VSOut IN)
 {
-    Texture2D<float4> albedoMap = GetBindlessResource(Resources.TerrainAlbedoTextureIndex);
-    Texture2D<float4> normalMap = GetBindlessResource(Resources.TerrainNormalMapTextureIndex);
+    Texture2D<float4> albedoMap = GetBindlessResource(Resources.WaterAlbedoTextureIndex);
+    Texture2D<float4> normalMap = GetBindlessResource(Resources.WaterNormalMapTextureIndex);
 	float4 diffuseCol = albedoMap.Sample(MipMapSampler, IN.TexCoord);
 
     PSOut output;
-    output.Albedo = diffuseCol;
-	float3 normalMapVal = normalMap.Sample(MipMapSampler, IN.TexCoord).xyz * 2 - 1;
-	normalMapVal = normalize(normalMapVal);
-	normalMapVal.x *= -1;
-
-	// Transform the normal with Resources.Normal matrix(mat3)
-	float3 normal = float3(normalMapVal.x, normalMapVal.z, normalMapVal.y);
-	output.Normal = float4(normalize(mul((float3x3) Resources.Normal, normal)), 0);
-	//output.Normal = float4(normalize(mul((float3x3) Resources.Normal, output.Normal.xyz)), 0);
-	//output.Albedo = float4(normalMapVal, 1);
+    output.Color = float4(diffuseCol.rgb, diffuseCol.a * 0.5);
     return output;
 }

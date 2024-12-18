@@ -210,8 +210,8 @@ void LoadSceneData()
 			});
 
 		ecs::Transform transform{};
-		transform.Scale *= 0.1f;
-		transform.Position = glm::vec3(-13, 15, -10);
+		transform.Scale = { 50.0f, 0.05f, 50.0f };
+		transform.Position = glm::vec3(-5, 15, 0);
 		terrainTransform.SetTransform(transform);
 		//terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
 		hlsl::MaterialBuffer terrainMaterial = {};

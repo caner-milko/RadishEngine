@@ -118,8 +118,9 @@ private:
 	ComputePipelineState<hlsl::HydrolicErosionAndDepositionResources> HydrolicErosionAndDepositionPSO;
 	ComputePipelineState<hlsl::HydrolicSedimentTransportationAndEvaporationResources> HydrolicSedimentTransportationAndEvaporationPSO;
 
-	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainRenderPSO;
-	GraphicsPipelineState<hlsl::WaterRenderResources> WaterRenderPSO;
+	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainDeferredPSO;
+	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainDepthOnlyPSO;
+	GraphicsPipelineState<hlsl::WaterRenderResources> WaterForwardPSO;
 
 	struct TerrainRenderData
 	{
@@ -140,8 +141,7 @@ private:
 		hlsl::WaterRenderResources Resources;
 	};
 
-	void WaterDepthOnlyPass(std::span<WaterRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData);
-	void WaterDeferredPass(std::span<WaterRenderData> renderObjects, const RenderView& view, DeferredPassData& passData);
+	void WaterForwardPass(std::span<WaterRenderData> renderObjects, const RenderView& view, ForwardPassData& passData);
 };
 
 }
