@@ -175,17 +175,18 @@ bool Renderer::Deinitialize()
 	TextureManager.reset();
 	ShaderManager.reset();
 	Swapchain.BackBuffers.clear();
-	if (Swapchain.Swapchain) { Swapchain.Swapchain->SetFullscreenState(false, nullptr); Swapchain.Swapchain = nullptr; }
-	if (Swapchain.SwapChainWaitableObject != nullptr) { CloseHandle(Swapchain.SwapChainWaitableObject); }
 	CommandContexts.clear();
 	CommandQueue = nullptr;
-	CommandList = nullptr;
 	if (Fence.FenceEvent)
 	{
 		CloseHandle(Fence.FenceEvent);
 		Fence.FenceEvent = nullptr;
 	}
 	Fence.Fence = nullptr;
+	CommandList = nullptr;
+	if (Swapchain.Swapchain) { Swapchain.Swapchain->SetFullscreenState(false, nullptr); Swapchain.Swapchain = nullptr; }
+	if (Swapchain.SwapChainWaitableObject != nullptr) { CloseHandle(Swapchain.SwapChainWaitableObject); }
+
 	g_CPUDescriptorAllocator = nullptr;
 	g_GPUDescriptorAllocator = nullptr;
 	Device = nullptr;

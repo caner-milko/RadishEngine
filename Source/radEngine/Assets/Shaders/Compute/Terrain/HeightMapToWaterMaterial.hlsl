@@ -46,13 +46,11 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     RWTexture2D<float4> waterNormalMap = GetBindlessResource(Resources.WaterNormalMapTextureIndex);
     
     uint2 albedoTextureSize;
-    albedoTex.GetDimensions(albedoTextureSize.x, albedoTextureSize.y);
+    waterAlbedoTex.GetDimensions(albedoTextureSize.x, albedoTextureSize.y);
     
     float2 texCoord = float2(dispatchID.xy) / float2(albedoTextureSize) + 0.5 / float2(albedoTextureSize);
 
     float heightCenter = heightMap.Sample(LinearSampler, texCoord);
-    
-    float slope = asin(sqrt(1 - normal.y * normal.y));
     
     float water = waterMap.Sample(LinearSampler, texCoord);
     

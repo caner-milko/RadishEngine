@@ -29,6 +29,8 @@ struct HeightToWaterMaterialResources
     
 struct TerrainRenderResources
 {
+    float4x4 MVP;
+    float4x4 Normal;
     uint MeshResX, MeshResY;
     uint HeightMapTextureIndex;
     uint TerrainAlbedoTextureIndex;
@@ -37,6 +39,8 @@ struct TerrainRenderResources
 
 struct WaterRenderResources
 {
+    float4x4 MVP;
+    float4x4 Normal;
     uint MeshResX, MeshResY;
     uint HeightMapTextureIndex;
     uint WaterHeightMapTextureIndex;

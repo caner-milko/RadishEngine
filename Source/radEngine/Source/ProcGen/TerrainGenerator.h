@@ -118,6 +118,9 @@ private:
 	ComputePipelineState<hlsl::HydrolicErosionAndDepositionResources> HydrolicErosionAndDepositionPSO;
 	ComputePipelineState<hlsl::HydrolicSedimentTransportationAndEvaporationResources> HydrolicSedimentTransportationAndEvaporationPSO;
 
+	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainRenderPSO;
+	GraphicsPipelineState<hlsl::WaterRenderResources> WaterRenderPSO;
+
 	struct TerrainRenderData
 	{
 		glm::mat4 WorldMatrix;

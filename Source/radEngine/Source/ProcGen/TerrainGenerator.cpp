@@ -138,6 +138,36 @@ namespace rad::proc
 		HydrolicErosionAndDepositionPSO = PipelineState::CreateBindlessComputePipeline("HydrolicErosionAndDeposition", Renderer, RAD_SHADERS_DIR L"Compute/Terrain/H4ErosionAndDeposition.hlsl");
 		HydrolicSedimentTransportationAndEvaporationPSO = PipelineState::CreateBindlessComputePipeline("HydrolicSedimentTransportationAndEvaporation", Renderer, RAD_SHADERS_DIR L"Compute/Terrain/H5SedimentTransportationAndEvaporation.hlsl");
 
+		{
+			struct TerraionRenderPipelineStateStream : PipelineStateStreamBase
+			{
+				CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+				CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+				CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+				CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+				CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+				CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
+			} pipelineStateStream;
+
+			pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+			auto [vertexShader, pixelShader] = Renderer.ShaderManager->CompileBindlessGraphicsShader(L"RenderTerrain", RAD_SHADERS_DIR L"Compute/Terrain/RenderTerrain.hlsl");
+
+			pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
+			pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
+
+			pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+			D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+			rtvFormats.NumRenderTargets = 2;
+			rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+			rtvFormats.RTFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+			pipelineStateStream.RTVFormats = rtvFormats;
+
+			pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+			TerrainRenderPSO = PipelineState::Create("TerrainRender", Renderer.GetDevice(), pipelineStateStream, &Renderer.ShaderManager->BindlessRootSignature);
+		}
+
 		return true;
 	}
 
@@ -217,8 +247,11 @@ namespace rad::proc
 			int width, height, channels;
 			float* heightMapVals = stbi_loadf(RAD_ASSETS_DIR "heightmap.png", &width, &height, &channels, 1);
 			scaleHeightMaps(heightMapVals, width * height, parameters.MinHeight, parameters.MaxHeight);
-			cmdRecord.Push("UploadHeightMap", [heightMapVals, 
-			terrain.HeightMap->UploadDataTyped<float>(cmdContext, std::span<const float>(heightMapVals, width * width));
+			cmdRecord.Push("UploadHeightMap", [heightMap = terrain.HeightMap, heightMapVals, width, height, channels](CommandContext& cmdContext)
+			{
+				heightMap->UploadDataTyped<float>(cmdContext, std::span<const float>(heightMapVals, width * width));
+				stbi_image_free(heightMapVals);
+			});
 		}
 		else
 		{
@@ -228,36 +261,43 @@ namespace rad::proc
 				generator = std::mt19937(time(0));
 			auto heightMapVals = CreateDiamondSquareHeightMap(terrain.HeightMap->Info.Width, parameters.InitialRoughness);
 			scaleHeightMaps(heightMapVals.data(), heightMapVals.size(), parameters.MinHeight, parameters.MaxHeight);
-			terrain.HeightMap->UploadDataTyped<float>(cmdContext, heightMapVals);
+			cmdRecord.Push("UploadHeightMap", [heightMap = terrain.HeightMap, heightMapVals = std::move(heightMapVals)](CommandContext& cmdContext)
+				{
+					heightMap->UploadDataTyped<float>(cmdContext, heightMapVals);
+				});
 		}
 
-		// Clear water/sediment/outflux/hardness maps
-		TransitionVec().Add(*terrain.WaterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*terrain.SedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*terrain.WaterOutflux, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*terrain.SoftnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdContext);
-		float clearValue[4] = { 0.f, 0.f, 0.f, 0.f };
-		auto cpuUAV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-		uavDesc.Format = terrain.WaterHeightMap->Info.Format;
-		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		uavDesc.Texture2D.MipSlice = 0;
-		uavDesc.Texture2D.PlaneSlice = 0;
-		terrain.WaterHeightMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
-		cmdContext->ClearUnorderedAccessViewFloat(terrain.WaterHeightMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), terrain.WaterHeightMap->Resource.Get(), clearValue, 0, nullptr);
-		uavDesc.Format = terrain.SedimentMap->Info.Format;
-		terrain.SedimentMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
-		cmdContext->ClearUnorderedAccessViewFloat(terrain.SedimentMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), terrain.SedimentMap->Resource.Get(), clearValue, 0, nullptr);
-		uavDesc.Format = terrain.WaterOutflux->Info.Format;
-		terrain.WaterOutflux->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
-		cmdContext->ClearUnorderedAccessViewFloat(terrain.WaterOutflux->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), terrain.WaterOutflux->Resource.Get(), clearValue, 0, nullptr);
-		uavDesc.Format = terrain.SoftnessMap->Info.Format;
-		float hardnessClearValue[4] = { 0.5f, 0.5f, 0.5f, 0.5f };
-		terrain.SoftnessMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
-		cmdContext->ClearUnorderedAccessViewFloat(terrain.SoftnessMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), terrain.SoftnessMap->Resource.Get(), hardnessClearValue, 0, nullptr);
-		g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StaticPage->Top--;
+		cmdRecord.Push("ClearMaps", [waterHeightMap = terrain.WaterHeightMap, sedimentMap = terrain.SedimentMap, waterOutflux = terrain.WaterOutflux, softnessMap = terrain.SoftnessMap](CommandContext& cmdContext)
+			{
+				// Clear water/sediment/outflux/hardness maps
+				TransitionVec().Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*sedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*waterOutflux, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*softnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(cmdContext);
+				float clearValue[4] = { 0.f, 0.f, 0.f, 0.f };
+				auto cpuUAV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+				D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+				uavDesc.Format = waterHeightMap->Info.Format;
+				uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+				uavDesc.Texture2D.MipSlice = 0;
+				uavDesc.Texture2D.PlaneSlice = 0;
+				waterHeightMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
+				cmdContext->ClearUnorderedAccessViewFloat(waterHeightMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), waterHeightMap->Resource.Get(), clearValue, 0, nullptr);
+				uavDesc.Format = sedimentMap->Info.Format;
+				sedimentMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
+				cmdContext->ClearUnorderedAccessViewFloat(sedimentMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), sedimentMap->Resource.Get(), clearValue, 0, nullptr);
+				uavDesc.Format = waterOutflux->Info.Format;
+				waterOutflux->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
+				cmdContext->ClearUnorderedAccessViewFloat(waterOutflux->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), waterOutflux->Resource.Get(), clearValue, 0, nullptr);
+				uavDesc.Format = softnessMap->Info.Format;
+				float hardnessClearValue[4] = { 0.5f, 0.5f, 0.5f, 0.5f };
+				softnessMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
+				cmdContext->ClearUnorderedAccessViewFloat(softnessMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(), softnessMap->Resource.Get(), hardnessClearValue, 0, nullptr);
+				g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StaticPage->Top--;
+			});
+
 		terrain.IterationCount = 0;
 		if (terrainRenderable)
-			GenerateTerrainMaterial(cmdContext,terrain, parameters, *terrainRenderable);
+			GenerateTerrainMaterial(cmdRecord, terrain, parameters, *terrainRenderable);
 		if (waterRenderable)
-			GenerateWaterMaterial(cmdContext, terrain, parameters, *waterRenderable);
+			GenerateWaterMaterial(cmdRecord, terrain, parameters, *waterRenderable);
 	}
 
 	void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable)
@@ -278,13 +318,13 @@ namespace rad::proc
 				 velocityMap = terrain.VelocityMap,
 				 parameters = CErosionParameters(parameters),
 				 iterationCount = terrain.IterationCount,
-				 HydrolicAddWaterPSO = Ref(HydrolicAddWaterPSO),
-				HydrolicCalculateOutfluxPSO = Ref(HydrolicCalculateOutfluxPSO),
-				HydrolicUpdateWaterVelocityPSO = Ref(HydrolicUpdateWaterVelocityPSO),
-				HydrolicErosionAndDepositionPSO = Ref(HydrolicErosionAndDepositionPSO),
-				HydrolicSedimentTransportationAndEvaporationPSO = Ref(HydrolicSedimentTransportationAndEvaporationPSO),
-				ThermalOutfluxPSO = Ref(ThermalOutfluxPSO),
-				ThermalDepositPSO = Ref(ThermalDepositPSO)
+				 hydrolicAddWaterPSO = Ref(HydrolicAddWaterPSO),
+				 hydrolicCalculateOutfluxPSO = Ref(HydrolicCalculateOutfluxPSO),
+				 hydrolicUpdateWaterVelocityPSO = Ref(HydrolicUpdateWaterVelocityPSO),
+				 hydrolicErosionAndDepositionPSO = Ref(HydrolicErosionAndDepositionPSO),
+				 hydrolicSedimentTransportationAndEvaporationPSO = Ref(HydrolicSedimentTransportationAndEvaporationPSO),
+				 thermalOutfluxPSO = Ref(ThermalOutfluxPSO),
+				 thermalDepositPSO = Ref(ThermalDepositPSO)
 				]
 				 (CommandContext& commandCtx)
 				{
@@ -316,7 +356,7 @@ namespace rad::proc
 						.Iteration = iterationCount,
 					};
 					TransitionVec().Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(commandCtx);
-					HydrolicAddWaterPSO->ExecuteCompute(commandCtx, addWaterResources, width / 8, height / 8, 1);
+					hydrolicAddWaterPSO->ExecuteCompute(commandCtx, addWaterResources, width / 8, height / 8, 1);
 
 					hlsl::HydrolicCalculateOutfluxResources calculateOutfluxResources{
 						.InHeightMapIndex = heightMap->SRV.Index,
@@ -326,7 +366,7 @@ namespace rad::proc
 						.PipeLength = pipeLength,
 					};
 					TransitionVec().Add(*heightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*waterHeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*waterOutflux, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(commandCtx);
-					HydrolicCalculateOutfluxPSO->ExecuteCompute(commandCtx, calculateOutfluxResources, width / 8, height / 8, 1);
+					hydrolicCalculateOutfluxPSO->ExecuteCompute(commandCtx, calculateOutfluxResources, width / 8, height / 8, 1);
 
 					hlsl::HydrolicUpdateWaterVelocityResources updateWaterVelocityResources{
 						.InFluxTextureIndex = waterOutflux->SRV.Index,
@@ -335,7 +375,7 @@ namespace rad::proc
 						.PipeLength = pipeLength,
 					};
 					TransitionVec().Add(*waterOutflux, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*velocityMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(commandCtx);
-					HydrolicUpdateWaterVelocityPSO->ExecuteCompute(commandCtx, updateWaterVelocityResources, width / 8, height / 8, 1);
+					hydrolicUpdateWaterVelocityPSO->ExecuteCompute(commandCtx, updateWaterVelocityResources, width / 8, height / 8, 1);
 
 					hlsl::HydrolicErosionAndDepositionResources erosionAndDepositionResources{
 						.InVelocityMapIndex = velocityMap->SRV.Index,
@@ -355,7 +395,7 @@ namespace rad::proc
 					};
 					TransitionVec().Add(*velocityMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*heightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*tempHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*sedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*softnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).
 						Execute(commandCtx);
-					HydrolicErosionAndDepositionPSO->ExecuteCompute(commandCtx, erosionAndDepositionResources, width / 8, height / 8, 1);
+					hydrolicErosionAndDepositionPSO->ExecuteCompute(commandCtx, erosionAndDepositionResources, width / 8, height / 8, 1);
 					// Copy temp height map to height map
 					TransitionVec().Add(*tempHeightMap, D3D12_RESOURCE_STATE_COPY_SOURCE).Add(*heightMap, D3D12_RESOURCE_STATE_COPY_DEST).Execute(commandCtx);
 					commandCtx->CopyResource(heightMap->Resource.Get(), tempHeightMap->Resource.Get());
@@ -370,17 +410,17 @@ namespace rad::proc
 						.EvaporationRate = parameters.EvaporationRate,
 					};
 					TransitionVec().Add(*velocityMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*sedimentMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*tempSedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(commandCtx);
-					HydrolicSedimentTransportationAndEvaporationPSO->ExecuteCompute(commandCtx, sedimentTransportationAndEvaporationResources, width / 8, height / 8, 1);
+					hydrolicSedimentTransportationAndEvaporationPSO->ExecuteCompute(commandCtx, sedimentTransportationAndEvaporationResources, width / 8, height / 8, 1);
 					// Copy temp sediment map to sediment map
 					TransitionVec().Add(*tempSedimentMap, D3D12_RESOURCE_STATE_COPY_SOURCE).Add(*sedimentMap, D3D12_RESOURCE_STATE_COPY_DEST).Execute(commandCtx);
 					commandCtx->CopyResource(sedimentMap->Resource.Get(), tempSedimentMap->Resource.Get());
 
 					TransitionVec().Add(*thermalPipe1, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*thermalPipe2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*heightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*softnessMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Execute(commandCtx);
-					ThermalOutfluxPSO->ExecuteCompute(commandCtx, outfluxResources, width / 8, height / 8, 1);
+					thermalOutfluxPSO->ExecuteCompute(commandCtx, outfluxResources, width / 8, height / 8, 1);
 
 					TransitionVec().Add(*thermalPipe1, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE).Add(*thermalPipe2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Add(*heightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 						.Execute(commandCtx);
-					ThermalDepositPSO->ExecuteCompute(commandCtx, depositResources, width / 8, height / 8, 1);
+					thermalDepositPSO->ExecuteCompute(commandCtx, depositResources, width / 8, height / 8, 1);
 				});
 			terrain.IterationCount++;
 		}
@@ -416,7 +456,7 @@ namespace rad::proc
 			[indices = std::move(indices), idxBuf = plane.Indices]
 			(CommandContext& commandCtx)
 			{
-				idxBuf->Upload(commandCtx, indices);
+				commandCtx.IntermediateResources.push_back(idxBuf->Upload(commandCtx, indices));
 			});
 		auto& idxBufView = plane.IndexBufferView;
 		idxBufView.BufferLocation = plane.Indices->Resource->GetGPUVirtualAddress();
@@ -575,6 +615,7 @@ namespace rad::proc
 			};
 			terrainRenderData.IndexBufferView = plane.IndexBufferView;
 			terrainRenderData.IndexCount = (plane.ResX - 1) * (plane.ResY - 1) * 6;
+			terrainRenderDataVec.push_back(terrainRenderData);
 		}
 
 		frameRecord.Push(TypedRenderCommand<TerrainRenderData>{.Name = "TerrainRender", .Data = std::move(terrainRenderDataVec),
@@ -605,6 +646,7 @@ namespace rad::proc
 			};
 			waterRenderData.IndexBufferView = plane.IndexBufferView;
 			waterRenderData.IndexCount = (plane.ResX - 1) * (plane.ResY - 1)* 6;
+			waterRenderDataVec.push_back(waterRenderData);
 		}
 
 		frameRecord.Push(TypedRenderCommand<WaterRenderData>{.Name = "WaterRender", .Data = std::move(waterRenderDataVec),
@@ -619,6 +661,24 @@ namespace rad::proc
 
 	void TerrainErosionSystem::TerrainDeferredPass(std::span<TerrainRenderData> renderObjects, const RenderView& view, DeferredPassData& passData)
 	{
+		auto& cmd = passData.CmdContext;
+		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		TerrainRenderPSO.Bind(cmd);
+
+		TerrainRenderData lastRenderData{};
+		for (auto& renderObj : renderObjects)
+		{
+			if (renderObj.IndexBufferView.BufferLocation != lastRenderData.IndexBufferView.BufferLocation)
+			{
+				lastRenderData.IndexBufferView = renderObj.IndexBufferView;
+				cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
+			}
+			rad::hlsl::TerrainRenderResources renderResources = renderObj.Resources;
+			renderResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
+			renderResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
+			TerrainRenderPSO.SetResources(cmd, renderResources);
+			cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+		}
 	}
 
 	void TerrainErosionSystem::WaterDepthOnlyPass(std::span<WaterRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData)

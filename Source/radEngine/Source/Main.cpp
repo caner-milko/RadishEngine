@@ -32,34 +32,21 @@ static SDL_Window* g_SDLWindow = nullptr;
 static HWND g_hWnd = nullptr;
 static Renderer g_Renderer;
 static entt::registry g_EnttRegistry;
-static entt::entity g_Camera;
-static entt::entity g_DirectionalLight;
 
-static struct EnttSystems
+struct EnttSystems
 {
+	EnttSystems(Renderer& renderer) : TerrainErosionSystem(renderer) {}
 	ecs::CCameraSystem CameraSystem{};
 	ecs::CViewpointControllerSystem ViewpointControllerSystem{};
 	ecs::CLightSystem LightSystem{};
 	ecs::CStaticRenderSystem StaticRenderSystem{};
 	ecs::CUISystem UISystem{};
-} g_EnttSystems;
+	proc::TerrainErosionSystem TerrainErosionSystem;
+};
+static std::unique_ptr<EnttSystems> g_EnttSystems;
 
 static int g_Width = 1920;
 static int g_Height = 1080;
-
-//proc::TerrainGenerator g_TerrainGenerator;
-//struct TerrainRenderData
-//{
-//    rad::proc::TerrainData Terrain{};
-//};
-//
-//std::unique_ptr<TerrainRenderData> Terrain;
-//proc::ErosionParameters ErosionParams = {};
-
-
-
-std::unordered_map<std::string, std::function<std::pair<rad::DXTexture*, rad::DescriptorAllocationView>()>> g_TextureSelections;
-std::string g_SelectedTexture = "None";
 
 void LoadSceneData();
 
@@ -120,41 +107,43 @@ void InitGame()
 {
 	InputManager::Create();
 	InputManager::Get().Init();
-	g_EnttSystems = {};
-	g_EnttSystems.StaticRenderSystem.Init(g_Renderer);
-	g_EnttSystems.UISystem.Init(g_Renderer, g_SDLWindow);
+	g_EnttSystems = std::make_unique<EnttSystems>(g_Renderer);
+	g_EnttSystems->StaticRenderSystem.Init(g_Renderer);
+	g_EnttSystems->UISystem.Init(g_Renderer, g_SDLWindow);
+	g_EnttSystems->TerrainErosionSystem.Setup();
 
-	g_Camera = g_EnttRegistry.create();
-	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_Camera, "Camera");
-	auto& camSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_Camera, g_Camera);
-	g_EnttRegistry.emplace<ecs::CCamera>(g_Camera);
-	auto& viewpoint =  g_EnttRegistry.emplace<ecs::CViewpoint>(g_Camera, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Perspective{.Fov = 60.0f, 
+	auto camera = g_EnttRegistry.create();
+	g_EnttRegistry.emplace<ecs::CEntityInfo>(camera, "Camera");
+	auto& camSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(camera, camera);
+	g_EnttRegistry.emplace<ecs::CCamera>(camera);
+	auto& viewpoint =  g_EnttRegistry.emplace<ecs::CViewpoint>(camera, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Perspective{.Fov = 60.0f,
 		.Near = 0.1f, .Far = 1000.0f, .AspectRatio = 16.0f / 9.0f, }});
 	ecs::Transform camTransform{};
 	camTransform.Position = { 5.3f, 2.f, -1.2f };
 	camTransform.Rotation = { 0.15f, -1.348f, 0.f };
 	camSceneTransform.SetTransform(camTransform);
-	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(g_Camera, ecs::CViewpointController(camSceneTransform.GetWorldTransform(), viewpoint));
+	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(camera, ecs::CViewpointController(camSceneTransform.GetWorldTransform(), viewpoint));
 
-	g_DirectionalLight = g_EnttRegistry.create();
-	g_EnttRegistry.emplace<ecs::CEntityInfo>(g_DirectionalLight, "DirectionalLight");
-	auto& lightSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(g_DirectionalLight, g_DirectionalLight);
+	auto dirLight = g_EnttRegistry.create();
+	g_EnttRegistry.emplace<ecs::CEntityInfo>(dirLight, "DirectionalLight");
+	auto& lightSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(dirLight, dirLight);
 	ecs::Transform lightTransform{};
 	lightTransform.Position = { 10.0f, 24.5f, -3.5f };
 	lightTransform.Rotation = { 1.0f, -1.2f, 0.f };
 	lightSceneTransform.SetTransform(lightTransform);
-	g_EnttRegistry.emplace<ecs::CLight>(g_DirectionalLight);
-	auto& lightViewpoint = g_EnttRegistry.emplace<ecs::CViewpoint>(g_DirectionalLight, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Orthographic{.Width = 50.0f, .Height = 50.0f} });
-	g_EnttRegistry.emplace<ecs::CViewpointController>(g_DirectionalLight, ecs::CViewpointController(lightSceneTransform.GetWorldTransform(), lightViewpoint));
+	g_EnttRegistry.emplace<ecs::CLight>(dirLight);
+	auto& lightViewpoint = g_EnttRegistry.emplace<ecs::CViewpoint>(dirLight, ecs::CViewpoint{ .Projection = ecs::CViewpoint::Orthographic{.Width = 50.0f, .Height = 50.0f} });
+	g_EnttRegistry.emplace<ecs::CViewpointController>(dirLight, ecs::CViewpointController(lightSceneTransform.GetWorldTransform(), lightViewpoint));
 }
 
 void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
 {
-	g_EnttSystems.ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime, g_Renderer);
-	g_EnttSystems.CameraSystem.Update(g_EnttRegistry, frameRecord);
-	g_EnttSystems.LightSystem.Update(g_EnttRegistry, frameRecord);
-	g_EnttSystems.StaticRenderSystem.Update(g_EnttRegistry, frameRecord);
-	g_EnttSystems.UISystem.Update(g_EnttRegistry, g_Renderer);
+	g_EnttSystems->TerrainErosionSystem.Update(g_EnttRegistry, InputManager::Get(), frameRecord);
+	g_EnttSystems->ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime, g_Renderer);
+	g_EnttSystems->CameraSystem.Update(g_EnttRegistry, frameRecord);
+	g_EnttSystems->LightSystem.Update(g_EnttRegistry, frameRecord);
+	g_EnttSystems->StaticRenderSystem.Update(g_EnttRegistry, frameRecord);
+	g_EnttSystems->UISystem.Update(g_EnttRegistry, g_Renderer);
 }
 
 bool InitRenderer(HWND window, uint32_t width, uint32_t height)
@@ -195,58 +184,50 @@ void LoadSceneData()
 		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{ .Vertices = *meshInfo.Model, .Indices = meshInfo.Indices, .Material = *meshInfo.Material });
 	}
 
-#if RAD_ENABLE_EXPERIMENTAL
-    g_Cam.Position = { -20, 38, -19, 0};
-    g_Cam.Rotation = { 0.7, 0.75, 0 };
-    Terrain = std::make_unique<TerrainRenderData>();
-    Terrain->Terrain = g_TerrainGenerator.InitializeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), 512, 512, 1024);
-	g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-    auto* terrainRoot = g_SceneTree.AddObject(MeshObject("TerrainRoot"));
-    terrainRoot->Scale *= 0.1f;
-    terrainRoot->Position = DirectX::XMVectorSet(-13, 15, -10, 0);
-    //terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
-	hlsl::MaterialBuffer terrainMaterial = {};
-    terrainMaterial.Diffuse = DirectX::XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
-    terrainRoot->Children.emplace_back("Terrain", Terrain->Terrain.TerrainModel->ToModelView(), &*Terrain->Terrain.TerrainMaterial);
-    terrainRoot->Children.push_back(MeshObject("Water", Terrain->Terrain.WaterModel->ToModelView(), &*Terrain->Terrain.WaterMaterial));
-    g_TextureSelections["TerrainHeightMap"] = []()
-        {
-            return std::pair{ &Terrain->Terrain.HeightMap, Terrain->Terrain.HeightMap.SRV.GetView() };
-        };
-	g_TextureSelections["TerrainWaterHeightMap"] = []()
-		{
-			return std::pair{ &Terrain->Terrain.WaterHeightMap, Terrain->Terrain.WaterHeightMap.SRV.GetView() };
-		};
-    g_TextureSelections["TerrainWaterOutfluxMap"] = []()
-        {
-            return std::pair{ &Terrain->Terrain.WaterOutflux, Terrain->Terrain.WaterOutflux.SRV.GetView() };
-        };
 
-    g_TextureSelections["TerrainVelocityMap"] = []()
-        {
-            return std::pair{ &Terrain->Terrain.VelocityMap, Terrain->Terrain.VelocityMap.SRV.GetView() };
-        };
-    g_TextureSelections["TerrainSedimentMap"] = []()
-        {
-            return std::pair{ &Terrain->Terrain.SedimentMap, Terrain->Terrain.SedimentMap.SRV.GetView() };
-        };
-	g_TextureSelections["TerrainNormalMap"] = []()
-		{
-			return std::pair{ &Terrain->Terrain.TerrainNormalMap, Terrain->Terrain.TerrainNormalMap.SRV.GetView() };
-		};
-	g_TextureSelections["TextureSoftnessMap"] = []()
-		{
-			return std::pair{ &Terrain->Terrain.SoftnessMap, Terrain->Terrain.SoftnessMap.SRV.GetView() };
-		};
-    g_TextureSelections["TerrainThermalPipe1"] = []()
-		{
-			return std::pair{ &Terrain->Terrain.ThermalPipe1, Terrain->Terrain.ThermalPipe1.SRV.GetView() };
-		};
-    g_TextureSelections["TerrainThermalPipe2"] = []()
-        {
-            return std::pair{ &Terrain->Terrain.ThermalPipe2, Terrain->Terrain.ThermalPipe2.SRV.GetView() };
-        };
-#endif
+	{
+		auto& terrainSystem = g_EnttSystems->TerrainErosionSystem;
+		entt::entity terrainEnt = g_EnttRegistry.create();
+		g_EnttRegistry.emplace<ecs::CEntityInfo>(terrainEnt, "Terrain");
+		auto& terrainTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(terrainEnt, terrainEnt);
+		auto& terrain = g_EnttRegistry.emplace<proc::CTerrain>(terrainEnt, terrainSystem.CreateTerrain(1024));
+		CommandRecord cmdRec{};
+		auto& indexedPlane = g_EnttRegistry.emplace<proc::CIndexedPlane>(terrainEnt, terrainSystem.CreatePlane(cmdRec, 512, 512));
+		auto& erosionParams = g_EnttRegistry.emplace<proc::CErosionParameters>(terrainEnt, proc::CErosionParameters{});
+		auto& terrainRenderable = g_EnttRegistry.emplace<proc::CTerrainRenderable>(terrainEnt, terrainSystem.CreateTerrainRenderable(terrain));
+		auto& waterRenderable = g_EnttRegistry.emplace<proc::CWaterRenderable>(terrainEnt, terrainSystem.CreateWaterRenderable(terrain));
+
+		terrainSystem.GenerateBaseHeightMap(cmdRec, terrain, erosionParams, terrainRenderable, waterRenderable);
+
+		g_Renderer.FrameIndependentCommand([cmdRec = std::move(cmdRec)](CommandContext& commandCtx) mutable
+			{
+				while (!cmdRec.Queue.empty())
+				{
+					auto& [name, cmd] = cmdRec.Queue.front();
+					cmd(commandCtx);
+					cmdRec.Queue.pop();
+				}
+			});
+
+		ecs::Transform transform{};
+		transform.Scale *= 0.1f;
+		transform.Position = glm::vec3(-13, 15, -10);
+		terrainTransform.SetTransform(transform);
+		//terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
+		hlsl::MaterialBuffer terrainMaterial = {};
+		g_Renderer.ViewableTextures.emplace("TerrainHeightMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.HeightMap, terrain.HeightMap->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainWaterHeightMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.WaterHeightMap, terrain.WaterHeightMap->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainWaterOutfluxMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.WaterOutflux, terrain.WaterOutflux->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainVelocityMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.VelocityMap, terrain.VelocityMap->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainSedimentMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.SedimentMap, terrain.SedimentMap->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TextureSoftnessMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.SoftnessMap, terrain.SoftnessMap->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainThermalPipe1", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.ThermalPipe1, terrain.ThermalPipe1->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainThermalPipe2", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrain.ThermalPipe2, terrain.ThermalPipe2->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainAlbedoMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrainRenderable.TerrainAlbedoTex, terrainRenderable.TerrainAlbedoTex->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("TerrainNormalMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *terrainRenderable.TerrainNormalMap, terrainRenderable.TerrainNormalMap->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("WaterAlbedoMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *waterRenderable.WaterAlbedoMap, waterRenderable.WaterAlbedoMap->SRV.GetView() });
+		g_Renderer.ViewableTextures.emplace("WaterNormalMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{ *waterRenderable.WaterNormalMap, waterRenderable.WaterNormalMap->SRV.GetView() });
+	}
 	auto fence = DXFence::Create(L"SceneLoadFence", g_Renderer.GetDevice());
 	g_Renderer.SubmitFrameIndependentCommands(fence, 1, true);
 	CloseHandle(fence.FenceEvent);
@@ -314,7 +295,7 @@ int main(int argv, char** args)
         SDL_Event sdlEvent;
         while (SDL_PollEvent(&sdlEvent))
         {
-            g_EnttSystems.UISystem.ProcessEvent(sdlEvent);
+            g_EnttSystems->UISystem.ProcessEvent(sdlEvent);
             if (sdlEvent.type == SDL_QUIT)
                 done = true;
             if (sdlEvent.type == SDL_WINDOWEVENT && sdlEvent.window.event == SDL_WINDOWEVENT_CLOSE && sdlEvent.window.windowID == SDL_GetWindowID(g_SDLWindow))
@@ -359,7 +340,7 @@ int main(int argv, char** args)
 	g_Renderer.WaitAllCommandContexts();
 
     // Cleanup
-	g_EnttSystems.UISystem.Destroy();
+	g_EnttSystems->UISystem.Destroy();
 
     g_Renderer.Deinitialize();
     SDL_DestroyWindow(g_SDLWindow);
