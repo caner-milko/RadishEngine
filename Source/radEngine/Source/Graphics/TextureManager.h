@@ -23,15 +23,15 @@ struct TextureManager
 	};
 
 	void GenerateMips(CommandContext& commandCtx, DXTexture& texture);
-	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, CommandContext& commandCtx, bool generateMips = true);
+	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, CommandContext& commandCtx,
+						   bool generateMips = true);
 
-private:
+  private:
 	std::unordered_map<TextureId, std::unique_ptr<DXTexture>> Textures;
 	std::unordered_map<std::filesystem::path, TextureId> LoadedTextures;
 	Renderer& Renderer;
-	TextureId NextId = { 1 };
+	TextureId NextId = {1};
 	GenerateMipsPipeline GenerateMipsPipeline;
 };
 
-}
-
+} // namespace rad

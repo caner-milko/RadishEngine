@@ -8,60 +8,83 @@
 
 namespace rad
 {
-	struct DeferredRenderingPipeline
+struct DeferredRenderingPipeline
+{
+	DeferredRenderingPipeline(rad::Renderer& renderer) : Renderer(renderer) {}
+	bool Setup();
+	bool OnResize(uint32_t width, uint32_t height);
+
+	DXTexture& GetOutputBuffer()
 	{
-		DeferredRenderingPipeline(rad::Renderer& renderer) : Renderer(renderer) {}
-		bool Setup();
-		bool OnResize(uint32_t width, uint32_t height);
+		return OutputBuffer;
+	}
+	DescriptorAllocationView GetOutputBufferSRV()
+	{
+		return OutputBufferSRV.GetView();
+	}
+	DXTexture& GetShadowMap()
+	{
+		return ShadowMap;
+	}
+	DescriptorAllocationView GetShadowMapSRV()
+	{
+		return ShadowMapSRV.GetView();
+	}
+	DXTexture& GetAlbedoBuffer()
+	{
+		return AlbedoBuffer;
+	}
+	DescriptorAllocationView GetAlbedoBufferSRV()
+	{
+		return GBuffersSRV.GetView();
+	}
+	DXTexture& GetNormalBuffer()
+	{
+		return NormalBuffer;
+	}
+	DescriptorAllocationView GetNormalBufferSRV()
+	{
+		return GBuffersSRV.GetView(1);
+	}
 
+	void ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	void DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	void ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 
-		DXTexture& GetOutputBuffer() { return OutputBuffer; }
-		DescriptorAllocationView GetOutputBufferSRV() { return OutputBufferSRV.GetView(); }
-		DXTexture& GetShadowMap() { return ShadowMap; }
-		DescriptorAllocationView GetShadowMapSRV() { return ShadowMapSRV.GetView(); }
-		DXTexture& GetAlbedoBuffer() { return AlbedoBuffer; }
-		DescriptorAllocationView GetAlbedoBufferSRV() { return GBuffersSRV.GetView(); }
-		DXTexture& GetNormalBuffer() { return NormalBuffer; }
-		DescriptorAllocationView GetNormalBufferSRV() { return GBuffersSRV.GetView(1); }
+  private:
+	bool SetupLightingPass();
+	bool SetupShadowMapPass();
 
-		void ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-		void DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-		void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-		void ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	Renderer& Renderer;
 
-	private:
-		bool SetupLightingPass();
-		bool SetupShadowMapPass();
+	DXTexture DepthBuffer{};
+	DXTexture AlbedoBuffer{};
+	DXTexture NormalBuffer{};
 
-		Renderer& Renderer;
+	DescriptorAllocation DepthBufferDSV{};
+	DescriptorAllocation AlbedoBufferRTV{};
+	DescriptorAllocation NormalBufferRTV{};
+	DescriptorAllocation GBuffersSRV{};
 
-		DXTexture DepthBuffer{};
-		DXTexture AlbedoBuffer{};
-		DXTexture NormalBuffer{};
+	DXTexture ShadowMap{};
+	DescriptorAllocation ShadowMapDSV{};
+	DescriptorAllocation ShadowMapSRV{};
+	DescriptorAllocation ShadowMapSampler{};
 
-		DescriptorAllocation DepthBufferDSV{};
-		DescriptorAllocation AlbedoBufferRTV{};
-		DescriptorAllocation NormalBufferRTV{};
-		DescriptorAllocation GBuffersSRV{};
+	DXBuffer LightBuffer{};
+	DescriptorAllocation LightBufferCBV{};
+	DXBuffer LightTransformationMatricesBuffer{};
+	DescriptorAllocation LightTransformationMatricesBufferCBV{};
 
-		DXTexture ShadowMap{};
-		DescriptorAllocation ShadowMapDSV{};
-		DescriptorAllocation ShadowMapSRV{};
-		DescriptorAllocation ShadowMapSampler{};
+	GraphicsPipelineState<hlsl::LightingResources> LightingPipelineState{};
+	DXTexture OutputBuffer{};
+	DescriptorAllocation OutputBufferRTV{};
+	DescriptorAllocation OutputBufferSRV{};
 
-		DXBuffer LightBuffer{};
-		DescriptorAllocation LightBufferCBV{};
-		DXBuffer LightTransformationMatricesBuffer{};
-		DescriptorAllocation LightTransformationMatricesBufferCBV{};
-
-		GraphicsPipelineState<hlsl::LightingResources> LightingPipelineState{};
-		DXTexture OutputBuffer{};
-		DescriptorAllocation OutputBufferRTV{};
-		DescriptorAllocation OutputBufferSRV{};
-
-		D3D12_VIEWPORT ShadowMapViewport{};
-		D3D12_VIEWPORT Viewport{};
-		D3D12_RECT ScissorRect{};
+	D3D12_VIEWPORT ShadowMapViewport{};
+	D3D12_VIEWPORT Viewport{};
+	D3D12_RECT ScissorRect{};
 };
 
-}
+} // namespace rad

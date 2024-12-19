@@ -2,14 +2,11 @@
 
 #include "Renderer.h"
 #include "RadishCommon.h"
-#include <unordered_map>
 #include <filesystem>
 
 namespace rad
 {
-ShaderManager::ShaderManager(rad::Renderer& renderer) : Renderer(renderer)
-{
-}
+ShaderManager::ShaderManager(rad::Renderer& renderer) : Renderer(renderer) {}
 
 bool ShaderManager::Init()
 {
@@ -18,36 +15,42 @@ bool ShaderManager::Init()
 	ThrowIfFailed(Utils->CreateDefaultIncludeHandler(&IncludeHandler));
 	auto vertexShader = CompileBindlessVertexShader(L"Fullscreen", RAD_SHADERS_DIR L"FullscreenVS.hlsli");
 	ThrowIfFailed(Renderer.GetDevice().CreateRootSignature(0u, vertexShader->RootSignatureBlob->GetBufferPointer(),
-		vertexShader->RootSignatureBlob->GetBufferSize(),
-		IID_PPV_ARGS(&BindlessRootSignature.DXSignature)));
+														   vertexShader->RootSignatureBlob->GetBufferSize(),
+														   IID_PPV_ARGS(&BindlessRootSignature.DXSignature)));
 	BindlessRootSignature.DXSignature->SetName(L"BindlessRootSignature");
 	return true;
 }
 
-std::pair<Shader*, Shader*> ShaderManager::CompileBindlessGraphicsShader(std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders)
+std::pair<Shader*, Shader*> ShaderManager::CompileBindlessGraphicsShader(
+	std::wstring_view name, std::wstring_view shaderPath, std::span<const std::wstring_view> includeFolders)
 {
-	std::vector<std::wstring_view> includeFoldersCopy{ {RAD_SHADERS_DIR L""} };
+	std::vector<std::wstring_view> includeFoldersCopy{{RAD_SHADERS_DIR L""}};
 	includeFoldersCopy.insert(includeFoldersCopy.end(), includeFolders.begin(), includeFolders.end());
 	auto vs = CompileShader(std::wstring(name) + L".vs", shaderPath, ShaderType::Vertex, L"VSMain", includeFoldersCopy);
 	auto ps = CompileShader(std::wstring(name) + L".ps", shaderPath, ShaderType::Pixel, L"PSMain", includeFoldersCopy);
-	return { vs, ps };
+	return {vs, ps};
 }
 
-Shader* ShaderManager::CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
+Shader* ShaderManager::CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath,
+												   std::wstring_view entryPoint,
+												   std::span<const std::wstring_view> includeFolders)
 {
-	std::vector<std::wstring_view> includeFoldersCopy{ {RAD_SHADERS_DIR L""}};
+	std::vector<std::wstring_view> includeFoldersCopy{{RAD_SHADERS_DIR L""}};
 	includeFoldersCopy.insert(includeFoldersCopy.end(), includeFolders.begin(), includeFolders.end());
 	return CompileShader(std::wstring(name) + L".vs", shaderPath, ShaderType::Vertex, entryPoint, includeFoldersCopy);
 }
 
-Shader* ShaderManager::CompileBindlessComputeShader(std::wstring_view name, std::wstring_view shaderPath, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
+Shader* ShaderManager::CompileBindlessComputeShader(std::wstring_view name, std::wstring_view shaderPath,
+													std::wstring_view entryPoint,
+													std::span<const std::wstring_view> includeFolders)
 {
-	std::vector<std::wstring_view> includeFoldersCopy{ {RAD_SHADERS_DIR L""} };
+	std::vector<std::wstring_view> includeFoldersCopy{{RAD_SHADERS_DIR L""}};
 	includeFoldersCopy.insert(includeFoldersCopy.end(), includeFolders.begin(), includeFolders.end());
 	return CompileShader(std::wstring(name) + L".cs", shaderPath, ShaderType::Compute, entryPoint, includeFoldersCopy);
 }
 
-Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
+Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type,
+									 std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
 {
 	LPCWSTR shaderType = nullptr;
 	switch (type)
@@ -63,12 +66,13 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 		break;
 	}
 
-	std::vector<LPCWSTR> compilationArgs =
-	{
-		name.data(),                  // Optional shader source file name for error reporting and for PIX shader source view.  
-		L"-E", entryPoint.data(),              // Entry point.
-		L"-T", shaderType,            // Target.
-		//DXC_ARG_WARNINGS_ARE_ERRORS,
+	std::vector<LPCWSTR> compilationArgs = {
+		name.data(), // Optional shader source file name for error reporting and for PIX shader source view.
+		L"-E",
+		entryPoint.data(), // Entry point.
+		L"-T",
+		shaderType, // Target.
+		// DXC_ARG_WARNINGS_ARE_ERRORS,
 		DXC_ARG_ALL_RESOURCES_BOUND,
 	};
 
@@ -102,7 +106,8 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 
 	wprintf(L"Compiling %s\n", shaderPath.data());
 	ComPtr<IDxcResult> results;
-	Compiler->Compile(&Source, compilationArgs.data(), compilationArgs.size(), IncludeHandler.Get(), IID_PPV_ARGS(&results));
+	Compiler->Compile(&Source, compilationArgs.data(), compilationArgs.size(), IncludeHandler.Get(),
+					  IID_PPV_ARGS(&results));
 
 	ComPtr<IDxcBlobUtf8> pErrors = nullptr;
 	results->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&pErrors), nullptr);
@@ -111,7 +116,7 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 		wprintf(L"%S", pErrors->GetStringPointer());
 	}
 
-	ComPtr<ID3DBlob> rootSignatureBlob{ nullptr };
+	ComPtr<ID3DBlob> rootSignatureBlob{nullptr};
 	results->GetOutput(DXC_OUT_ROOT_SIGNATURE, IID_PPV_ARGS(&rootSignatureBlob), nullptr);
 
 	HRESULT hrStatus;
@@ -137,4 +142,4 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 	return shader.get();
 }
 
-}
+} // namespace rad

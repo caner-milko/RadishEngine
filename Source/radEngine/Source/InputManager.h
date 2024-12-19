@@ -24,11 +24,10 @@ struct InputManager : Singleton<InputManager>
 	struct Immediate
 	{
 		float MouseWheelDelta = 0.0f;
-		glm::vec2 MouseDelta = { 0, 0 };
+		glm::vec2 MouseDelta = {0, 0};
 	} Immediate;
 
 	bool Init();
-
 
 	bool IsKeyDown(SDL_Scancode key)
 	{
@@ -49,9 +48,6 @@ struct InputManager : Singleton<InputManager>
 	{
 		return CUR_KEYS[key] == KEY_UP || CUR_KEYS[key] == KEY_RELEASED;
 	}
-
 };
 
-
-
-}
+} // namespace rad

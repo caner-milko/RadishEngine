@@ -1,12 +1,10 @@
 #pragma once
 
-#include "Graphics/Model.h"
 #include <entt/entt.hpp>
 #include "RadishCommon.h"
 #include "ConstantBuffers.hlsli"
 #include "Graphics/Model.h"
 #include "Graphics/Renderer.h"
-#include "Graphics/Model.h"
 #include "Graphics/PipelineState.h"
 #include "InputManager.h"
 
@@ -31,12 +29,31 @@ struct WorldTransform
 {
 	glm::mat4 WorldMatrix = glm::mat4(1.0f);
 	// For directx, so row-major
-	glm::vec3 GetPosition() const { return glm::vec3(WorldMatrix[3]); }
-	glm::vec3 GetScale() const { return glm::vec3(glm::length(glm::vec3(WorldMatrix[0])), glm::length(glm::vec3(WorldMatrix[1])), glm::length(glm::vec3(WorldMatrix[2]))); }
-	glm::vec3 GetForward() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 0, 1.0f); }
-	glm::vec3 GetRight() const { return glm::mat3(WorldMatrix) * glm::vec3(-1.0f, 0, 0); }
-	glm::vec3 GetUp() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 1.0f, 0); }
-	glm::mat3 GetRotation() const { return glm::mat3(WorldMatrix); }
+	glm::vec3 GetPosition() const
+	{
+		return glm::vec3(WorldMatrix[3]);
+	}
+	glm::vec3 GetScale() const
+	{
+		return glm::vec3(glm::length(glm::vec3(WorldMatrix[0])), glm::length(glm::vec3(WorldMatrix[1])),
+						 glm::length(glm::vec3(WorldMatrix[2])));
+	}
+	glm::vec3 GetForward() const
+	{
+		return glm::mat3(WorldMatrix) * glm::vec3(0, 0, 1.0f);
+	}
+	glm::vec3 GetRight() const
+	{
+		return glm::mat3(WorldMatrix) * glm::vec3(-1.0f, 0, 0);
+	}
+	glm::vec3 GetUp() const
+	{
+		return glm::mat3(WorldMatrix) * glm::vec3(0, 1.0f, 0);
+	}
+	glm::mat3 GetRotation() const
+	{
+		return glm::mat3(WorldMatrix);
+	}
 	operator ecs::Transform() const;
 };
 struct CSceneTransform
@@ -46,12 +63,15 @@ struct CSceneTransform
 	std::vector<Ref<CSceneTransform>> Children;
 	entt::entity Entity = entt::null;
 
-	ecs::Transform const& LocalTransform() const { return Transform; }
+	ecs::Transform const& LocalTransform() const
+	{
+		return Transform;
+	}
 
 	WorldTransform GetWorldTransform() const
 	{
 		WorldTransform parentWorldTransform = GetParentWorldTransform();
-		return WorldTransform{ .WorldMatrix = Transform.GetModelMatrix(parentWorldTransform.WorldMatrix) };
+		return WorldTransform{.WorldMatrix = Transform.GetModelMatrix(parentWorldTransform.WorldMatrix)};
 	}
 
 	WorldTransform GetParentWorldTransform() const
@@ -98,7 +118,7 @@ struct CSceneTransform
 			child->InvalidateParentTransform();
 	}
 
-private:
+  private:
 	Transform Transform;
 	mutable std::optional<WorldTransform> CachedParentWorldTransform;
 };
@@ -157,9 +177,9 @@ struct CCameraSystem
 };
 struct CLight
 {
-	glm::vec3 Color = { 1.0f, 1.0f, 1.0f };
+	glm::vec3 Color = {1.0f, 1.0f, 1.0f};
 	float Intensity = 1.0f;
-	glm::vec3 Ambient = { 0.1f, 0.1f, 0.1f };
+	glm::vec3 Ambient = {0.1f, 0.1f, 0.1f};
 };
 struct CLightSystem
 {
@@ -167,7 +187,10 @@ struct CLightSystem
 };
 struct CViewpointController
 {
-	CViewpointController(Transform transform, CViewpoint viewpoint) : OriginalTransform(transform), OriginalViewpoint(std::move(viewpoint)) {}
+	CViewpointController(Transform transform, CViewpoint viewpoint)
+		: OriginalTransform(transform), OriginalViewpoint(std::move(viewpoint))
+	{
+	}
 	Transform OriginalTransform;
 	CViewpoint OriginalViewpoint;
 	float MoveSpeed = 5.0f;
@@ -186,4 +209,4 @@ struct CUISystem
 	void ProcessEvent(const SDL_Event& event);
 	void Update(entt::registry& registry, Renderer& renderer);
 };
-}
+} // namespace rad::ecs

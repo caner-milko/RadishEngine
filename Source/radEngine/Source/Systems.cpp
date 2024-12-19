@@ -7,6 +7,7 @@
 
 #include "Graphics/Renderer.h"
 #include "Graphics/ShaderManager.h"
+#include "ProcGen/TerrainGenerator.h"
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_dx12.h"
@@ -45,16 +46,21 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 		} pipelineStateStream;
 
 		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 		};
 
-		pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+		pipelineStateStream.InputLayout = {inputLayout, _countof(inputLayout)};
 		pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-		auto [vertexShader, pixelShader] = renderer.ShaderManager->CompileBindlessGraphicsShader(L"Triangle", RAD_SHADERS_DIR L"Graphics/StaticMesh.hlsl");
+		auto [vertexShader, pixelShader] = renderer.ShaderManager->CompileBindlessGraphicsShader(
+			L"Triangle", RAD_SHADERS_DIR L"Graphics/StaticMesh.hlsl");
 
 		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 		pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
@@ -68,7 +74,8 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 
 		pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-		StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", renderer.GetDevice(), pipelineStateStream, &renderer.ShaderManager->BindlessRootSignature);
+		StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", renderer.GetDevice(), pipelineStateStream,
+														&renderer.ShaderManager->BindlessRootSignature);
 	}
 	// Shadow Map Pipeline
 	{
@@ -81,20 +88,28 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 		} pipelineStateStream;
 
 		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
 		};
 
-		pipelineStateStream.InputLayout = { inputLayout, _countof(inputLayout) };
+		pipelineStateStream.InputLayout = {inputLayout, _countof(inputLayout)};
 		pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(renderer.ShaderManager->CompileBindlessVertexShader(L"ShadowMap", RAD_SHADERS_DIR L"Graphics/Shadowmap.hlsl")->Blob.Get());
+		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(
+			renderer.ShaderManager
+				->CompileBindlessVertexShader(L"ShadowMap", RAD_SHADERS_DIR L"Graphics/Shadowmap.hlsl")
+				->Blob.Get());
 
 		pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
-		ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", renderer.GetDevice(), pipelineStateStream, &renderer.ShaderManager->BindlessRootSignature);
+		ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", renderer.GetDevice(), pipelineStateStream,
+													   &renderer.ShaderManager->BindlessRootSignature);
 	}
 
 	return true;
@@ -122,18 +137,20 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 		renderObjects.push_back(renderData);
 	}
 
-	frameRecord.Push(TypedRenderCommand<StaticRenderData>{.Name = "StaticRender", .Data = std::move(renderObjects), 
-		.DepthOnlyPass = [this](auto span, auto view, auto passData) {DepthOnlyPass(span, view, passData); },
-		.DeferredPass = [this](auto span, auto view, auto passData) {DeferredPass(span, view, passData); }
-	});
+	frameRecord.Push(TypedRenderCommand<StaticRenderData>{
+		.Name = "StaticRender",
+		.Data = std::move(renderObjects),
+		.DepthOnlyPass = [this](auto span, auto view, auto passData) { DepthOnlyPass(span, view, passData); },
+		.DeferredPass = [this](auto span, auto view, auto passData) { DeferredPass(span, view, passData); }});
 }
-void CStaticRenderSystem::DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData)
+void CStaticRenderSystem::DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view,
+										DepthOnlyPassData& passData)
 {
 	auto& cmd = passData.CmdContext;
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	ShadowMapPipelineState.Bind(cmd);
 
- 	StaticRenderData lastRenderData{};
+	StaticRenderData lastRenderData{};
 	for (auto& renderObj : renderObjects)
 	{
 		if (renderObj.VertexBufferView.BufferLocation != lastRenderData.VertexBufferView.BufferLocation)
@@ -153,7 +170,8 @@ void CStaticRenderSystem::DepthOnlyPass(std::span<StaticRenderData> renderObject
 		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
 	}
 }
-void CStaticRenderSystem::DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DeferredPassData& passData)
+void CStaticRenderSystem::DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view,
+									   DeferredPassData& passData)
 {
 	auto& cmd = passData.CmdContext;
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -190,12 +208,14 @@ glm::mat4 CViewpoint::ProjectionMatrix() const
 {
 	if (auto* perspective = std::get_if<Perspective>(&Projection))
 	{
-		return glm::perspectiveLH(glm::radians(perspective->Fov), perspective->AspectRatio, perspective->Near, perspective->Far);
+		return glm::perspectiveLH(glm::radians(perspective->Fov), perspective->AspectRatio, perspective->Near,
+								  perspective->Far);
 	}
 	else
 	{
 		auto orthographic = std::get<Orthographic>(Projection);
-		return glm::orthoLH(-orthographic.Width / 2.0f, orthographic.Width / 2.0f, -orthographic.Height / 2.0f, orthographic.Height / 2.0f, 0.1f, 100.0f);
+		return glm::orthoLH(-orthographic.Width / 2.0f, orthographic.Width / 2.0f, -orthographic.Height / 2.0f,
+							orthographic.Height / 2.0f, 0.1f, 100.0f);
 	}
 }
 RenderView ViewpointToRenderView(const CViewpoint& viewpoint, const CSceneTransform& transform)
@@ -234,7 +254,8 @@ void CLightSystem::Update(entt::registry& registry, RenderFrameRecord& frameReco
 		auto projectionMatrix = viewpoint.ProjectionMatrix();
 		auto worldTransform = transform.GetWorldTransform();
 
-		frameRecord.LightInfo = { .View = ViewpointToRenderView(viewpoint, transform), .Color = light.Color, .Intensity = light.Intensity };
+		frameRecord.LightInfo = {
+			.View = ViewpointToRenderView(viewpoint, transform), .Color = light.Color, .Intensity = light.Intensity};
 	}
 }
 void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& io, float deltaTime, Renderer& renderer)
@@ -248,14 +269,13 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 	}
 	if (io.IsKeyPressed(SDL_SCANCODE_E))
 	{
-		//Disable imgui navigation
+		// Disable imgui navigation
 		ImGui::GetIO().ConfigFlags ^= ImGuiConfigFlags_NavEnableKeyboard;
 		SDL_SetRelativeMouseMode((SDL_bool)io.CursorEnabled);
 		io.CursorEnabled = !io.CursorEnabled;
 	}
 	if (InputManager::Get().CursorEnabled)
 		return;
-
 
 	auto cameraEntity = registry.view<CCamera, CViewpointController, CSceneTransform, CViewpoint>().front();
 
@@ -273,12 +293,13 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 
 	if (ActiveViewpoint == entt::null)
 		ActiveViewpoint = cameraEntity;
-	
+
 	if (io.IsKeyPressed(SDL_SCANCODE_TAB))
 	{
 		ActiveViewpoint = ActiveViewpoint == cameraEntity ? lightEntity : cameraEntity;
-		if(!renderer.ViewingTexture || renderer.ViewingTexture == "ShadowMap")
-		renderer.ViewingTexture = ActiveViewpoint == cameraEntity ? std::nullopt : std::optional<std::string>("ShadowMap");
+		if (!renderer.ViewingTexture || renderer.ViewingTexture == "ShadowMap")
+			renderer.ViewingTexture =
+				ActiveViewpoint == cameraEntity ? std::nullopt : std::optional<std::string>("ShadowMap");
 	}
 
 	auto& controlledViewpoint = registry.get<CViewpoint>(ActiveViewpoint);
@@ -299,8 +320,8 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 		orthographic->Height = glm::clamp(orthographic->Height - io.Immediate.MouseWheelDelta * 2.0f, 0.1f, 100.0f);
 	}
 
-	glm::vec3 moveDir = { float(io.IsKeyDown(SDL_SCANCODE_D)) - float(io.IsKeyDown(SDL_SCANCODE_A)), 0
-		, float(io.IsKeyDown(SDL_SCANCODE_W)) - float(io.IsKeyDown(SDL_SCANCODE_S)) };
+	glm::vec3 moveDir = {float(io.IsKeyDown(SDL_SCANCODE_D)) - float(io.IsKeyDown(SDL_SCANCODE_A)), 0,
+						 float(io.IsKeyDown(SDL_SCANCODE_W)) - float(io.IsKeyDown(SDL_SCANCODE_S))};
 
 	if (glm::length(moveDir) > 0.0f)
 		moveDir = glm::normalize(moveDir);
@@ -309,7 +330,7 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 
 	moveVec.y += float(io.IsKeyDown(SDL_SCANCODE_SPACE)) - float(io.IsKeyDown(SDL_SCANCODE_LCTRL));
 
-	if(glm::length(moveVec) > 0.0f)
+	if (glm::length(moveVec) > 0.0f)
 		moveVec = glm::normalize(moveVec);
 
 	auto curTransform = controlledTransform.LocalTransform();
@@ -317,20 +338,23 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 
 	if (!io.CursorEnabled)
 	{
-		curTransform.Rotation = curTransform.Rotation + glm::vec3(io.Immediate.MouseDelta.y, io.Immediate.MouseDelta.x, 0) * controlledController.RotateSpeed * deltaTime;
-		curTransform.Rotation.x = glm::clamp(curTransform.Rotation.x, -glm::pi<float>() * .5f + 0.0001f, glm::pi<float>() * .5f - 0.0001f);
+		curTransform.Rotation =
+			curTransform.Rotation + glm::vec3(io.Immediate.MouseDelta.y, io.Immediate.MouseDelta.x, 0) *
+										controlledController.RotateSpeed * deltaTime;
+		curTransform.Rotation.x =
+			glm::clamp(curTransform.Rotation.x, -glm::pi<float>() * .5f + 0.0001f, glm::pi<float>() * .5f - 0.0001f);
 	}
 	controlledTransform.SetTransform(curTransform);
 }
-
 
 void CUISystem::Init(Renderer& renderer, SDL_Window* window)
 {
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+	ImGuiIO& io = ImGui::GetIO();
+	(void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking
 	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 
 	// Our state
@@ -340,30 +364,32 @@ void CUISystem::Init(Renderer& renderer, SDL_Window* window)
 
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();
-	//ImGui::StyleColorsLight();
+	// ImGui::StyleColorsLight();
 
 	// Setup Platform/Renderer backends
 	ImGui_ImplSDL2_InitForD3D(window);
 	auto fontAllocation = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	ImGui_ImplDX12_Init(&renderer.GetDevice(), renderer.FramesInFlight,
-		DXGI_FORMAT_R8G8B8A8_UNORM, fontAllocation.Heap->Heap.Get(),
-		fontAllocation.GetCPUHandle(),
-		fontAllocation.GetGPUHandle());
+	ImGui_ImplDX12_Init(&renderer.GetDevice(), renderer.FramesInFlight, DXGI_FORMAT_R8G8B8A8_UNORM,
+						fontAllocation.Heap->Heap.Get(), fontAllocation.GetCPUHandle(), fontAllocation.GetGPUHandle());
 	// Load Fonts
-	// - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
+	// - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use
+	// ImGui::PushFont()/PopFont() to select them.
 	// - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-	// - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-	// - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
+	// - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your
+	// application (e.g. use an assertion, or display an error and quit).
+	// - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling
+	// ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
 	// - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
 	// - Read 'docs/FONTS.md' for more instructions and details.
-	// - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-	//io.Fonts->AddFontDefault();
-	//io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
-	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-	//ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
-	//IM_ASSERT(font != nullptr);
+	// - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double
+	// backslash \\ !
+	// io.Fonts->AddFontDefault();
+	// io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
+	// io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
+	// io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
+	// io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
+	// ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, nullptr,
+	// io.Fonts->GetGlyphRangesJapanese()); IM_ASSERT(font != nullptr);
 }
 void CUISystem::Destroy()
 {
@@ -378,10 +404,10 @@ void CUISystem::ProcessEvent(const SDL_Event& event)
 static void UIDrawMeshTree(entt::registry& registry, entt::entity curEntity)
 {
 	std::string name = "Unknown";
-	if(auto* entityName = registry.try_get<CEntityInfo>(curEntity))
+	if (auto* entityName = registry.try_get<CEntityInfo>(curEntity))
 		name = entityName->Name;
 	ImGui::PushID(name.c_str());
-		
+
 	if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_Framed))
 	{
 		auto* sceneTransform = registry.try_get<CSceneTransform>(curEntity);
@@ -397,12 +423,12 @@ static void UIDrawMeshTree(entt::registry& registry, entt::entity curEntity)
 		{
 			ImGui::Checkbox("Hidden", &staticRenderable->Hidden);
 		}
-		if(sceneTransform)
+		if (sceneTransform)
 			for (auto& child : sceneTransform->Children)
 				UIDrawMeshTree(registry, child->Entity);
 		ImGui::TreePop();
-	}   
-		
+	}
+
 	ImGui::PopID();
 }
 void CUISystem::Update(entt::registry& registry, Renderer& renderer)
@@ -410,14 +436,13 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 	// Start the Dear ImGui frame
 	ImGui_ImplDX12_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
-	
+
 	// Draw UI
 	ImGui::NewFrame();
-	
 
 	{
 		ImGui::Begin("Scene");
-		//Camera
+		// Camera
 		auto camera = registry.view<CCamera, CViewpoint, CSceneTransform>().front();
 		if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
 		{
@@ -441,7 +466,7 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 			ImGui::PopID();
 		}
 
-		//Light
+		// Light
 		auto dirLight = registry.view<CLight, CViewpoint, CSceneTransform, CViewpointController>().front();
 		if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
 		{
@@ -471,8 +496,8 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 			float pitchDegress = glm::degrees(transform.Rotation.y);
 			ImGui::SliderFloat("Pitch", &pitchDegress, -90.0f, 90.0f, "%.3f", ImGuiSliderFlags_NoInput);
 			transform.Rotation.y = glm::radians(pitchDegress);
-			
-			if(transformChanged)
+
+			if (transformChanged)
 				sceneTransform.SetTransform(transform);
 			if (ImGui::Button("Reset"))
 			{
@@ -482,58 +507,54 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 			}
 			ImGui::PopID();
 		}
-#if RAD_ENABLE_EXPERIMENTAL
-		if (ImGui::CollapsingHeader("Terrain", ImGuiTreeNodeFlags_DefaultOpen))
+		auto terrainView = registry.view<proc::CTerrain, proc::CErosionParameters>();
+		for (auto terrainEnt : terrainView)
 		{
-			ImGui::PushID("Terrain");
-			if (ImGui::Button("Generate Base Height Map"))
-				g_RenderingTasks.push([]()
-					{
-						g_TerrainGenerator.GenerateBaseHeightMap(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-					});
-			if (ImGui::Button("Erode Terrain"))
-				g_RenderingTasks.push([]()
-					{
-						g_TerrainGenerator.ErodeTerrain(g_pd3dDevice.Get(), FrameIndependentCtx, g_pd3dCommandList.Get(), Terrain->Terrain, ErosionParams);
-					});
-			ImGui::Checkbox("With Water", &ErosionParams.MeshWithWater);
-			ImGui::Checkbox("Base from File", &ErosionParams.BaseFromFile);
-			if (!ErosionParams.BaseFromFile)
+			auto& terrain = registry.get<proc::CTerrain>(terrainEnt);
+			auto& erosionParams = registry.get<proc::CErosionParameters>(terrainEnt);
+			auto* entityInfo = registry.try_get<ecs::CEntityInfo>(terrainEnt);
+			auto* terrainRenderable = registry.try_get<ecs::CStaticRenderable>(terrainEnt);
+			auto* waterRenderable = registry.try_get<ecs::CStaticRenderable>(terrainEnt);
+			if (ImGui::CollapsingHeader("Terrain_", ImGuiTreeNodeFlags_DefaultOpen))
 			{
-				ImGui::SliderFloat("Initial Roughness", &ErosionParams.InitialRoughness, 0.0f, 2.0f);
-				ImGui::Checkbox("Random", &ErosionParams.Random);
-				if (!ErosionParams.Random)
-					ImGui::SliderInt("Seed", &ErosionParams.Seed, 0, 100000);
+				ImGui::PushID("Terrain");
+				ImGui::Checkbox("With Water", &erosionParams.MeshWithWater);
+				ImGui::Checkbox("Base from File", &erosionParams.BaseFromFile);
+				if (!erosionParams.BaseFromFile)
+				{
+					ImGui::SliderFloat("Initial Roughness", &erosionParams.InitialRoughness, 0.0f, 2.0f);
+					ImGui::Checkbox("Random", &erosionParams.Random);
+					if (!erosionParams.Random)
+						ImGui::SliderInt("Seed", &erosionParams.Seed, 0, 100000);
+				}
+				ImGui::SliderFloat("Min Height", &erosionParams.MinHeight, 0.0f, 100.0f);
+				ImGui::SliderFloat("Max Height", &erosionParams.MaxHeight, 0.0f, 200.0f);
+				ImGui::Checkbox("Erode Each Frame", &erosionParams.ErodeEachFrame);
+				ImGui::SliderInt("Iterations", &erosionParams.Iterations, 1, 1024);
+				ImGui::SliderFloat("Total Length", &erosionParams.TotalLength, 100.0f, 2048.0f);
+
+				ImGui::SliderFloat("Rain Rate", &erosionParams.RainRate, 0.0f, 0.1f);
+				ImGui::SliderFloat("Pipe Cross Section", &erosionParams.PipeCrossSection, 0.0f, 100.0f);
+				ImGui::SliderFloat("Evaporation Rate", &erosionParams.EvaporationRate, 0.0f, 0.1f);
+				ImGui::SliderFloat("Sediment Capacity", &erosionParams.SedimentCapacity, 0.0f, 2.0f);
+				ImGui::SliderFloat("Soil Suspension Rate", &erosionParams.SoilSuspensionRate, 0.0f, 2.f);
+				ImGui::SliderFloat("Sediment Deposition Rate", &erosionParams.SedimentDepositionRate, 0.0f, 3.0f);
+				ImGui::SliderFloat("Soil Hardening Rate", &erosionParams.SoilHardeningRate, 0.0f, 2.0f);
+				ImGui::SliderFloat("Soil Softening Rate", &erosionParams.SoilSofteningRate, 0.0f, 2.0f);
+				ImGui::SliderFloat("Minimum Soil Softness", &erosionParams.MinimumSoilSoftness, 0.0f, 1.0f);
+				ImGui::SliderFloat("Maximal Erosion Depth", &erosionParams.MaximalErosionDepth, 0.0f, 40.0f);
+
+				ImGui::SliderFloat("Softness Talus Coefficient", &erosionParams.SoftnessTalusCoefficient, 0.0f, 1.0f);
+				ImGui::SliderFloat("Min Talus Coefficient", &erosionParams.MinTalusCoefficient, 0.0f, 1.0f);
+				ImGui::SliderFloat("Thermal Erosion Rate", &erosionParams.ThermalErosionRate, 0.0f, 5.0f);
+
+				ImGui::PopID();
 			}
-			ImGui::SliderFloat("Min Height", &ErosionParams.MinHeight, 0.0f, 100.0f);
-			ImGui::SliderFloat("Max Height", &ErosionParams.MaxHeight, 0.0f, 200.0f);
-			ImGui::Checkbox("Erode Each Frame", &ErosionParams.ErodeEachFrame);
-			ImGui::SliderInt("Iterations", &ErosionParams.Iterations, 1, 1024);
-			ImGui::SliderFloat("Total Length", &ErosionParams.TotalLength, 100.0f, 2048.0f);
-
-
-			ImGui::SliderFloat("Rain Rate", &ErosionParams.RainRate, 0.0f, 0.1f);
-			ImGui::SliderFloat("Pipe Cross Section", &ErosionParams.PipeCrossSection, 0.0f, 100.0f);
-			ImGui::SliderFloat("Evaporation Rate", &ErosionParams.EvaporationRate, 0.0f, 0.1f);
-			ImGui::SliderFloat("Sediment Capacity", &ErosionParams.SedimentCapacity, 0.0f, 2.0f);
-			ImGui::SliderFloat("Soil Suspension Rate", &ErosionParams.SoilSuspensionRate, 0.0f, 2.f);
-			ImGui::SliderFloat("Sediment Deposition Rate", &ErosionParams.SedimentDepositionRate, 0.0f, 3.0f);
-			ImGui::SliderFloat("Soil Hardening Rate", &ErosionParams.SoilHardeningRate, 0.0f, 2.0f);
-			ImGui::SliderFloat("Soil Softening Rate", &ErosionParams.SoilSofteningRate, 0.0f, 2.0f);
-			ImGui::SliderFloat("Minimum Soil Softness", &ErosionParams.MinimumSoilSoftness, 0.0f, 1.0f);
-			ImGui::SliderFloat("Maximal Erosion Depth", &ErosionParams.MaximalErosionDepth, 0.0f, 40.0f);
-
-			ImGui::SliderFloat("Softness Talus Coefficient", &ErosionParams.SoftnessTalusCoefficient, 0.0f, 1.0f);
-			ImGui::SliderFloat("Min Talus Coefficient", &ErosionParams.MinTalusCoefficient, 0.0f, 1.0f);
-			ImGui::SliderFloat("Thermal Erosion Rate", &ErosionParams.ThermalErosionRate, 0.0f, 5.0f);
-
-			ImGui::PopID();
 		}
-#endif
 
 		if (ImGui::CollapsingHeader("Texture View"))
 		{
-			
+
 			if (ImGui::BeginCombo("Textures", renderer.ViewingTexture ? renderer.ViewingTexture->c_str() : "None"))
 			{
 				for (auto& [name, func] : renderer.ViewableTextures)
@@ -562,7 +583,7 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 		}
 		ImGui::End();
 	}
-	
+
 	ImGui::Render();
 }
-};
+}; // namespace rad::ecs

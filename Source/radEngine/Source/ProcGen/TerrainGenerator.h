@@ -98,14 +98,19 @@ struct TerrainErosionSystem
 	CIndexedPlane CreatePlane(CommandRecord& cmdRecord, uint32_t resX, uint32_t resY);
 	CTerrainRenderable CreateTerrainRenderable(CTerrain& terrain);
 	CWaterRenderable CreateWaterRenderable(CTerrain& terrain);
-	void GenerateBaseHeightMap(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable);
-	void ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable);
-	void GenerateTerrainMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, CTerrainRenderable& terrainRenderable);
-	void GenerateWaterMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters, CWaterRenderable& waterRenderable);
+	void GenerateBaseHeightMap(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
+							   OptionalRef<CTerrainRenderable> terrainRenderable,
+							   OptionalRef<CWaterRenderable> waterRenderable);
+	void ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
+					  OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable);
+	void GenerateTerrainMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
+								 CTerrainRenderable& terrainRenderable);
+	void GenerateWaterMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
+							   CWaterRenderable& waterRenderable);
 
 	void Update(entt::registry& registry, InputManager& inputMan, RenderFrameRecord& frameRecord);
 
-private:
+  private:
 	Renderer& Renderer;
 	ComputePipelineState<hlsl::HeightToTerrainMaterialResources> HeightMapToTerrainMaterialPSO;
 	ComputePipelineState<hlsl::HeightToWaterMaterialResources> HeightMapToWaterMaterialPSO;
@@ -116,7 +121,8 @@ private:
 	ComputePipelineState<hlsl::HydrolicCalculateOutfluxResources> HydrolicCalculateOutfluxPSO;
 	ComputePipelineState<hlsl::HydrolicUpdateWaterVelocityResources> HydrolicUpdateWaterVelocityPSO;
 	ComputePipelineState<hlsl::HydrolicErosionAndDepositionResources> HydrolicErosionAndDepositionPSO;
-	ComputePipelineState<hlsl::HydrolicSedimentTransportationAndEvaporationResources> HydrolicSedimentTransportationAndEvaporationPSO;
+	ComputePipelineState<hlsl::HydrolicSedimentTransportationAndEvaporationResources>
+		HydrolicSedimentTransportationAndEvaporationPSO;
 
 	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainDeferredPSO;
 	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainDepthOnlyPSO;
@@ -130,8 +136,10 @@ private:
 		hlsl::TerrainRenderResources Resources;
 	};
 
-	void TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData);
-	void TerrainDeferredPass(std::span<TerrainRenderData> renderObjects, const RenderView& view, DeferredPassData& passData);
+	void TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
+							  DepthOnlyPassData& passData);
+	void TerrainDeferredPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
+							 DeferredPassData& passData);
 
 	struct WaterRenderData
 	{
@@ -144,4 +152,4 @@ private:
 	void WaterForwardPass(std::span<WaterRenderData> renderObjects, const RenderView& view, ForwardPassData& passData);
 };
 
-}
+} // namespace rad::proc

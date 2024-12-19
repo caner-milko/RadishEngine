@@ -13,8 +13,8 @@ struct PipelineStateStreamBase
 
 struct PipelineState
 {
-	template<typename T>
-	requires std::is_base_of_v<PipelineStateStreamBase, T>
+	template <typename T>
+		requires std::is_base_of_v<PipelineStateStreamBase, T>
 	static PipelineState Create(std::string_view name, RadDevice& device, T& pipelineStateStream, RootSignature* rs)
 	{
 		pipelineStateStream.RS = rs->DXSignature.Get();
@@ -24,9 +24,13 @@ struct PipelineState
 
 		return Create(name, device, pssd, rs);
 	}
-	
-	static PipelineState Create(std::string_view name, RadDevice& device, D3D12_PIPELINE_STATE_STREAM_DESC const& pssd, RootSignature* rs);
-	static PipelineState CreateBindlessComputePipeline(std::string_view name, Renderer& renderer, std::wstring_view shaderPath, std::wstring_view entryPoint = L"CSMain", std::span<const std::wstring_view> includeFolders = {});
+
+	static PipelineState Create(std::string_view name, RadDevice& device, D3D12_PIPELINE_STATE_STREAM_DESC const& pssd,
+								RootSignature* rs);
+	static PipelineState CreateBindlessComputePipeline(std::string_view name, Renderer& renderer,
+													   std::wstring_view shaderPath,
+													   std::wstring_view entryPoint = L"CSMain",
+													   std::span<const std::wstring_view> includeFolders = {});
 
 	std::string Name;
 
@@ -34,8 +38,7 @@ struct PipelineState
 	RootSignature* RootSignature;
 };
 
-template<typename T, bool IsCompute>
-struct TypedPipelineState : PipelineState
+template <typename T, bool IsCompute> struct TypedPipelineState : PipelineState
 {
 	using PipelineState::PipelineState;
 	TypedPipelineState(PipelineState&& ps) : PipelineState(std::move(ps)) {}
@@ -65,18 +68,17 @@ struct TypedPipelineState : PipelineState
 		SetResources(cmdList, resources);
 	}
 
-	template<bool _ = false>
-	requires (IsCompute)
-	inline void ExecuteCompute(RadGraphicsCommandList& cmdList, T const& resources, uint32_t x, uint32_t y, uint32_t z) const
+	template <bool _ = false>
+		requires(IsCompute)
+	inline void ExecuteCompute(RadGraphicsCommandList& cmdList, T const& resources, uint32_t x, uint32_t y,
+							   uint32_t z) const
 	{
 		BindWithResources(cmdList, resources);
 		cmdList.Dispatch(x, y, z);
 	}
 };
 
-template<typename T>
-using GraphicsPipelineState = TypedPipelineState<T, false>;
-template<typename T>
-using ComputePipelineState = TypedPipelineState<T, true>;
+template <typename T> using GraphicsPipelineState = TypedPipelineState<T, false>;
+template <typename T> using ComputePipelineState = TypedPipelineState<T, true>;
 
-}
+} // namespace rad

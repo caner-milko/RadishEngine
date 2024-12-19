@@ -35,4 +35,4 @@ struct ModelManager
 	Renderer& Renderer;
 	std::unordered_map<std::string, ObjModel> Models;
 };
-}
+} // namespace rad

@@ -30,4 +30,4 @@ struct GenerateMipsPipeline
 	DescriptorAllocation GlobalCounterUAV;
 };
 
-}
+} // namespace rad

@@ -37,35 +37,37 @@ DescriptorAllocation DescriptorAllocation::CreatePreAllocated(DescriptorHeap* he
 	return alloc;
 }
 
-
-template<bool CPU>
+template <bool CPU>
 std::unique_ptr<DescriptorHeapAllocator<CPU>> DescriptorHeapAllocator<CPU>::Create(RadDevice& device)
 {
 	auto allocator = std::make_unique<DescriptorHeapAllocator>(device);
-	//D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-	//desc.NumDescriptors = numDescriptors;
-	//if constexpr (CPU)
+	// D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+	// desc.NumDescriptors = numDescriptors;
+	// if constexpr (CPU)
 	//{
 
 	//    for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; i++)
 	//    {
 	//        desc.Type = (D3D12_DESCRIPTOR_HEAP_TYPE)i;
-	//        allocator->Heaps[(D3D12_DESCRIPTOR_HEAP_TYPE)i] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
+	//        allocator->Heaps[(D3D12_DESCRIPTOR_HEAP_TYPE)i] = DescriptorHeapPageCollection::Create(desc, dev,
+	//        pageCount, staticPageSize);
 	//    }
 	//}
-	//else
+	// else
 	//{
 	//    desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
 	//    desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	//    allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
-	//    desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-	//    allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = DescriptorHeapPageCollection::Create(desc, dev, pageCount, staticPageSize);
+	//    allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = DescriptorHeapPageCollection::Create(desc, dev,
+	//    pageCount, staticPageSize); desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+	//    allocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = DescriptorHeapPageCollection::Create(desc, dev,
+	//    pageCount, staticPageSize);
 	//}
 	return allocator;
 }
-template<bool CPU>
-void DescriptorHeapAllocator<CPU>::CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors, uint32_t pageCount, uint32_t staticPageSize)
+template <bool CPU>
+void DescriptorHeapAllocator<CPU>::CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors,
+												  uint32_t pageCount, uint32_t staticPageSize)
 {
 	D3D12_DESCRIPTOR_HEAP_DESC desc = {};
 	desc.NumDescriptors = numDescriptors;
@@ -77,8 +79,7 @@ void DescriptorHeapAllocator<CPU>::CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE typ
 template class DescriptorHeapAllocator<true>;
 template class DescriptorHeapAllocator<false>;
 
-
-template<ViewTypes type>
+template <ViewTypes type>
 ResourceView<type> ResourceView<type>::Create(std::span<typename ResourceViewToDesc<type>> descs)
 {
 	using ViewToDesc = ResourceViewToDesc<type>;
@@ -115,8 +116,6 @@ template class ResourceView<ViewTypes::Sampler>;
 template class ResourceView<ViewTypes::RenderTargetView>;
 template class ResourceView<ViewTypes::DepthStencilView>;
 
-
-
 TransitionVec& TransitionVec::Add(DXResource& res, D3D12_RESOURCE_STATES after)
 {
 	if (res.State != after)
@@ -127,7 +126,8 @@ TransitionVec& TransitionVec::Add(DXResource& res, D3D12_RESOURCE_STATES after)
 TransitionVec& TransitionVec::Add(ID3D12Resource* res, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
 {
 	if (before != after)
-		push_back(D3D12_RESOURCE_BARRIER{ .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, .Transition = { res, 0, before, after } });
+		push_back(D3D12_RESOURCE_BARRIER{.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+										 .Transition = {res, 0, before, after}});
 	return *this;
 }
 
@@ -138,5 +138,4 @@ void TransitionVec::Execute(RadGraphicsCommandList& cmdList)
 	cmdList.ResourceBarrier(size(), data());
 }
 
-
-}
+} // namespace rad

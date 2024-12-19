@@ -8,4 +8,4 @@ bool InputManager::Init()
 	memset(CUR_KEYS, KEY_UP, sizeof(CUR_KEYS));
 	return true;
 }
-}
+} // namespace rad

@@ -17,7 +17,9 @@ void TextureManager::GenerateMips(CommandContext& commandCtx, DXTexture& texture
 	GenerateMipsPipeline.GenerateMips(commandCtx, texture);
 }
 
-DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, TextureManager::TextureLoadInfo const& info, CommandContext& commandCtx, bool generateMips)
+DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path,
+											TextureManager::TextureLoadInfo const& info, CommandContext& commandCtx,
+											bool generateMips)
 {
 	auto it = LoadedTextures.find(path);
 	if (it != LoadedTextures.end())
@@ -30,15 +32,15 @@ DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, T
 	if (stbi_info(path.string().c_str(), &width, &height, &comp) == 0)
 	{
 		std::cout << "Failed to load texture info for " << path << ". Reason: " << stbi_failure_reason() << std::endl;
-		return { 0 };
+		return {0};
 	}
 
 	DXTexture::TextureCreateInfo createInfo = {
-	.Width = uint32_t(width),
-	.Height = uint32_t(height),
-	.MipLevels = generateMips ? 0u : 1u,
-	.Format = DXGI_FORMAT_R8G8B8A8_UNORM,
-	.Flags = info.Flags,
+		.Width = uint32_t(width),
+		.Height = uint32_t(height),
+		.MipLevels = generateMips ? 0u : 1u,
+		.Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+		.Flags = info.Flags,
 
 	};
 
@@ -52,15 +54,19 @@ DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, T
 	if (data == nullptr)
 	{
 		std::cout << "Failed to load texture " << path << ". Reason: " << stbi_failure_reason() << std::endl;
-		return { 0 };
+		return {0};
 	}
 
-	auto texture = DXTexture::Create(Renderer.GetDevice(), path.filename().wstring(), createInfo, D3D12_RESOURCE_STATE_COPY_DEST);
+	auto texture =
+		DXTexture::Create(Renderer.GetDevice(), path.filename().wstring(), createInfo, D3D12_RESOURCE_STATE_COPY_DEST);
 
 	// Copy the data to the texture
 	{
 		size_t size = width * height * desiredComp;
-		texture.UploadData(commandCtx, std::span<const std::byte>(reinterpret_cast<const std::byte*>(data), size_t(width * height * desiredComp)), desiredComp);
+		texture.UploadData(
+			commandCtx,
+			std::span<const std::byte>(reinterpret_cast<const std::byte*>(data), size_t(width * height * desiredComp)),
+			desiredComp);
 	}
 
 	stbi_image_free(data);
@@ -70,13 +76,12 @@ DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path, T
 		GenerateMips(commandCtx, texture);
 	}
 
-
 	TextureId id = NextId;
 	NextId.Id++;
-	
+
 	auto& tex = Textures[id] = std::make_unique<DXTexture>(texture);
 	LoadedTextures[path] = id;
 	return tex.get();
 }
 
-}
+} // namespace rad

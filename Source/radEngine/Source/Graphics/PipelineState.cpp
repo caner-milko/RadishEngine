@@ -6,7 +6,8 @@
 namespace rad
 {
 
-PipelineState PipelineState::Create(std::string_view name, RadDevice& device, D3D12_PIPELINE_STATE_STREAM_DESC const& pssd, rad::RootSignature* rs)
+PipelineState PipelineState::Create(std::string_view name, RadDevice& device,
+									D3D12_PIPELINE_STATE_STREAM_DESC const& pssd, rad::RootSignature* rs)
 {
 	PipelineState ps{};
 	ps.Name = name;
@@ -18,7 +19,9 @@ PipelineState PipelineState::Create(std::string_view name, RadDevice& device, D3
 	return ps;
 }
 
-PipelineState PipelineState::CreateBindlessComputePipeline(std::string_view name, Renderer& renderer, std::wstring_view shaderPath, std::wstring_view entryPoint, std::span<const std::wstring_view> includeFolders)
+PipelineState PipelineState::CreateBindlessComputePipeline(std::string_view name, Renderer& renderer,
+														   std::wstring_view shaderPath, std::wstring_view entryPoint,
+														   std::span<const std::wstring_view> includeFolders)
 {
 	struct ComputePipelineStream : PipelineStateStreamBase
 	{
@@ -30,4 +33,4 @@ PipelineState PipelineState::CreateBindlessComputePipeline(std::string_view name
 	return Create(name, renderer.GetDevice(), pipelineStateStream, &renderer.ShaderManager->BindlessRootSignature);
 }
 
-}
+} // namespace rad

@@ -8,7 +8,7 @@
 
 namespace rad::hlsl
 {
-	struct BlitResources;
+struct BlitResources;
 }
 
 namespace rad
@@ -18,10 +18,11 @@ struct BlitPipeline
 {
 	BlitPipeline(rad::Renderer& renderer) : Renderer(renderer) {}
 	bool Setup();
-	void Blit(CommandContext& commandCtx, struct DXTexture& dstTex, struct DXTexture& srcTex, DescriptorAllocationView dstRTV, DescriptorAllocationView srcSRV);
-	
+	void Blit(CommandContext& commandCtx, struct DXTexture& dstTex, struct DXTexture& srcTex,
+			  DescriptorAllocationView dstRTV, DescriptorAllocationView srcSRV);
+
 	Renderer& Renderer;
 	GraphicsPipelineState<hlsl::BlitResources> PipelineState;
 };
 
-}
+} // namespace rad

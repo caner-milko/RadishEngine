@@ -26,7 +26,7 @@ bool Renderer::InitializeDevice(bool debug)
 	if (D3D12CreateDevice(nullptr, featureLevel, IID_PPV_ARGS(&Device)) != S_OK)
 		return false;
 
-	// [DEBUG] Setup debug interface to break on any warnings/errors
+		// [DEBUG] Setup debug interface to break on any warnings/errors
 #ifdef DX12_ENABLE_DEBUG_LAYER
 	if (pdx12Debug != nullptr)
 	{
@@ -39,9 +39,9 @@ bool Renderer::InitializeDevice(bool debug)
 #endif
 
 	ShaderManager = std::make_unique<rad::ShaderManager>(*this);
-	if(!ShaderManager->Init())
+	if (!ShaderManager->Init())
 		return false;
-	
+
 	g_CPUDescriptorAllocator = CPUDescriptorHeapAllocator::Create(GetDevice());
 	g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1024);
 	g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024);
@@ -49,15 +49,17 @@ bool Renderer::InitializeDevice(bool debug)
 	g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
 
 	g_GPUDescriptorAllocator = GPUDescriptorHeapAllocator::Create(GetDevice());
-	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048 * (8 + FramesInFlight + 1), FramesInFlight + 1, 2048 * 8);
-	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 128*(FramesInFlight + 2), FramesInFlight + 1, 128);
+	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048 * (8 + FramesInFlight + 1),
+											 FramesInFlight + 1, 2048 * 8);
+	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 128 * (FramesInFlight + 2),
+											 FramesInFlight + 1, 128);
 
 	TextureManager = std::make_unique<rad::TextureManager>(*this);
-	if(!TextureManager->Init())
+	if (!TextureManager->Init())
 		return false;
 
 	ModelManager = std::make_unique<rad::ModelManager>(*this);
-	//ModelManager->Init();
+	// ModelManager->Init();
 
 	{
 		D3D12_COMMAND_QUEUE_DESC desc = {};
@@ -76,7 +78,8 @@ bool Renderer::InitializeDevice(bool debug)
 	for (auto& cmdContext : CommandContexts)
 		AvailableCommandContexts.push_back(*cmdContext);
 
-	if (Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, CommandContexts[0]->CommandAllocator.Get(), nullptr, IID_PPV_ARGS(&CommandList)) != S_OK ||
+	if (Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, CommandContexts[0]->CommandAllocator.Get(),
+								  nullptr, IID_PPV_ARGS(&CommandList)) != S_OK ||
 		CommandList->Close() != S_OK)
 		return false;
 
@@ -91,9 +94,11 @@ bool Renderer::InitializeDevice(bool debug)
 
 bool Renderer::InitializeSwapchain(HWND window, uint32_t width, uint32_t height)
 {
-	//Allocate RTV, SRGB RTV
-	Swapchain.BackBufferRTVs = static_cast<RenderTargetView>(g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, BackBufferCount));
-	Swapchain.BackBufferRGBRTVs = static_cast<RenderTargetView>(g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, BackBufferCount));
+	// Allocate RTV, SRGB RTV
+	Swapchain.BackBufferRTVs = static_cast<RenderTargetView>(
+		g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, BackBufferCount));
+	Swapchain.BackBufferRGBRTVs = static_cast<RenderTargetView>(
+		g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, BackBufferCount));
 
 	// Setup swap chain
 	DXGI_SWAP_CHAIN_DESC1 sd;
@@ -142,7 +147,7 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 		DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
 		ThrowIfFailed(Swapchain.Swapchain->GetDesc(&swapChainDesc));
 		ThrowIfFailed(Swapchain.Swapchain->ResizeBuffers(BackBufferCount, width, height,
-			swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
+														 swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
 	}
 	for (uint32_t i = 0; i < BackBufferCount; i++)
 	{
@@ -154,7 +159,8 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 		info.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		info.MipLevels = 1;
 
-		auto& swapchainTex = Swapchain.BackBuffers.emplace_back(DXTexture::FromExisting(GetDevice(), L"Swapchain_" + std::to_wstring(i), res, info));
+		auto& swapchainTex = Swapchain.BackBuffers.emplace_back(
+			DXTexture::FromExisting(GetDevice(), L"Swapchain_" + std::to_wstring(i), res, info));
 
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -165,7 +171,7 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 		swapchainTex.CreatePlacedRTV(Swapchain.BackBufferRGBRTVs.GetView(i), &srgbDesc);
 	}
-	return 	DeferredPipeline->OnResize(width, height);
+	return DeferredPipeline->OnResize(width, height);
 }
 
 bool Renderer::Deinitialize()
@@ -184,8 +190,15 @@ bool Renderer::Deinitialize()
 	}
 	Fence.Fence = nullptr;
 	CommandList = nullptr;
-	if (Swapchain.Swapchain) { Swapchain.Swapchain->SetFullscreenState(false, nullptr); Swapchain.Swapchain = nullptr; }
-	if (Swapchain.SwapChainWaitableObject != nullptr) { CloseHandle(Swapchain.SwapChainWaitableObject); }
+	if (Swapchain.Swapchain)
+	{
+		Swapchain.Swapchain->SetFullscreenState(false, nullptr);
+		Swapchain.Swapchain = nullptr;
+	}
+	if (Swapchain.SwapChainWaitableObject != nullptr)
+	{
+		CloseHandle(Swapchain.SwapChainWaitableObject);
+	}
 
 	g_CPUDescriptorAllocator = nullptr;
 	g_GPUDescriptorAllocator = nullptr;
@@ -204,7 +217,7 @@ bool Renderer::Deinitialize()
 
 RenderFrameRecord Renderer::BeginFrame()
 {
-	return RenderFrameRecord{ .FrameNumber = CurrentFrameNumber++ };
+	return RenderFrameRecord{.FrameNumber = CurrentFrameNumber++};
 }
 
 void Renderer::EnqueueFrame(RenderFrameRecord record)
@@ -215,7 +228,7 @@ void Renderer::EnqueueFrame(RenderFrameRecord record)
 void Renderer::Render(RenderFrameRecord& record)
 {
 	auto activeCmdContext = GetNewCommandContext();
-	if(!activeCmdContext)
+	if (!activeCmdContext)
 	{
 		std::cerr << "No command context available" << std::endl;
 		return;
@@ -235,10 +248,8 @@ void Renderer::Render(RenderFrameRecord& record)
 	DeferredPipeline->ForwardRenderPass(cmdContext, record);
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
-	BlitPipeline->Blit(cmdContext, Swapchain.BackBuffers[backbufferIndex],
-		viewingTexture,
-		Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex),
-		viewingTextureSRV);
+	BlitPipeline->Blit(cmdContext, Swapchain.BackBuffers[backbufferIndex], viewingTexture,
+					   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
 	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
 	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
 	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);
@@ -247,7 +258,6 @@ void Renderer::Render(RenderFrameRecord& record)
 	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
 	// Present
 	Swapchain.Swapchain->Present(1, 0);
-
 }
 
 void Renderer::FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command)
@@ -290,20 +300,24 @@ std::optional<Renderer::ActiveCommandContext> Renderer::GetNewCommandContext()
 	else
 		AvailableCommandContexts.pop_front();
 	CommandList->Reset(cmdContext->CommandAllocator.Get(), nullptr);
-	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
-	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] = g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
+	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] =
+		g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->AllocatePage();
+	cmdContext->GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] =
+		g_GPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]->AllocatePage();
 
-	auto heaps = g_GPUDescriptorAllocator->GetHeaps(); 
+	auto heaps = g_GPUDescriptorAllocator->GetHeaps();
 	CommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
-	return ActiveCommandContext{ *CommandList.Get(), *cmdContext };
+	return ActiveCommandContext{*CommandList.Get(), *cmdContext};
 }
-std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(ActiveCommandContext&& context, Ref<DXFence> fence, uint64_t signalValue, bool wait)
+std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(ActiveCommandContext&& context,
+																			  Ref<DXFence> fence, uint64_t signalValue,
+																			  bool wait)
 {
 	context.CommandList->Close();
-	ID3D12CommandList* cmdLists[] = { &context.CommandList.get()};
+	ID3D12CommandList* cmdLists[] = {&context.CommandList.get()};
 	CommandQueue->ExecuteCommandLists(1, cmdLists);
 	CommandQueue->Signal(fence->Fence.Get(), signalValue);
-	PendingCommandContext pendingContext{ context.CmdContext, fence, signalValue };
+	PendingCommandContext pendingContext{context.CmdContext, fence, signalValue};
 	if (wait)
 	{
 		WaitAndClearCommandContext(std::move(pendingContext));
@@ -319,7 +333,7 @@ Renderer::CommandContextData& Renderer::WaitAndClearCommandContext(PendingComman
 	auto cmdContext = pendingContext.CmdContext;
 	for (auto const& [type, heapPage] : cmdContext->GPUHeapPages)
 		g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);
-	
+
 	cmdContext->GPUHeapPages.clear();
 	cmdContext->CommandAllocator->Reset();
 	cmdContext->IntermediateResources.clear();
@@ -341,7 +355,7 @@ std::pair<Ref<DXTexture>, DescriptorAllocationView> Renderer::GetViewingTexture(
 	if (ViewingTexture)
 		if (auto it = ViewableTextures.find(*ViewingTexture); it != ViewableTextures.end())
 			return it->second;
-	return { DeferredPipeline->GetOutputBuffer(), DeferredPipeline->GetOutputBufferSRV()};
+	return {DeferredPipeline->GetOutputBuffer(), DeferredPipeline->GetOutputBufferSRV()};
 }
 std::optional<Renderer::CommandContextData> Renderer::CreateCommandContext()
 {
@@ -351,6 +365,6 @@ std::optional<Renderer::CommandContextData> Renderer::CreateCommandContext()
 		std::cerr << "Failed to create command allocator" << std::endl;
 		return std::nullopt;
 	}
-	return CommandContextData{ .Device = *Device.Get(),.CommandAllocator = std::move(commandAllocator)};
+	return CommandContextData{.Device = *Device.Get(), .CommandAllocator = std::move(commandAllocator)};
 }
 } // namespace rad

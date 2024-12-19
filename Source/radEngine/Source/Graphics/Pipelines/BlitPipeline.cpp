@@ -17,7 +17,8 @@ bool BlitPipeline::Setup()
 
 	pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-	auto [vertexShader, pixelShader] = Renderer.ShaderManager->CompileBindlessGraphicsShader(L"Blit", RAD_SHADERS_DIR L"Graphics/Blit.hlsl");
+	auto [vertexShader, pixelShader] =
+		Renderer.ShaderManager->CompileBindlessGraphicsShader(L"Blit", RAD_SHADERS_DIR L"Graphics/Blit.hlsl");
 
 	pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 	pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
@@ -29,17 +30,20 @@ bool BlitPipeline::Setup()
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	PipelineState = PipelineState::Create("BlitPipeline", Renderer.GetDevice(), pipelineStateStream, &Renderer.ShaderManager->BindlessRootSignature);
+	PipelineState = PipelineState::Create("BlitPipeline", Renderer.GetDevice(), pipelineStateStream,
+										  &Renderer.ShaderManager->BindlessRootSignature);
 	return true;
 }
 
-void BlitPipeline::Blit(CommandContext& commandCtx, DXTexture& dstTex, DXTexture& srcTex, DescriptorAllocationView dstRTV, DescriptorAllocationView srcSRV)
+void BlitPipeline::Blit(CommandContext& commandCtx, DXTexture& dstTex, DXTexture& srcTex,
+						DescriptorAllocationView dstRTV, DescriptorAllocationView srcSRV)
 {
 	D3D12_VIEWPORT viewport = {};
 	viewport.Width = static_cast<float>(dstTex.Info.Width);
 	viewport.Height = static_cast<float>(dstTex.Info.Height);
 	commandCtx->RSSetViewports(1, &viewport);
-	TransitionVec{}.Add(dstTex, D3D12_RESOURCE_STATE_RENDER_TARGET)
+	TransitionVec{}
+		.Add(dstTex, D3D12_RESOURCE_STATE_RENDER_TARGET)
 		.Add(srcTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Execute(commandCtx);
 
@@ -54,4 +58,4 @@ void BlitPipeline::Blit(CommandContext& commandCtx, DXTexture& dstTex, DXTexture
 	commandCtx->DrawInstanced(4, 1, 0, 0);
 }
 
-}
+} // namespace rad

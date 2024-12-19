@@ -21,7 +21,8 @@ struct RootSignatureBuilder
 	std::vector<std::vector<CD3DX12_DESCRIPTOR_RANGE1>> DescriptorRanges;
 	std::vector<CD3DX12_STATIC_SAMPLER_DESC> StaticSamplers;
 
-	RootSignatureBuilder& AddDescriptorTable(std::string_view name, std::span<const CD3DX12_DESCRIPTOR_RANGE1> ranges, D3D12_SHADER_VISIBILITY shaderVisibility = D3D12_SHADER_VISIBILITY_ALL);
+	RootSignatureBuilder& AddDescriptorTable(std::string_view name, std::span<const CD3DX12_DESCRIPTOR_RANGE1> ranges,
+											 D3D12_SHADER_VISIBILITY shaderVisibility = D3D12_SHADER_VISIBILITY_ALL);
 	RootSignatureBuilder& AddStaticSampler(CD3DX12_STATIC_SAMPLER_DESC const& sampler);
 	RootSignatureBuilder& AddRootParameter(std::string_view name, CD3DX12_ROOT_PARAMETER1 const& parameter);
 
@@ -38,10 +39,7 @@ struct RootSignatureBuilder
 	RootSignatureBuilder& AddShaderResourceView(std::string_view name, RootParamDesc desc);
 	RootSignatureBuilder& AddUnorderedAccessView(std::string_view name, RootParamDesc desc);
 
-
 	RootSignature Build(std::string_view name, RadDevice& device, D3D12_ROOT_SIGNATURE_FLAGS flags);
-
 };
 
-
-}
+} // namespace rad

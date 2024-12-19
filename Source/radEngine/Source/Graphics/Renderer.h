@@ -4,18 +4,11 @@
 #include "RadishCommon.h"
 #include "RendererCommon.h"
 
-#include <queue>
-#include <vector>
-#include <string>
-#include <span>
-#include <functional>
-#include <deque>
 
 namespace rad
 {
 struct DeferredRenderingPipeline;
 struct BlitPipeline;
-
 
 struct RenderView
 {
@@ -72,8 +65,7 @@ struct RenderQueue
 	std::deque<RenderCommand> Commands;
 };
 
-template<typename T>
-struct TypedRenderCommand
+template <typename T> struct TypedRenderCommand
 {
 	std::string Name;
 	std::vector<T> Data;
@@ -82,12 +74,11 @@ struct TypedRenderCommand
 	std::function<void(std::span<T> data, const RenderView& view, ForwardPassData& passData)> ForwardPass = nullptr;
 };
 
-
 /*
-Create a FrameResource struct that is used by pipeline commands to pass resources between each other. It is unique per frame so multiple frames can be processed in parallel.
+Create a FrameResource struct that is used by pipeline commands to pass resources between each other. It is unique per
+frame so multiple frames can be processed in parallel.
 */
-//using FramePipelineCommand = std::function<void(CommandContext, RenderFrameRecord&)>;
-
+// using FramePipelineCommand = std::function<void(CommandContext, RenderFrameRecord&)>;
 
 struct CommandRecord
 {
@@ -100,7 +91,7 @@ struct CommandRecord
 
 	void Push(std::string name, std::function<void(CommandContext&)> command)
 	{
-		Queue.push({ std::move(name), std::move(command) });
+		Queue.push({std::move(name), std::move(command)});
 	}
 };
 
@@ -111,10 +102,9 @@ struct RenderFrameRecord
 	RenderView View;
 	RenderLightInfo LightInfo;
 	std::deque<RenderCommand> Commands;
-	//std::deque<FramePipelineCommand> FramePipelineCommands;
+	// std::deque<FramePipelineCommand> FramePipelineCommands;
 
-	template<typename T>
-	void Push(TypedRenderCommand<T> command)
+	template <typename T> void Push(TypedRenderCommand<T> command)
 	{
 		std::span<T> span(command.Data);
 		void* dataPtr = command.Data.data();
@@ -125,21 +115,18 @@ struct RenderFrameRecord
 			.Size = size,
 			.Destroy = [vec = std::move(command.Data)]() mutable {},
 		};
-		if(command.DepthOnlyPass)
-			renderCommand.DepthOnlyPass = [span, depthPass = std::move(command.DepthOnlyPass)](const RenderView& view, DepthOnlyPassData& passData)
-			{
-				return depthPass(span, view, passData);
-			};
+		if (command.DepthOnlyPass)
+			renderCommand.DepthOnlyPass = [span, depthPass = std::move(command.DepthOnlyPass)](
+											  const RenderView& view, DepthOnlyPassData& passData)
+			{ return depthPass(span, view, passData); };
 		if (command.DeferredPass)
-			renderCommand.DeferredPass = [span, deferredPass = std::move(command.DeferredPass)](const RenderView& view, DeferredPassData& passData)
-			{
-				return deferredPass(span, view, passData);
-			};
+			renderCommand.DeferredPass = [span, deferredPass = std::move(command.DeferredPass)](
+											 const RenderView& view, DeferredPassData& passData)
+			{ return deferredPass(span, view, passData); };
 		if (command.ForwardPass)
-			renderCommand.ForwardPass = [span, forwardPass = std::move(command.ForwardPass)](const RenderView& view, ForwardPassData& passData)
-			{
-				return forwardPass(span, view, passData);
-			};
+			renderCommand.ForwardPass =
+				[span, forwardPass = std::move(command.ForwardPass)](const RenderView& view, ForwardPassData& passData)
+			{ return forwardPass(span, view, passData); };
 		Commands.push_back(std::move(renderCommand));
 	}
 };
@@ -166,7 +153,10 @@ struct Renderer
 
 	bool Deinitialize();
 
-	RadDevice& GetDevice() { return *Device.Get(); }
+	RadDevice& GetDevice()
+	{
+		return *Device.Get();
+	}
 
 	struct CommandContextData
 	{
@@ -181,7 +171,8 @@ struct Renderer
 		Ref<CommandContextData> CmdContext;
 		CommandContext AsCommandContext()
 		{
-			return CommandContext{ CmdContext->Device, CommandList, CmdContext->GPUHeapPages, CmdContext->IntermediateResources };
+			return CommandContext{CmdContext->Device, CommandList, CmdContext->GPUHeapPages,
+								  CmdContext->IntermediateResources};
 		}
 	};
 	struct PendingCommandContext
@@ -212,7 +203,8 @@ struct Renderer
 	}
 
 	std::optional<ActiveCommandContext> GetNewCommandContext();
-	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context, Ref<DXFence> fence, uint64_t signalValue, bool wait = false);
+	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context, Ref<DXFence> fence,
+															  uint64_t signalValue, bool wait = false);
 	CommandContextData& WaitAndClearCommandContext(PendingCommandContext&& context);
 	void WaitAllCommandContexts();
 
@@ -246,7 +238,7 @@ struct Renderer
 	std::optional<std::string> ViewingTexture = std::nullopt;
 	std::pair<Ref<DXTexture>, DescriptorAllocationView> GetViewingTexture();
 
-private:
+  private:
 	std::optional<CommandContextData> CreateCommandContext();
 	Swapchain Swapchain;
 
@@ -254,4 +246,4 @@ private:
 	bool InitializeSwapchain(HWND window, uint32_t width, uint32_t height);
 	bool InitializePipelines();
 };
-}
+} // namespace rad
