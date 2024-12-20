@@ -632,9 +632,10 @@ CWaterRenderable TerrainErosionSystem::CreateWaterRenderable(CTerrain& terrain)
 void TerrainErosionSystem::GenerateTerrainMaterial(CommandRecord& cmdRecord, CTerrain& terrain,
 												   CErosionParameters const& parameters, CTerrainRenderable& renderable)
 {
+	renderable.TotalLength = parameters.TotalLength;
 	cmdRecord.Push("GenerateTerrainMaterial",
 				   [terrainAlbedo = renderable.TerrainAlbedoTex, terrainNormal = renderable.TerrainNormalMap,
-					heightMap = terrain.HeightMap, cellSize = parameters.TotalLength / terrain.HeightMap->Info.Width,
+					heightMap = terrain.HeightMap, totalLength = parameters.TotalLength,
 					dispatchSize = std::pair<uint32_t, uint32_t>(renderable.TerrainNormalMap->Info.Width / 8,
 																 renderable.TerrainNormalMap->Info.Height / 8),
 					pso = Ref(HeightMapToTerrainMaterialPSO), renderer = Ref(Renderer)](CommandContext& commandCtx)
@@ -649,7 +650,7 @@ void TerrainErosionSystem::GenerateTerrainMaterial(CommandRecord& cmdRecord, CTe
 						   .HeightMapTextureIndex = heightMap->SRV.Index,
 						   .TerrainAlbedoTextureIndex = terrainAlbedo->UAV.Index,
 						   .TerrainNormalMapTextureIndex = terrainNormal->UAV.Index,
-						   .CellSize = cellSize,
+						   .TotalLength = totalLength,
 					   };
 
 					   pso->ExecuteCompute(commandCtx, resources, dispatchSize.first, dispatchSize.second, 1);
@@ -666,11 +667,12 @@ void TerrainErosionSystem::GenerateTerrainMaterial(CommandRecord& cmdRecord, CTe
 void TerrainErosionSystem::GenerateWaterMaterial(CommandRecord& cmdRecord, CTerrain& terrain,
 												 CErosionParameters const& parameters, CWaterRenderable& renderable)
 {
+	renderable.TotalLength = parameters.TotalLength;
 	cmdRecord.Push("GenerateWaterMaterial",
 				   [waterAlbedo = renderable.WaterAlbedoMap, waterNormal = renderable.WaterNormalMap,
 					heightMap = terrain.HeightMap, waterHeightMap = terrain.WaterHeightMap,
 					sedimentMap = terrain.SedimentMap,
-					cellSize = parameters.TotalLength / terrain.HeightMap->Info.Width,
+					totalLength = parameters.TotalLength,
 					dispatchSize = std::pair<uint32_t, uint32_t>(renderable.WaterNormalMap->Info.Width / 8,
 																 renderable.WaterNormalMap->Info.Height / 8),
 					pso = Ref(HeightMapToWaterMaterialPSO), renderer = Ref(Renderer)](CommandContext& commandCtx)
@@ -689,7 +691,7 @@ void TerrainErosionSystem::GenerateWaterMaterial(CommandRecord& cmdRecord, CTerr
 						   .SedimentMapTextureIndex = sedimentMap->SRV.Index,
 						   .WaterAlbedoTextureIndex = waterAlbedo->UAV.Index,
 						   .WaterNormalMapTextureIndex = waterNormal->UAV.Index,
-						   .CellSize = cellSize,
+						   .TotalLength = totalLength,
 					   };
 
 					   pso->ExecuteCompute(commandCtx, resources, dispatchSize.first, dispatchSize.second, 1);
@@ -711,8 +713,11 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 		auto& parameters = erosionView.get<CErosionParameters>(entity);
 		auto* terrainRenderable = registry.try_get<CTerrainRenderable>(entity);
 		auto* waterRenderable = registry.try_get<CWaterRenderable>(entity);
-		if (parameters.ErodeEachFrame || inputMan.IsKeyPressed(SDL_SCANCODE_F))
+		if (inputMan.IsKeyPressed(SDL_SCANCODE_M))
+			GenerateBaseHeightMap(frameRecord.CommandRecord, terrain, parameters, terrainRenderable, waterRenderable);
+		if (parameters.ErodeEachFrame || inputMan.IsKeyPressed(SDL_SCANCODE_K))
 			ErodeTerrain(frameRecord.CommandRecord, terrain, parameters, terrainRenderable, waterRenderable);
+
 	}
 
 	auto terrainRenderableView = registry.view<ecs::CSceneTransform, CIndexedPlane, CTerrainRenderable>();
@@ -733,6 +738,7 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 			.HeightMapTextureIndex = renderable.HeightMap->SRV.Index,
 			.TerrainAlbedoTextureIndex = renderable.TerrainAlbedoTex->SRV.Index,
 			.TerrainNormalMapTextureIndex = renderable.TerrainNormalMap->SRV.Index,
+			.TotalLength = renderable.TotalLength,
 		};
 		terrainRenderData.IndexBufferView = plane.IndexBufferView;
 		terrainRenderData.IndexCount = (plane.ResX - 1) * (plane.ResY - 1) * 6;
@@ -764,6 +770,7 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 			.WaterHeightMapTextureIndex = renderable.WaterHeightMap->SRV.Index,
 			.WaterAlbedoTextureIndex = renderable.WaterAlbedoMap->SRV.Index,
 			.WaterNormalMapTextureIndex = renderable.WaterNormalMap->SRV.Index,
+			.TotalLength = renderable.TotalLength,
 		};
 		waterRenderData.IndexBufferView = plane.IndexBufferView;
 		waterRenderData.IndexCount = (plane.ResX - 1) * (plane.ResY - 1) * 6;

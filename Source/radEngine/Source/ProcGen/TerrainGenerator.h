@@ -50,6 +50,7 @@ struct CTerrainRenderable
 	std::shared_ptr<RWTexture> HeightMap{};
 	std::shared_ptr<RWTexture> TerrainAlbedoTex{};
 	std::shared_ptr<RWTexture> TerrainNormalMap{};
+	float TotalLength = 1024.0f;
 };
 
 struct CWaterRenderable
@@ -58,6 +59,7 @@ struct CWaterRenderable
 	std::shared_ptr<RWTexture> WaterHeightMap{};
 	std::shared_ptr<RWTexture> WaterAlbedoMap{};
 	std::shared_ptr<RWTexture> WaterNormalMap{};
+	float TotalLength = 1024.0f;
 };
 
 struct CErosionParameters

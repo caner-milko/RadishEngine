@@ -461,7 +461,10 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 				ImGui::SliderFloat("Move Speed", &cameraController->MoveSpeed, 0.0f, 10000.0f);
 				ImGui::SliderFloat("Rotation Speed", &cameraController->RotateSpeed, 0.1f, 10.0f);
 				if (ImGui::Button("Reset"))
+				{
 					viewpoint = cameraController->OriginalViewpoint;
+					sceneTransform.SetTransform(cameraController->OriginalTransform);
+				}
 			}
 			ImGui::PopID();
 		}

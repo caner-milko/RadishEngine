@@ -14,7 +14,7 @@ struct HeightToTerrainMaterialResources
     uint HeightMapTextureIndex;
     uint TerrainAlbedoTextureIndex;
     uint TerrainNormalMapTextureIndex;
-    float CellSize DEFAULT_VALUE(1.0f);
+    float TotalLength DEFAULT_VALUE(1024.0f);
 };
 
 struct HeightToWaterMaterialResources
@@ -24,7 +24,7 @@ struct HeightToWaterMaterialResources
     uint SedimentMapTextureIndex;
     uint WaterAlbedoTextureIndex;
     uint WaterNormalMapTextureIndex;
-    float CellSize DEFAULT_VALUE(1.0f);
+    float TotalLength DEFAULT_VALUE(1024.0f);
 };
     
 struct TerrainRenderResources
@@ -35,6 +35,7 @@ struct TerrainRenderResources
     uint HeightMapTextureIndex;
     uint TerrainAlbedoTextureIndex;
     uint TerrainNormalMapTextureIndex;
+    float TotalLength DEFAULT_VALUE(1024.0f);
 };
 
 struct WaterRenderResources
@@ -46,6 +47,7 @@ struct WaterRenderResources
     uint WaterHeightMapTextureIndex;
     uint WaterAlbedoTextureIndex;
     uint WaterNormalMapTextureIndex;
+    float TotalLength DEFAULT_VALUE(1024.0f);
 };
 
 #define EROSION_DELTA_TIME 0.02f

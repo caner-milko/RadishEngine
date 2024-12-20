@@ -115,7 +115,7 @@ void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Ve
 				if (glm::dot(glm::cross(n, t), bitangent) < 0.0f)
 					t *= -1;
 
-				vtx.Tangent = t;
+				vtx.Tangent = -t;
 			}
 
 			for (size_t v = 0; v < fv; v++)

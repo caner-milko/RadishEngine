@@ -27,9 +27,9 @@ VSOut VSMain(VSIn IN)
 {
     VSOut output;
     output.Pos = mul(Resources.MVP, float4(IN.Pos, 1.0));
-    output.Normal = normalize(IN.Normal);
+    output.Normal = mul((float3x3) Resources.Normal, normalize(IN.Normal));
     output.TexCoord = IN.TexCoord;
-    output.Tangent = normalize(IN.Tangent);
+    output.Tangent = mul((float3x3) Resources.Normal, normalize(IN.Tangent));
     return output;
 }
 
@@ -61,7 +61,6 @@ PSOut PSMain(VSOut IN)
         float3 normalMapVal = normalMap.Sample(Sampler, IN.TexCoord).xyz * 2 - 1;
         //normalMapVal.xy *= 3.0;
         normalMapVal = normalize(normalMapVal);
-        normalMapVal.x *= -1;
         
         float3 normal = normalize(IN.Normal);
         float3 tangent = normalize(IN.Tangent);

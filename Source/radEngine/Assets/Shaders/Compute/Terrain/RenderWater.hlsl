@@ -28,7 +28,7 @@ VSOut VSMain(VSIn IN)
 	uint2 heightMapTexCoord = texCoord * heightMapSize;
     float height = heightMap[heightMapTexCoord];
     float waterHeight = waterHeightMap[heightMapTexCoord];
-    float4 pos = float4(texCoord.x, height + waterHeight, texCoord.y, 1.0f);
+    float4 pos = float4((texCoord.x - 0.5) * Resources.TotalLength, height + waterHeight, (texCoord.y - 0.5) * Resources.TotalLength, 1.0f);
 	VSOut OUT;
 	OUT.Pos = mul(Resources.MVP, pos);
 	OUT.TexCoord = texCoord;

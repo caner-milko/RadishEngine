@@ -192,9 +192,9 @@ void LoadSceneData()
 		auto& meshTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh, mesh);
 		meshTransform.SetParent(&rootTransform);
 		assert(meshInfo.Model && meshInfo.Material);
-		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{.Vertices = *meshInfo.Model,
-																					.Indices = meshInfo.Indices,
-																					.Material = *meshInfo.Material});
+		//g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{.Vertices = *meshInfo.Model,
+		//																			.Indices = meshInfo.Indices,
+		//																			.Material = *meshInfo.Material});
 	}
 
 	{
@@ -226,8 +226,8 @@ void LoadSceneData()
 			});
 
 		ecs::Transform transform{};
-		transform.Scale = {50.0f, 0.05f, 50.0f};
-		transform.Position = glm::vec3(-5, 15, 0);
+		transform.Scale *= 0.01f;
+		transform.Position = glm::vec3(0, -1, 0);
 		terrainTransform.SetTransform(transform);
 		// terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
 		hlsl::MaterialBuffer terrainMaterial = {};

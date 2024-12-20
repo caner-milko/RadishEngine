@@ -26,7 +26,7 @@ VSOut VSMain(VSIn IN)
 	heightMap.GetDimensions(heightMapSize.x, heightMapSize.y);
 	uint2 heightMapTexCoord = texCoord * heightMapSize;
 	float height = heightMap[heightMapTexCoord];
-	float4 pos = float4(texCoord.x, height, texCoord.y, 1.0f);
+    float4 pos = float4((texCoord.x - 0.5) * Resources.TotalLength, height, (texCoord.y - 0.5) * Resources.TotalLength, 1.0f);
 	VSOut OUT;
 	OUT.Pos = mul(Resources.MVP, pos);
 	OUT.TexCoord = texCoord;
@@ -51,12 +51,14 @@ PSOut PSMain(VSOut IN)
     output.Albedo = diffuseCol;
 	float3 normalMapVal = normalMap.Sample(MipMapSampler, IN.TexCoord).xyz * 2 - 1;
 	normalMapVal = normalize(normalMapVal);
-	normalMapVal.x *= -1;
+	
+    float3 normal = normalize(mul((float3x3) Resources.Normal, float3(0, 1, 0)));
+    float3 tangent = normalize(mul((float3x3) Resources.Normal, float3(1, 0, 0)));
+    float3 bitangent = normalize(cross(normal, tangent));
+	
+	float3x3 TBN = float3x3(-tangent, bitangent, normal);
+	
+    output.Normal = float4(normalize(mul(normalMapVal, TBN)), 0);
 
-	// Transform the normal with Resources.Normal matrix(mat3)
-	float3 normal = float3(normalMapVal.x, normalMapVal.z, normalMapVal.y);
-	output.Normal = float4(normalize(mul((float3x3) Resources.Normal, normal)), 0);
-	//output.Normal = float4(normalize(mul((float3x3) Resources.Normal, output.Normal.xyz)), 0);
-	//output.Albedo = float4(normalMapVal, 1);
     return output;
 }

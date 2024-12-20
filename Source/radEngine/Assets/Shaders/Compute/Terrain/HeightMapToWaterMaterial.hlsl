@@ -11,7 +11,7 @@ uint2 ClampTexCoord(uint2 texCoord, uint2 textureSize)
     return clamp(texCoord, 0, textureSize - 1);
 }
 
-float3 FindNormal(float2 uv, Texture2D<float> heightMap, Texture2D<float> waterMap, float cellSize)
+float3 FindNormal(float2 uv, Texture2D<float> heightMap, Texture2D<float> waterMap, float totalLength)
 {
     uint2 heightTextureSize;
     heightMap.GetDimensions(heightTextureSize.x, heightTextureSize.y);
@@ -31,8 +31,8 @@ float3 FindNormal(float2 uv, Texture2D<float> heightMap, Texture2D<float> waterM
     float yDif = (heightBottom - heightTop);
     
     return normalize(cross(
-    normalize(float3((rightCoord - leftCoord).x / texelSize.x * cellSize, xDif, 0)),
-    normalize(float3(0, yDif, (topCoord - bottomCoord).y / texelSize.y * cellSize))
+    normalize(float3((rightCoord - leftCoord).x * totalLength, xDif, 0)),
+    normalize(float3(0, yDif, (topCoord - bottomCoord).y * totalLength))
     ));
 }
 
@@ -54,7 +54,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     float water = waterMap.Sample(LinearSampler, texCoord);
     
-    float3 waterNormal = FindNormal(texCoord, heightMap, waterMap, Resources.CellSize);
+    float3 waterNormal = FindNormal(texCoord, heightMap, waterMap, Resources.TotalLength);
     waterNormal = waterNormal * 0.5 + 0.5;
     waterNormalMap[dispatchID.xy] = float4(waterNormal, 0);
     
