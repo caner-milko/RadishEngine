@@ -108,9 +108,9 @@ float4 PSMain(PSIn IN) : SV_TARGET
     
     shadowCoeff = 1 - saturate(shadowCoeff);
     
-    //diffuse *= shadowCoeff;
-    //specular *= shadowCoeff;
-    
+    diffuse *= shadowCoeff;
+    specular *= shadowCoeff;
+    //return float4(saturate(dot(normal, -lightData.DirectionOrPosition)) * float3(1, 1, 1), 1);
     //return float4(albedo, 1);
     return float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1);
 }

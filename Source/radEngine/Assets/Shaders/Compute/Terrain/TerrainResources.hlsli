@@ -9,26 +9,45 @@ namespace hlsl
 {
 #endif
 
-struct HeightToMaterialResources
+struct HeightToTerrainMaterialResources
+{
+    uint HeightMapTextureIndex;
+    uint TerrainAlbedoTextureIndex;
+    uint TerrainNormalMapTextureIndex;
+    float TotalLength DEFAULT_VALUE(1024.0f);
+};
+
+struct HeightToWaterMaterialResources
 {
     uint HeightMapTextureIndex;
     uint WaterHeightMapTextureIndex;
     uint SedimentMapTextureIndex;
-    uint TerrainAlbedoTextureIndex;
-    uint TerrainNormalMapTextureIndex;
     uint WaterAlbedoTextureIndex;
     uint WaterNormalMapTextureIndex;
-    float CellSize DEFAULT_VALUE(1.0f);
+    float TotalLength DEFAULT_VALUE(1024.0f);
 };
     
-struct HeightToMeshResources
+struct TerrainRenderResources
 {
+    float4x4 MVP;
+    float4x4 Normal;
+    uint MeshResX, MeshResY;
+    uint HeightMapTextureIndex;
+    uint TerrainAlbedoTextureIndex;
+    uint TerrainNormalMapTextureIndex;
+    float TotalLength DEFAULT_VALUE(1024.0f);
+};
+
+struct WaterRenderResources
+{
+    float4x4 MVP;
+    float4x4 Normal;
+    uint MeshResX, MeshResY;
     uint HeightMapTextureIndex;
     uint WaterHeightMapTextureIndex;
-    uint TerrainVertexBufferIndex;
-    uint WaterVertexBufferIndex;
-    uint MeshResX, MeshResY;
-    float CellSize DEFAULT_VALUE(1.0f);
+    uint WaterAlbedoTextureIndex;
+    uint WaterNormalMapTextureIndex;
+    float TotalLength DEFAULT_VALUE(1024.0f);
 };
 
 #define EROSION_DELTA_TIME 0.02f

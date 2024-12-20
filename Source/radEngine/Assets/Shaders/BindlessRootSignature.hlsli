@@ -1,7 +1,7 @@
 #pragma once
 
-// Set the matrix packing to row major by default. Prevents needing to transpose matrices on the C++ side.
-//#pragma pack_matrix(row_major)
+// Set the matrix packing to column major by default. Prevents needing to transpose matrices on the C++ side.
+#pragma pack_matrix(column_major)
 
 #define BindlessRootSignature                                                                                          \
     "RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | "                              \
