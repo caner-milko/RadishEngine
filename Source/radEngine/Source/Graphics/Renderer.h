@@ -42,6 +42,13 @@ struct DeferredPassData
 	const DXTexture* OutDepth;
 };
 
+struct WaterPassData
+{
+	CommandContext& CmdContext;
+	const DXTexture* OutReflectionRefraction;
+	const DXTexture* OutDepth;
+};
+
 struct ForwardPassData
 {
 	CommandContext& CmdContext;
@@ -56,6 +63,7 @@ struct RenderCommand
 	size_t Size;
 	std::function<void(const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass;
 	std::function<void(const RenderView& view, DeferredPassData& passData)> DeferredPass;
+	std::function<void(const RenderView& view, WaterPassData& passData)> WaterPass;
 	std::function<void(const RenderView& view, ForwardPassData& passData)> ForwardPass;
 	std::move_only_function<void()> Destroy;
 };
@@ -71,6 +79,7 @@ template <typename T> struct TypedRenderCommand
 	std::vector<T> Data;
 	std::function<void(std::span<T> data, const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass = nullptr;
 	std::function<void(std::span<T> data, const RenderView& view, DeferredPassData& passData)> DeferredPass = nullptr;
+	std::function<void(std::span<T> data, const RenderView& view, WaterPassData& passData)> WaterPass = nullptr;
 	std::function<void(std::span<T> data, const RenderView& view, ForwardPassData& passData)> ForwardPass = nullptr;
 };
 
@@ -123,6 +132,10 @@ struct RenderFrameRecord
 			renderCommand.DeferredPass = [span, deferredPass = std::move(command.DeferredPass)](
 											 const RenderView& view, DeferredPassData& passData)
 			{ return deferredPass(span, view, passData); };
+		if (command.WaterPass)
+			renderCommand.WaterPass =
+				[span, waterPass = std::move(command.WaterPass)](const RenderView& view, WaterPassData& passData)
+			{ return waterPass(span, view, passData); };
 		if (command.ForwardPass)
 			renderCommand.ForwardPass =
 				[span, forwardPass = std::move(command.ForwardPass)](const RenderView& view, ForwardPassData& passData)

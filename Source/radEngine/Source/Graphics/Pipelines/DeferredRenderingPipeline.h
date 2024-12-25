@@ -47,8 +47,10 @@ struct DeferredRenderingPipeline
 		return GBuffersSRV.GetView(1);
 	}
 
+	void BeginFrame(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	void WaterRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 
@@ -61,10 +63,15 @@ struct DeferredRenderingPipeline
 	DXTexture DepthBuffer{};
 	DXTexture AlbedoBuffer{};
 	DXTexture NormalBuffer{};
+	// RG - Reflection Normal, BA - Refraction Normal
+	DXTexture SSReflectRefractBuffer{};
+	DXTexture SSDepthBuffer{};
 
 	DescriptorAllocation DepthBufferDSV{};
 	DescriptorAllocation AlbedoBufferRTV{};
 	DescriptorAllocation NormalBufferRTV{};
+	DescriptorAllocation SSReflectRefractBufferRTV{};
+	DescriptorAllocation SSDepthBufferDSV{};
 	DescriptorAllocation GBuffersSRV{};
 
 	DXTexture ShadowMap{};
@@ -76,6 +83,12 @@ struct DeferredRenderingPipeline
 	DescriptorAllocation LightBufferCBV{};
 	DXBuffer LightTransformationMatricesBuffer{};
 	DescriptorAllocation LightTransformationMatricesBufferCBV{};
+
+	ComputePipelineState<hlsl::ScreenSpaceRaymarchResources> ScreenSpaceRaymarchPipelineState{};
+	// RG - Reflection UV, BA - Refraction UV
+	DXTexture ReflectionRefractionResultBuffer{};
+	DescriptorAllocation ReflectionRefractionResultBufferUAV{};
+	DescriptorAllocation ReflectionRefractionResultBufferSRV{};
 
 	GraphicsPipelineState<hlsl::LightingResources> LightingPipelineState{};
 	DXTexture OutputBuffer{};

@@ -37,6 +37,25 @@ struct BlitResources
 {
     uint SourceTextureIndex;
 };
+
+struct ScreenSpaceRaymarchResources
+{
+    // RG - Reflection Normal, BA - Refraction Normal
+    uint InReflectRefractNormalTextureIndex;
+    uint SSDepthTextureIndex;
+    uint DepthTextureIndex;
+    
+    // RG - Reflection UV, BA - Refraction UV
+    uint OutReflectRefractResultTextureIndex;
+    // Contains camera information
+    uint LightTransformBufferIndex;
+    
+    float MaxDistance = 15;
+    float Resolution = 0.3;
+    float Thickness = 0.5;
+    int MaxSteps = 16;
+    
+};
 #ifdef __cplusplus
 };
 };

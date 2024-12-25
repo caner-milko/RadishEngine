@@ -29,6 +29,9 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_D32_FLOAT, .DepthStencil = {.Depth = 1.0f}}};
 	DepthBuffer =
 		DXTexture::Create(Renderer.GetDevice(), L"DepthBuffer", depthBufferInfo, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	SSDepthBuffer =
+		DXTexture::Create(Renderer.GetDevice(), L"SSDepthBuffer", depthBufferInfo, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
 	DXTexture::TextureCreateInfo albedoBufferInfo{
 		.Width = width,
 		.Height = height,
@@ -45,6 +48,19 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
 		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_R16G16B16A16_FLOAT, .Color = {0, 0, 0, 1}}};
 	NormalBuffer = DXTexture::Create(Renderer.GetDevice(), L"NormalBuffer", normalBufferInfo);
+
+	auto reflectionBufferInfo = albedoBufferInfo;
+	reflectionBufferInfo.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+	reflectionBufferInfo.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_R8G8B8A8_UNORM, .Color = {0, 0, 0, 0}};
+
+	SSReflectRefractBuffer =
+		DXTexture::Create(Renderer.GetDevice(), L"SSReflectRefractBuffer", reflectionBufferInfo);
+
+	reflectionBufferInfo.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+	ReflectionRefractionResultBuffer =
+		DXTexture::Create(Renderer.GetDevice(), L"ReflectionRefractionResultBuffer", reflectionBufferInfo);
+
 	DXTexture::TextureCreateInfo outputBufferInfo{
 		.Width = width,
 		.Height = height,
@@ -60,6 +76,8 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 	DepthBuffer.CreatePlacedDSV(DepthBufferDSV.GetView(), &dsvDesc);
+	SSDepthBuffer.CreatePlacedDSV(SSDepthBufferDSV.GetView(), &dsvDesc);
+
 
 	D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -71,6 +89,10 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	OutputBuffer.CreatePlacedRTV(OutputBufferRTV.GetView(), &rtvDesc);
+
+	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	SSReflectRefractBuffer.CreatePlacedRTV(SSReflectRefractBufferRTV.GetView(), &rtvDesc);
+
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 	srvDesc = {};
 	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -83,6 +105,20 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	NormalBuffer.CreatePlacedSRV(GBuffersSRV.GetView(1), &srvDesc);
 	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
 	DepthBuffer.CreatePlacedSRV(GBuffersSRV.GetView(2), &srvDesc);
+	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	SSReflectRefractBuffer.CreatePlacedSRV(GBuffersSRV.GetView(3), &srvDesc);
+	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	SSDepthBuffer.CreatePlacedSRV(GBuffersSRV.GetView(4), &srvDesc);
+
+	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	ReflectionRefractionResultBuffer.CreatePlacedSRV(ReflectionRefractionResultBufferSRV.GetView(), &srvDesc);
+
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+	uavDesc.Texture2D.MipSlice = 0;
+	ReflectionRefractionResultBuffer.CreatePlacedUAV(ReflectionRefractionResultBufferUAV.GetView(), &uavDesc);
+		
 	return true;
 }
 
@@ -186,11 +222,18 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 	LightTransformationMatricesBuffer.CreatePlacedCBV(LightTransformationMatricesBufferCBV.GetView());
 
 	DepthBufferDSV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
+	SSDepthBufferDSV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
 	AlbedoBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 	NormalBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 	OutputBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
+	SSReflectRefractBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 
-	GBuffersSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 3);
+	ReflectionRefractionResultBufferSRV =
+		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	ReflectionRefractionResultBufferUAV =
+		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+
+	GBuffersSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 5);
 
 	OutputBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
@@ -202,9 +245,62 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 		"Depth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{DepthBuffer, GBuffersSRV.GetView(2)});
 	Renderer.ViewableTextures.emplace(
 		"Output", std::pair<Ref<DXTexture>, DescriptorAllocationView>{OutputBuffer, OutputBufferSRV.GetView()});
+	Renderer.ViewableTextures.emplace("SSReflectRefract", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+														SSReflectRefractBuffer, GBuffersSRV.GetView(3)});
+	Renderer.ViewableTextures.emplace("SSDepth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+														SSDepthBuffer, GBuffersSRV.GetView(4)});
+	Renderer.ViewableTextures.emplace("ReflectionRefractionResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+																		ReflectionRefractionResultBuffer,
+																		ReflectionRefractionResultBufferSRV.GetView()});
 
 	return true;
 }
+
+void DeferredRenderingPipeline::BeginFrame(CommandContext& cmdContext, RenderFrameRecord& frameRecord) 
+{
+
+	// Update Light Data
+	{
+		TransitionVec(LightBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdContext);
+		// Update Light Buffer
+		hlsl::LightDataBuffer lightData{.DirectionOrPosition = frameRecord.LightInfo.View.ViewDirection,
+										.Color = frameRecord.LightInfo.Color,
+										.Intensity = frameRecord.LightInfo.Intensity,
+										.AmbientColor = frameRecord.LightInfo.AmbientColor};
+		constexpr size_t paramCount = sizeof(rad::hlsl::LightDataBuffer) / sizeof(UINT);
+		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+		for (size_t i = 0; i < paramCount; i++)
+		{
+			params[i].Dest = LightBuffer.GPUAddress(i * sizeof(UINT));
+			params[i].Value = reinterpret_cast<const UINT*>(&lightData)[i];
+		}
+		cmdContext->WriteBufferImmediate(paramCount, params, nullptr);
+		TransitionVec(LightBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmdContext);
+	}
+
+	// Update Light Transformation Matrices
+	{
+		TransitionVec(LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdContext);
+		rad::hlsl::LightTransformBuffer lighTransform{};
+		lighTransform.LightViewProjection = frameRecord.LightInfo.View.ViewProjectionMatrix;
+		lighTransform.CamInverseView = glm::inverse(frameRecord.View.ViewMatrix);
+		lighTransform.CamInverseProjection = glm::inverse(frameRecord.View.ProjectionMatrix);
+
+		// Update Light Buffer
+		constexpr size_t paramCount = sizeof(lighTransform) / sizeof(UINT);
+		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+		for (size_t i = 0; i < paramCount; i++)
+		{
+			params[i].Dest = LightTransformationMatricesBuffer.GPUAddress(i * sizeof(UINT));
+			params[i].Value = reinterpret_cast<const UINT*>(&lighTransform)[i];
+		}
+		cmdContext->WriteBufferImmediate(paramCount, params, nullptr);
+		TransitionVec(LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
+			.Execute(cmdContext);
+	}
+}
+
+
 void DeferredRenderingPipeline::ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
 	cmdContext->RSSetViewports(1, &ShadowMapViewport);
@@ -267,6 +363,42 @@ void DeferredRenderingPipeline::DeferredRenderPass(CommandContext& cmdContext, R
 		if (renderCommand.DeferredPass)
 			renderCommand.DeferredPass(frameRecord.View, passData);
 }
+void DeferredRenderingPipeline::WaterRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
+{
+	cmdContext->RSSetViewports(1, &Viewport);
+	cmdContext->RSSetScissorRects(1, &ScissorRect);
+
+	TransitionVec{}
+		.Add(DepthBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE)
+		.Add(SSDepthBuffer, D3D12_RESOURCE_STATE_COPY_DEST)
+		.Execute(cmdContext);
+
+	cmdContext->CopyResource(SSDepthBuffer.Resource.Get(), DepthBuffer.Resource.Get());
+
+	TransitionVec{}
+		.Add(SSReflectRefractBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(SSDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_WRITE)
+		.Execute(cmdContext);
+
+	// Clear Render Targets
+	D3D12_CPU_DESCRIPTOR_HANDLE rtv = SSReflectRefractBufferRTV.GetCPUHandle();
+	float clearColor[] = {0, 0, 0, 0};
+	cmdContext->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+
+	// Set Render Targets
+	auto dsv = SSDepthBufferDSV.GetCPUHandle();
+	cmdContext->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+
+	cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	WaterPassData passData{.CmdContext = cmdContext,
+						   .OutReflectionRefraction = &SSReflectRefractBuffer,
+						   .OutDepth = &SSDepthBuffer};
+	for (auto& renderCommand : frameRecord.Commands)
+		if (renderCommand.WaterPass)
+			renderCommand.WaterPass(frameRecord.View, passData);
+}
+
 void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
 	cmdContext->RSSetViewports(1, &Viewport);
@@ -288,45 +420,6 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 
 	cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
-	// Update Light Data
-	{
-		TransitionVec(LightBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdContext);
-		// Update Light Buffer
-		hlsl::LightDataBuffer lightData{.DirectionOrPosition = frameRecord.LightInfo.View.ViewDirection,
-										.Color = frameRecord.LightInfo.Color,
-										.Intensity = frameRecord.LightInfo.Intensity,
-										.AmbientColor = frameRecord.LightInfo.AmbientColor};
-		constexpr size_t paramCount = sizeof(rad::hlsl::LightDataBuffer) / sizeof(UINT);
-		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
-		for (size_t i = 0; i < paramCount; i++)
-		{
-			params[i].Dest = LightBuffer.GPUAddress(i * sizeof(UINT));
-			params[i].Value = reinterpret_cast<const UINT*>(&lightData)[i];
-		}
-		cmdContext->WriteBufferImmediate(paramCount, params, nullptr);
-		TransitionVec(LightBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmdContext);
-	}
-
-	// Update Light Transformation Matrices
-	{
-		TransitionVec(LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdContext);
-		rad::hlsl::LightTransformBuffer lighTransform{};
-		lighTransform.LightViewProjection = frameRecord.LightInfo.View.ViewProjectionMatrix;
-		lighTransform.CamInverseView = glm::inverse(frameRecord.View.ViewMatrix);
-		lighTransform.CamInverseProjection = glm::inverse(frameRecord.View.ProjectionMatrix);
-
-		// Update Light Buffer
-		constexpr size_t paramCount = sizeof(lighTransform) / sizeof(UINT);
-		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
-		for (size_t i = 0; i < paramCount; i++)
-		{
-			params[i].Dest = LightTransformationMatricesBuffer.GPUAddress(i * sizeof(UINT));
-			params[i].Value = reinterpret_cast<const UINT*>(&lighTransform)[i];
-		}
-		cmdContext->WriteBufferImmediate(paramCount, params, nullptr);
-		TransitionVec(LightTransformationMatricesBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
-			.Execute(cmdContext);
-	}
 	rad::hlsl::LightingResources lightingResources{};
 	lightingResources.AlbedoTextureIndex = GBuffersSRV.Index;
 	lightingResources.NormalTextureIndex = GBuffersSRV.GetView(1).GetIndex();

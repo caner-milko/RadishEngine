@@ -42,6 +42,7 @@ struct WaterRenderResources
 {
     float4x4 MVP;
     float4x4 Normal;
+    float4 ViewDir;
     uint MeshResX, MeshResY;
     uint HeightMapTextureIndex;
     uint WaterHeightMapTextureIndex;

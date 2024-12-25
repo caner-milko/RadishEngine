@@ -1,6 +1,7 @@
 #include "FullscreenVS.hlsli"
 #include "RenderResources.hlsli"
 #include "ConstantBuffers.hlsli"
+#include "HLSLCommon.hlsli"
 
 ConstantBuffer<LightingResources> Resources : register(b0);
 
@@ -12,17 +13,6 @@ struct PSIn
     float4 Pos : SV_POSITION;
     float2 TexCoord : TEXCOORD;
 };
-
-float3 WorldPosFromDepth(LightTransformBuffer lightTransform, float2 texCoord, float depth)
-{
-    float2 screenPos = texCoord * 2 - 1;
-    screenPos.y = -screenPos.y;
-    float4 clipPos = float4(screenPos, depth, 1);
-    float4 viewPos = mul(lightTransform.CamInverseProjection, clipPos);
-    viewPos /= viewPos.w;
-    float4 worldPos = mul(lightTransform.CamInverseView, viewPos);
-    return worldPos.xyz;
-}
 
 float3 LightSpaceFromWorld(LightTransformBuffer lightTransform, float3 worldPos)
 {
@@ -61,7 +51,7 @@ float4 PSMain(PSIn IN) : SV_TARGET
     diffuse *= lightData.Intensity;
     
     float depth = depthMap.Sample(PointSampler, IN.TexCoord);
-    float3 worldPos = WorldPosFromDepth(lightTransform, IN.TexCoord, depth);
+    float3 worldPos = WorldPosFromDepth(lightTransform.CamInverseProjection, lightTransform.CamInverseView, IN.TexCoord, depth);
     float3 lightSpacePos = LightSpaceFromWorld(lightTransform, worldPos);
     
     bool inBounds = lightSpacePos.x > 0 && lightSpacePos.x < 1 && lightSpacePos.y > 0 && lightSpacePos.y < 1 && lightSpacePos.z > 0 && lightSpacePos.z < 1;
