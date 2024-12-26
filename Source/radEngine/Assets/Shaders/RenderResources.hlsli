@@ -30,7 +30,7 @@ struct LightingResources
     uint ShadowMapTextureIndex;
     uint ShadowMapSamplerIndex;
     uint LightDataBufferIndex;
-    uint LightTransformBufferIndex;
+    uint ViewTransformBufferIndex;
 };
     
 struct BlitResources
@@ -48,12 +48,12 @@ struct ScreenSpaceRaymarchResources
     // RG - Reflection UV, BA - Refraction UV
     uint OutReflectRefractResultTextureIndex;
     // Contains camera information
-    uint LightTransformBufferIndex;
+    uint ViewTransformBufferIndex;
     
-    float MaxDistance = 15;
-    float Resolution = 0.3;
-    float Thickness = 0.5;
-    int MaxSteps = 16;
+    float MaxDistance DEFAULT_VALUE(15.0f);
+    float Resolution DEFAULT_VALUE(0.3f);
+    float Thickness DEFAULT_VALUE(0.5f);
+    int MaxSteps DEFAULT_VALUE(16);
     
 };
 #ifdef __cplusplus

@@ -53,10 +53,12 @@ struct DeferredRenderingPipeline
 	void WaterRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	void ScreenSpaceRaymarchPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 
   private:
 	bool SetupLightingPass();
 	bool SetupShadowMapPass();
+	bool SetupScreenSpaceRaymarchPass();
 
 	Renderer& Renderer;
 
@@ -81,8 +83,8 @@ struct DeferredRenderingPipeline
 
 	DXBuffer LightBuffer{};
 	DescriptorAllocation LightBufferCBV{};
-	DXBuffer LightTransformationMatricesBuffer{};
-	DescriptorAllocation LightTransformationMatricesBufferCBV{};
+	DXTypedSingularBuffer<hlsl::ViewTransformBuffer> ViewTransformBuffer{};
+	DescriptorAllocation ViewTransformBufferCBV{};
 
 	ComputePipelineState<hlsl::ScreenSpaceRaymarchResources> ScreenSpaceRaymarchPipelineState{};
 	// RG - Reflection UV, BA - Refraction UV

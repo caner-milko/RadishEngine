@@ -14,9 +14,9 @@ struct PSIn
     float2 TexCoord : TEXCOORD;
 };
 
-float3 LightSpaceFromWorld(LightTransformBuffer lightTransform, float3 worldPos)
+float3 LightSpaceFromWorld(float4x4 viewProjection, float3 worldPos)
 {
-    float4 lightSpacePos = mul(lightTransform.LightViewProjection, float4(worldPos, 1));
+    float4 lightSpacePos = mul(viewProjection, float4(worldPos, 1));
     lightSpacePos /= lightSpacePos.w;
     // Transform from [-1, 1] to [0, 1]
     lightSpacePos.xy = lightSpacePos.xy * 0.5 + 0.5;
@@ -38,7 +38,7 @@ float4 PSMain(PSIn IN) : SV_TARGET
     Texture2D<float> shadowMap = GetBindlessResource(Resources.ShadowMapTextureIndex);
     SamplerComparisonState shadowMapSampler = GetBindlessSampler(Resources.ShadowMapSamplerIndex);
     ConstantBuffer<LightDataBuffer> lightData = GetBindlessResource(Resources.LightDataBufferIndex);
-    ConstantBuffer<LightTransformBuffer> lightTransform = GetBindlessResource(Resources.LightTransformBufferIndex);
+    ConstantBuffer<ViewTransformBuffer> viewTransform = GetBindlessResource(Resources.ViewTransformBufferIndex);
     
     float3 normal = normalTex.Sample(PointSampler, IN.TexCoord).rgb;
     float3 albedo = albedoTex.Sample(PointSampler, IN.TexCoord).rgb;
@@ -48,11 +48,9 @@ float4 PSMain(PSIn IN) : SV_TARGET
     float halfVector = saturate(dot(normal, normalize(-lightData.DirectionOrPosition + float3(0, 0, 1))));
     float specular = pow(halfVector, 32);
     
-    diffuse *= lightData.Intensity;
-    
     float depth = depthMap.Sample(PointSampler, IN.TexCoord);
-    float3 worldPos = WorldPosFromDepth(lightTransform.CamInverseProjection, lightTransform.CamInverseView, IN.TexCoord, depth);
-    float3 lightSpacePos = LightSpaceFromWorld(lightTransform, worldPos);
+    float3 worldPos = WorldPosFromDepth(viewTransform.CamInverseProjection, viewTransform.CamInverseView, IN.TexCoord, depth);
+    float3 lightSpacePos = LightSpaceFromWorld(viewTransform.LightViewProjection, worldPos);
     
     bool inBounds = lightSpacePos.x > 0 && lightSpacePos.x < 1 && lightSpacePos.y > 0 && lightSpacePos.y < 1 && lightSpacePos.z > 0 && lightSpacePos.z < 1;
     
@@ -98,8 +96,8 @@ float4 PSMain(PSIn IN) : SV_TARGET
     
     shadowCoeff = 1 - saturate(shadowCoeff);
     
-    diffuse *= shadowCoeff;
-    specular *= shadowCoeff;
+    //diffuse *= shadowCoeff;
+    //specular *= shadowCoeff;
     //return float4(saturate(dot(normal, -lightData.DirectionOrPosition)) * float3(1, 1, 1), 1);
     //return float4(albedo, 1);
     return float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1);

@@ -444,7 +444,7 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 		ImGui::Begin("Scene");
 		// Camera
 		auto camera = registry.view<CCamera, CViewpoint, CSceneTransform>().front();
-		if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+		if (ImGui::CollapsingHeader("Camera"))
 		{
 			ImGui::PushID("Camera");
 			auto& sceneTransform = registry.get<ecs::CSceneTransform>(camera);
@@ -471,7 +471,7 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 
 		// Light
 		auto dirLight = registry.view<CLight, CViewpoint, CSceneTransform, CViewpointController>().front();
-		if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+		if (ImGui::CollapsingHeader("Light"))
 		{
 			ImGui::PushID("Light");
 			auto& sceneTransform = registry.get<ecs::CSceneTransform>(dirLight);
@@ -518,7 +518,7 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 			auto* entityInfo = registry.try_get<ecs::CEntityInfo>(terrainEnt);
 			auto* terrainRenderable = registry.try_get<ecs::CStaticRenderable>(terrainEnt);
 			auto* waterRenderable = registry.try_get<ecs::CStaticRenderable>(terrainEnt);
-			if (ImGui::CollapsingHeader("Terrain_", ImGuiTreeNodeFlags_DefaultOpen))
+			if (ImGui::CollapsingHeader("Terrain_"))
 			{
 				ImGui::PushID("Terrain");
 				ImGui::Checkbox("With Water", &erosionParams.MeshWithWater);

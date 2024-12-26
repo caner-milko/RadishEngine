@@ -261,7 +261,7 @@ bool TerrainErosionSystem::Setup()
 		waterPrepassPSStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 		D3D12_RT_FORMAT_ARRAY rtvFormats = {};
 		rtvFormats.NumRenderTargets = 1;
-		rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		rtvFormats.RTFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		waterPrepassPSStream.RTVFormats = rtvFormats;
 
 		waterPrepassPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
