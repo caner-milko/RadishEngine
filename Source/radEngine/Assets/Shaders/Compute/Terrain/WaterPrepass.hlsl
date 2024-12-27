@@ -13,6 +13,7 @@ struct VSIn
 struct VSOut
 {
     float4 Pos : SV_POSITION;
+    float3 WorldPos : WORLDPOS;
     float2 TexCoord : TEXCOORD;
 };
 
@@ -28,11 +29,14 @@ VSOut VSMain(VSIn IN)
 	uint2 heightMapTexCoord = texCoord * heightMapSize;
     float height = heightMap[heightMapTexCoord];
     float waterHeight = waterHeightMap[heightMapTexCoord];
+    height = 0;
+    waterHeight = 0;
     float4 pos = float4((texCoord.x - 0.5) * Resources.TotalLength, height + waterHeight, (texCoord.y - 0.5) * Resources.TotalLength, 1.0f);
 	VSOut OUT;
 	OUT.Pos = mul(Resources.MVP, pos);
 	OUT.TexCoord = texCoord;
-	return OUT;
+    OUT.WorldPos = mul(Resources.ModelMatrix, pos).xyz;
+    return OUT;
 }
 
 struct PSOut
@@ -48,21 +52,23 @@ PSOut PSMain(VSOut IN)
     float3 normalMapVal = normalMap.Sample(MipMapSampler, IN.TexCoord).xyz * 2 - 1;
     normalMapVal = normalize(normalMapVal);
 	
-    float3 normal = normalize(mul((float3x3) Resources.Normal, float3(0, 1, 0)));
-    float3 tangent = normalize(mul((float3x3) Resources.Normal, float3(1, 0, 0)));
+    float3 normal = normalize(mul(float3(0, 1, 0), (float3x3) Resources.Normal));
+    float3 tangent = normalize(mul(float3(1, 0, 0), (float3x3) Resources.Normal));
     float3 bitangent = normalize(cross(normal, tangent));
 	
-    float3x3 TBN = float3x3(-tangent, bitangent, normal);
+    float3x3 TBN = float3x3(tangent, bitangent, normal);
 	
-    float3 waterSurfaceNormal = normalize(mul(normalMapVal, TBN));
+    float3 waterSurfaceNormal = normalize(mul(TBN, normalMapVal));
     
-    float3 viewDir = Resources.ViewDir.xyz;
+    float3 viewDir = normalize(IN.WorldPos - Resources.ViewPos.xyz);
+    
+    waterSurfaceNormal = normalize(mul((float3x3) Resources.Normal, float3(0, 1, 0)));
     
     float3 reflectionDir = normalize(reflect(viewDir, waterSurfaceNormal));
     
     float3 refractionDir = normalize(refract(viewDir, waterSurfaceNormal, 1.33));
     
     PSOut output;
-    output.ReflectionRefractionNormals = float4(reflectionDir.xz, 0, 0);
+    output.ReflectionRefractionNormals = float4(reflectionDir.xz, 0, 1);
     return output;
 }

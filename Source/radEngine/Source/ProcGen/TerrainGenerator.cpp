@@ -770,7 +770,7 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 		};
 		terrainRenderData.IndexBufferView = plane.IndexBufferView;
 		terrainRenderData.IndexCount = (plane.ResX - 1) * (plane.ResY - 1) * 6;
-		terrainRenderDataVec.push_back(terrainRenderData);
+		//terrainRenderDataVec.push_back(terrainRenderData);
 	}
 
 	frameRecord.Push(TypedRenderCommand<TerrainRenderData>{
@@ -874,9 +874,10 @@ void TerrainErosionSystem::WaterPrepass(std::span<WaterRenderData> renderObjects
 			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
 		}
 		rad::hlsl::WaterRenderResources renderResources = renderObj.Resources;
+		renderResources.ModelMatrix = renderObj.WorldMatrix;
 		renderResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
 		renderResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
-		renderResources.ViewDir = glm::vec4(view.ViewDirection, 0.0f);
+		renderResources.ViewPos = glm::vec4(view.ViewPosition, 0.0f);
 		WaterPrePassPSO.SetResources(cmd, renderResources);
 		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
 	}
@@ -898,9 +899,10 @@ void TerrainErosionSystem::WaterForwardPass(std::span<WaterRenderData> renderObj
 			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
 		}
 		rad::hlsl::WaterRenderResources renderResources = renderObj.Resources;
+		renderResources.ModelMatrix = renderObj.WorldMatrix;
 		renderResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
 		renderResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
-		renderResources.ViewDir = glm::vec4(view.ViewDirection, 0.0f);
+		renderResources.ViewPos = glm::vec4(view.ViewPosition, 0.0f);
 		WaterForwardPSO.SetResources(cmd, renderResources);
 		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
 	}

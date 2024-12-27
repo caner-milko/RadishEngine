@@ -412,6 +412,9 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 		.Add(NormalBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(LightBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
+		.Add(ViewTransformBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
+		.Add(ReflectionRefractionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Execute(cmdContext);
 
 	// Set Render Targets
@@ -430,12 +433,14 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 	lightingResources.ShadowMapSamplerIndex = ShadowMapSampler.Index;
 	lightingResources.LightDataBufferIndex = LightBufferCBV.Index;
 	lightingResources.ViewTransformBufferIndex = ViewTransformBufferCBV.Index;
+	lightingResources.ReflectionRefractionResultIndex = ReflectionRefractionResultBufferSRV.Index;
 
 	LightingPipelineState.BindWithResources(cmdContext, lightingResources);
 	cmdContext->DrawInstanced(4, 1, 0, 0);
 }
 void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
+	return;
 	cmdContext->RSSetViewports(1, &Viewport);
 	cmdContext->RSSetScissorRects(1, &ScissorRect);
 

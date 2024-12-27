@@ -40,9 +40,10 @@ struct TerrainRenderResources
 
 struct WaterRenderResources
 {
+    float4x4 ModelMatrix;
     float4x4 MVP;
     float4x4 Normal;
-    float4 ViewDir;
+    float4 ViewPos;
     uint MeshResX, MeshResY;
     uint HeightMapTextureIndex;
     uint WaterHeightMapTextureIndex;
