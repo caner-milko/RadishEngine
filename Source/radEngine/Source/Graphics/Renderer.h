@@ -18,6 +18,8 @@ struct RenderView
 	glm::mat4 ProjectionMatrix;
 	glm::vec3 ViewPosition;
 	glm::vec3 ViewDirection;
+	float NearPlane;
+	float FarPlane;
 };
 
 struct RenderLightInfo

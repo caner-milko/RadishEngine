@@ -293,6 +293,9 @@ void DeferredRenderingPipeline::BeginFrame(CommandContext& cmdContext, RenderFra
 		lightTransform.CamViewProjection = frameRecord.View.ViewProjectionMatrix;
 		lightTransform.CamInverseView = glm::inverse(frameRecord.View.ViewMatrix);
 		lightTransform.CamInverseProjection = glm::inverse(frameRecord.View.ProjectionMatrix);
+		lightTransform.CamNear = frameRecord.View.NearPlane;
+		lightTransform.CamFar = frameRecord.View.FarPlane;
+
 		lightTransform.LightViewProjection = frameRecord.LightInfo.View.ViewProjectionMatrix;
 
 		// Update Light Buffer

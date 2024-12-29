@@ -226,6 +226,11 @@ RenderView ViewpointToRenderView(const CViewpoint& viewpoint, const CSceneTransf
 	view.ViewPosition = transform.GetWorldTransform().GetPosition();
 	view.ViewDirection = transform.GetWorldTransform().GetForward();
 	view.ViewProjectionMatrix = view.ProjectionMatrix * view.ViewMatrix;
+	if (auto* perspective = std::get_if<CViewpoint::Perspective>(&viewpoint.Projection))
+	{
+		view.NearPlane = perspective->Near;
+		view.FarPlane = perspective->Far;
+	}
 	return view;
 }
 void CCameraSystem::Update(entt::registry& registry, RenderFrameRecord& frameRecord)

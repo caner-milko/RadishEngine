@@ -101,9 +101,8 @@ float4 PSMain(PSIn IN) : SV_TARGET
     //return float4(saturate(dot(normal, -lightData.DirectionOrPosition)) * float3(1, 1, 1), 1);
     //return float4(albedo, 1);
     Texture2D<float4> reflectionTex = GetBindlessResource(Resources.ReflectionRefractionResultIndex);
-    float2 reflectionUv = reflectionTex.Sample(PointSampler, IN.TexCoord).rg;
-    return (reflectionUv.x + reflectionUv.y == 0) ? float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1) :
-    float4(albedoTex.Sample(PointSampler, reflectionUv).rgb, 1);
-    ;
+    float3 reflectionUv = reflectionTex.Sample(PointSampler, IN.TexCoord).rgb;
+    return lerp(float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1),
+    float4(albedoTex.Sample(PointSampler, reflectionUv.xy).rgb, 1), reflectionUv.z);
 
 }
