@@ -8,7 +8,7 @@ ConstantBuffer<ScreenSpaceRaymarchResources> Resources : register(b0);
 SamplerState LinearSampler : register(s4);
 
 float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, float resolution, float thickness, int binarySearchStepCount,
-    float4x4 viewProjectionMatrix, Texture2D<float> depthTex, float4x4 inverseProjection, float4x4 inverseView)
+    float4x4 viewProjectionMatrix, float2 nearFarPlane, Texture2D<float> depthTex, float4x4 projectionMatrix, float4x4 inverseView)
 {
     float3 camPos = mul(inverseView, float4(0, 0, 0, 1)).xyz;
     float3 camForward = mul(inverseView, float4(0, 0, 1, 0)).xyz;
@@ -84,8 +84,6 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     
     float depth = Resources.Thickness;
     
-    float3 worldPos = startPoint;
-    
     float2 frag = startFrag;
     
     float viewDistance = 0;
@@ -96,13 +94,12 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
         float2 uv = frag.xy / screenSize;
         
         float currentDepth = depthTex.Sample(LinearSampler, uv).r;
-        worldPos = WorldPosFromDepth(inverseProjection, inverseView, uv, currentDepth);
         
         search1 = lerp((frag.y - startFrag.y) / deltaY, (frag.x - startFrag.x) / deltaX, useX);
         
         viewDistance = (startDepth * endDepth) / lerp(endDepth, startDepth, search1);
         
-        depth = viewDistance - length(camPos - worldPos);
+        depth = viewDistance - ToLinearDepth(currentDepth, projectionMatrix);
         
         if (depth > 0 && depth < thickness)
         {
@@ -127,10 +124,9 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
         float2 uv = frag / screenSize;
         
         float currentDepth = depthTex.Sample(LinearSampler, uv).r;
-        worldPos = WorldPosFromDepth(inverseProjection, inverseView, uv, currentDepth);
         
         viewDistance = (startDepth * endDepth) / lerp(endDepth, startDepth, search1);
-        depth = viewDistance - length(camPos - worldPos);
+        depth = viewDistance - ToLinearDepth(currentDepth, projectionMatrix);
         
         if (depth > 0 && depth < thickness)
         {
@@ -154,8 +150,8 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     * (uv.y < 0 || uv.y > 1 ? 0 : 1)
     * (1 - max(dot(startDir, -normalize(startPoint - camPos)), 0))
     * (1 - clamp(depth / thickness, 0, 1))
-    * (1 - clamp(length(worldPos - startPoint) / maxDist, 0, 1));
-
+    * (1 - clamp((endPoint - startPoint) * lastHitSearch / maxDist, 0, 1));
+    
     return float3(uv, clamp(visibility, 0, 1));
 }
 
@@ -192,7 +188,8 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     refractDir.y = sqrt(1 - dot(refractDir.xz, refractDir.xz));
     
     float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance, Resources.Resolution, Resources.Thickness, Resources.MaxSteps,
-        viewTransform.CamViewProjection, depthTex, viewTransform.CamInverseProjection, viewTransform.CamInverseView);
+        viewTransform.CamViewProjection, float2(viewTransform.CamNear, viewTransform.CamFar),
+    depthTex, viewTransform.CamProjection, viewTransform.CamInverseView);
     
     //float2 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance, Resources.Resolution, Resources.Thickness,
     //    viewTransform.CamViewProjection, viewTransform.CamView, depthTex, viewTransform.CamInverseProjection, viewTransform.CamInverseView);

@@ -96,6 +96,12 @@ float4 PSMain(PSIn IN) : SV_TARGET
     
     shadowCoeff = 1 - saturate(shadowCoeff);
     
+    float3 camPos = viewTransform.CamInverseView._14_24_34;
+    
+    
+    
+    return float4(abs(length(camPos - worldPos) - ToLinearDepth(depth, viewTransform.CamProjection)), 0, 0, 1);
+    
     //diffuse *= shadowCoeff;
     //specular *= shadowCoeff;
     //return float4(saturate(dot(normal, -lightData.DirectionOrPosition)) * float3(1, 1, 1), 1);
@@ -104,5 +110,4 @@ float4 PSMain(PSIn IN) : SV_TARGET
     float3 reflectionUv = reflectionTex.Sample(PointSampler, IN.TexCoord).rgb;
     return lerp(float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1),
     float4(albedoTex.Sample(PointSampler, reflectionUv.xy).rgb, 1), reflectionUv.z);
-
 }
