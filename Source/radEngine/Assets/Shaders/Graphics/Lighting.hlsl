@@ -98,9 +98,15 @@ float4 PSMain(PSIn IN) : SV_TARGET
     
     float3 camPos = viewTransform.CamInverseView._14_24_34;
     
+    float linearDepth = ToLinearDepth(depth, viewTransform.CamProjection);
     
-    
-    return float4(abs(length(camPos - worldPos) - ToLinearDepth(depth, viewTransform.CamProjection)), 0, 0, 1);
+    float3 viewPos = ViewPosFromDepthUv(viewTransform.CamInverseProjection, IN.TexCoord, depth);
+
+    float4 newWorldPos = mul(viewTransform.CamInverseView, float4(viewPos, 1)); 
+
+    //return float4(linearDepth, 0, 0, 1);
+
+    //return float4(frac(worldPos.x), frac(worldPos.y), frac(worldPos.z), 1);
     
     //diffuse *= shadowCoeff;
     //specular *= shadowCoeff;

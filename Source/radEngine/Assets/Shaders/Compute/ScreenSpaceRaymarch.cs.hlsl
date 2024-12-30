@@ -1,3 +1,4 @@
+
 #include "BindlessRootSignature.hlsli"
 #include "RenderResources.hlsli"
 #include "ConstantBuffers.hlsli"
@@ -8,15 +9,14 @@ ConstantBuffer<ScreenSpaceRaymarchResources> Resources : register(b0);
 SamplerState LinearSampler : register(s4);
 
 float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, float resolution, float thickness, int binarySearchStepCount,
-    float4x4 viewProjectionMatrix, float2 nearFarPlane, Texture2D<float> depthTex, float4x4 projectionMatrix, float4x4 inverseView)
+    float4x4 projectionMatrix, Texture2D<float> depthTex)
 {
-    float3 camPos = mul(inverseView, float4(0, 0, 0, 1)).xyz;
-    float3 camForward = mul(inverseView, float4(0, 0, 1, 0)).xyz;
+	float3 camPos = float3(0, 0, 0);
+	float3 camDir = float3(0, 0, 1);
     
+    float startDepth = startPoint.z;
     
-    float startDepth = length(camPos - startPoint);
-    
-    float4 screenStart = mul(viewProjectionMatrix, float4(startPoint, 1));
+    float4 screenStart = mul(projectionMatrix, float4(startPoint, 1));
     screenStart.y = -screenStart.y;
     float4 screenEnd;
     float3 endPoint;
@@ -28,7 +28,7 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     for (int i = 0; i < 32; i++)
     {
         float3 curEndPoint = startPoint + normalize(startDir) * dist;
-        float4 curScreenEnd = mul(viewProjectionMatrix, float4(curEndPoint, 1));
+        float4 curScreenEnd = mul(projectionMatrix, float4(curEndPoint, 1));
         float3 uvPos = curScreenEnd.xyz / curScreenEnd.w;
         lastChange /= 2;
         if (max(max(abs(uvPos.z), abs(uvPos.x)), abs(uvPos.y)) < 1 && uvPos.z > 0)
@@ -48,15 +48,13 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     if (!found)
         return float3(0, 0, 0);
     
-    float endDepth = length(camPos - endPoint);
+    float endDepth = endPoint.z;
     screenEnd.y = -screenEnd.y;
     screenStart.xyz /= screenStart.w;
     screenEnd.xyz /= screenEnd.w;
     
     screenStart.xy = screenStart.xy * 0.5 + 0.5;
     screenEnd.xy = screenEnd.xy * 0.5 + 0.5;
-    
-    //return float3(dist / maxDist, 0, 1);
     
     uint2 screenSizeInt;
     depthTex.GetDimensions(screenSizeInt.x, screenSizeInt.y);
@@ -148,9 +146,9 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
       hit1
     * (uv.x < 0 || uv.x > 1 ? 0 : 1)
     * (uv.y < 0 || uv.y > 1 ? 0 : 1)
-    * (1 - max(dot(startDir, -normalize(startPoint - camPos)), 0))
+    * (1 - max(dot(startDir, -normalize(startPoint)), 0))
     * (1 - clamp(depth / thickness, 0, 1))
-    * (1 - clamp((endPoint - startPoint) * lastHitSearch / maxDist, 0, 1));
+    * (1 - clamp(length(endPoint - startPoint) * lastHitSearch / maxDist, 0, 1));
     
     return float3(uv, clamp(visibility, 0, 1));
 }
@@ -172,7 +170,8 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     float2 texCoord = (float2(dispatchID.xy) + 0.5) / float2(screenSize);
     
-    float3 rayPos = WorldPosFromDepth(viewTransform.CamInverseProjection, viewTransform.CamInverseView, texCoord, ssDepthTex.Sample(LinearSampler, texCoord));
+    float3 rayPos =
+		ViewPosFromDepthUv(viewTransform.CamInverseProjection, texCoord, ssDepthTex.Sample(LinearSampler, texCoord));
     float4 reflectRefractNormal = inReflectRefractNormalTex.Sample(LinearSampler, texCoord);
     
     if(reflectRefractNormal.x == 0)
@@ -184,12 +183,14 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     float3 reflectDir = float3(reflectRefractNormal.x, 0, reflectRefractNormal.y);
     reflectDir.y = sqrt(1 - dot(reflectDir.xz, reflectDir.xz));
 
+    reflectDir = mul((float3x3)viewTransform.CamView, reflectDir);
+
     float3 refractDir = float3(reflectRefractNormal.z, 0, reflectRefractNormal.w);
     refractDir.y = sqrt(1 - dot(refractDir.xz, refractDir.xz));
     
     float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance, Resources.Resolution, Resources.Thickness, Resources.MaxSteps,
-        viewTransform.CamViewProjection, float2(viewTransform.CamNear, viewTransform.CamFar),
-    depthTex, viewTransform.CamProjection, viewTransform.CamInverseView);
+        viewTransform.CamProjection,
+    depthTex);
     
     //float2 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance, Resources.Resolution, Resources.Thickness,
     //    viewTransform.CamViewProjection, viewTransform.CamView, depthTex, viewTransform.CamInverseProjection, viewTransform.CamInverseView);
