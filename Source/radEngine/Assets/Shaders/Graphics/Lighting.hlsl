@@ -49,7 +49,7 @@ float4 PSMain(PSIn IN) : SV_TARGET
     float specular = pow(halfVector, 32);
     
     float depth = depthMap.Sample(PointSampler, IN.TexCoord);
-    float3 worldPos = WorldPosFromDepth(viewTransform.CamInverseProjection, viewTransform.CamInverseView, IN.TexCoord, depth);
+    float3 worldPos = WorldPosFromDepth(viewTransform.CamInverseViewProjection, IN.TexCoord, depth);
     float3 lightSpacePos = LightSpaceFromWorld(viewTransform.LightViewProjection, worldPos);
     
     bool inBounds = lightSpacePos.x > 0 && lightSpacePos.x < 1 && lightSpacePos.y > 0 && lightSpacePos.y < 1 && lightSpacePos.z > 0 && lightSpacePos.z < 1;
@@ -96,20 +96,8 @@ float4 PSMain(PSIn IN) : SV_TARGET
     
     shadowCoeff = 1 - saturate(shadowCoeff);
     
-    float3 camPos = viewTransform.CamInverseView._14_24_34;
-    
-    float linearDepth = ToLinearDepth(depth, viewTransform.CamProjection);
-    
-    float3 viewPos = ViewPosFromDepthUv(viewTransform.CamInverseProjection, IN.TexCoord, depth);
-
-    float4 newWorldPos = mul(viewTransform.CamInverseView, float4(viewPos, 1)); 
-
-    //return float4(linearDepth, 0, 0, 1);
-
-    //return float4(frac(worldPos.x), frac(worldPos.y), frac(worldPos.z), 1);
-    
-    //diffuse *= shadowCoeff;
-    //specular *= shadowCoeff;
+    diffuse *= shadowCoeff;
+    specular *= shadowCoeff;
     //return float4(saturate(dot(normal, -lightData.DirectionOrPosition)) * float3(1, 1, 1), 1);
     //return float4(albedo, 1);
     Texture2D<float4> reflectionTex = GetBindlessResource(Resources.ReflectionRefractionResultIndex);
