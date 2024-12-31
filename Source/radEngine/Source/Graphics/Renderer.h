@@ -56,6 +56,9 @@ struct ForwardPassData
 	CommandContext& CmdContext;
 	const DXTexture* OutColor;
 	const DXTexture* Depth;
+	const DescriptorAllocationView InColorSRV;
+	const DescriptorAllocationView InReflectionResultSRV;
+	const DescriptorAllocationView InRefractionResultSRV;
 };
 
 struct RenderCommand

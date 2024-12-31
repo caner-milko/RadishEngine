@@ -142,15 +142,27 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     
     float2 uv = frag / screenSize;
     
+    float viewSpaceRatio = (startDepth * endDepth) / lerp(endDepth, startDepth, lastHitSearch);
+    
+    viewSpaceRatio = (viewSpaceRatio - startDepth) / (endDepth - startDepth);
+    
+    float dirSimilarity = max(dot(startDir, -normalize(startPoint)), 0);
+    dirSimilarity = dot(dirSimilarity, dirSimilarity);
+    viewSpaceRatio = dot(viewSpaceRatio, viewSpaceRatio);
+    
     float visibility =
       hit1
     * (uv.x < 0 || uv.x > 1 ? 0 : 1)
     * (uv.y < 0 || uv.y > 1 ? 0 : 1)
-    * (1 - max(dot(startDir, -normalize(startPoint)), 0))
+    * (1 - dirSimilarity)
     * (1 - clamp(depth / thickness, 0, 1))
-    * (1 - clamp(length(endPoint - startPoint) * lastHitSearch / maxDist, 0, 1));
+    * (1 - viewSpaceRatio);
     
-    return float3(uv, clamp(visibility, 0, 1));
+    
+    
+    visibility = clamp(visibility, 0, 1);
+    
+    return float3(uv * ceil(visibility), visibility);
 }
 
 [RootSignature(BindlessRootSignature)]
@@ -161,7 +173,8 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     Texture2D<float> ssDepthTex = GetBindlessResource(Resources.SSDepthTextureIndex);
     Texture2D<float> depthTex = GetBindlessResource(Resources.DepthTextureIndex);
     
-    RWTexture2D<float4> outColorTex = GetBindlessResource(Resources.OutReflectRefractResultTextureIndex);
+    RWTexture2D<float4> outReflectionTex = GetBindlessResource(Resources.OutReflectResultTextureIndex);
+    RWTexture2D<float4> outRefractionTex = GetBindlessResource(Resources.OutRefractResultTextureIndex);
 
     ConstantBuffer<ViewTransformBuffer> viewTransform = GetBindlessResource(Resources.ViewTransformBufferIndex);
     
@@ -174,25 +187,35 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 		ViewPosFromDepthUv(viewTransform.CamInverseProjection, texCoord, ssDepthTex.Sample(LinearSampler, texCoord));
     float4 reflectRefractNormal = inReflectRefractNormalTex.Sample(LinearSampler, texCoord);
     
-    if(reflectRefractNormal.x == 0)
+
+    if (reflectRefractNormal.x != 0 || reflectRefractNormal.y != 0)
     {
-        outColorTex[dispatchID.xy] = float4(0, 0, 0, 1);
-        return;
+        float3 reflectDir = float3(reflectRefractNormal.x, 0, reflectRefractNormal.y);
+        reflectDir.y = sqrt(1 - dot(reflectDir.xz, reflectDir.xz));
+
+        reflectDir = mul((float3x3) viewTransform.CamView, reflectDir);
+        
+        float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance, Resources.Resolution,
+        Resources.Thickness, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
+        
+        outReflectionTex[dispatchID.xy] = float4(reflectTexCoord.xy, 0, reflectTexCoord.z);
     }
+    else
+        outReflectionTex[dispatchID.xy] = float4(0, 0, 0, 0);
     
-    float3 reflectDir = float3(reflectRefractNormal.x, 0, reflectRefractNormal.y);
-    reflectDir.y = sqrt(1 - dot(reflectDir.xz, reflectDir.xz));
-
-    reflectDir = mul((float3x3)viewTransform.CamView, reflectDir);
-
-    float3 refractDir = float3(reflectRefractNormal.z, 0, reflectRefractNormal.w);
-    refractDir.y = sqrt(1 - dot(refractDir.xz, refractDir.xz));
+    if (reflectRefractNormal.z != 0 || reflectRefractNormal.z != 0)
+    {
+        float3 refractDir = float3(reflectRefractNormal.z, 0, reflectRefractNormal.w);
+        refractDir.y = -sqrt(1 - dot(refractDir.xz, refractDir.xz));
     
-    float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance, Resources.Resolution, Resources.Thickness, Resources.MaxSteps,
-        viewTransform.CamProjection,
-    depthTex);
+        refractDir = mul((float3x3)viewTransform.CamView, refractDir);
     
-    //float2 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance, Resources.Resolution, Resources.Thickness,
-    //    viewTransform.CamViewProjection, viewTransform.CamView, depthTex, viewTransform.CamInverseProjection, viewTransform.CamInverseView);
-    outColorTex[dispatchID.xy] = float4(reflectTexCoord.xyz, 1);
+    
+        float3 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance, Resources.Resolution,
+            Resources.Thickness, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
+    
+        outRefractionTex[dispatchID.xy] = float4(refractTexCoord.xy, 0, refractTexCoord.z);
+    }
+    else
+        outRefractionTex[dispatchID.xy] = float4(0, 0, 0, 0);
 }

@@ -49,6 +49,9 @@ struct WaterRenderResources
     uint WaterHeightMapTextureIndex;
     uint WaterAlbedoTextureIndex;
     uint WaterNormalMapTextureIndex;
+    uint ReflectionResultTextureIndex;
+    uint RefractionResultTextureIndex;
+    uint ColorTextureIndex;
     float TotalLength DEFAULT_VALUE(1024.0f);
 };
 

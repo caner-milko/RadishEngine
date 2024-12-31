@@ -87,10 +87,14 @@ struct DeferredRenderingPipeline
 	DescriptorAllocation ViewTransformBufferCBV{};
 
 	ComputePipelineState<hlsl::ScreenSpaceRaymarchResources> ScreenSpaceRaymarchPipelineState{};
-	// RG - Reflection UV, BA - Refraction UV
-	DXTexture ReflectionRefractionResultBuffer{};
-	DescriptorAllocation ReflectionRefractionResultBufferUAV{};
-	DescriptorAllocation ReflectionRefractionResultBufferSRV{};
+	// RG - Reflection UV, A - Visibility
+	DXTexture ReflectionResultBuffer{};
+	DescriptorAllocation ReflectionResultBufferUAV{};
+	DescriptorAllocation ReflectionResultBufferSRV{};
+	// RG - Refraction UV, A - Visibility
+	DXTexture RefractionResultBuffer{};
+	DescriptorAllocation RefractionResultBufferUAV{};
+	DescriptorAllocation RefractionResultBufferSRV{};
 
 	GraphicsPipelineState<hlsl::LightingResources> LightingPipelineState{};
 	DXTexture OutputBuffer{};

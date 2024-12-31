@@ -60,8 +60,10 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		DXTexture::Create(Renderer.GetDevice(), L"SSReflectRefractBuffer", reflectionBufferInfo);
 
 	reflectionBufferInfo.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-	ReflectionRefractionResultBuffer =
-		DXTexture::Create(Renderer.GetDevice(), L"ReflectionRefractionResultBuffer", reflectionBufferInfo);
+	ReflectionResultBuffer =
+		DXTexture::Create(Renderer.GetDevice(), L"ReflectionResultBuffer", reflectionBufferInfo);
+	RefractionResultBuffer =
+		DXTexture::Create(Renderer.GetDevice(), L"RefractionResultBuffer", reflectionBufferInfo);
 
 	DXTexture::TextureCreateInfo outputBufferInfo{
 		.Width = width,
@@ -113,13 +115,15 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	SSDepthBuffer.CreatePlacedSRV(GBuffersSRV.GetView(4), &srvDesc);
 
 	srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-	ReflectionRefractionResultBuffer.CreatePlacedSRV(ReflectionRefractionResultBufferSRV.GetView(), &srvDesc);
+	ReflectionResultBuffer.CreatePlacedSRV(ReflectionResultBufferSRV.GetView(), &srvDesc);
+	RefractionResultBuffer.CreatePlacedSRV(RefractionResultBufferSRV.GetView(), &srvDesc);
 
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 	uavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 	uavDesc.Texture2D.MipSlice = 0;
-	ReflectionRefractionResultBuffer.CreatePlacedUAV(ReflectionRefractionResultBufferUAV.GetView(), &uavDesc);
+	ReflectionResultBuffer.CreatePlacedUAV(ReflectionResultBufferUAV.GetView(), &uavDesc);
+	RefractionResultBuffer.CreatePlacedUAV(RefractionResultBufferUAV.GetView(), &uavDesc);
 		
 	return true;
 }
@@ -186,13 +190,20 @@ bool DeferredRenderingPipeline::SetupScreenSpaceRaymarchPass()
 	ScreenSpaceRaymarchPipelineState = PipelineState::CreateBindlessComputePipeline(
 		"LightingPipeline", Renderer, RAD_SHADERS_DIR L"Compute/ScreenSpaceRaymarch.cs.hlsl");
 
-	ReflectionRefractionResultBufferSRV =
+	ReflectionResultBufferSRV =
 		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	ReflectionRefractionResultBufferUAV =
+	ReflectionResultBufferUAV =
 		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	Renderer.ViewableTextures.emplace("ReflectionRefractionResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-																		ReflectionRefractionResultBuffer,
-																		ReflectionRefractionResultBufferSRV.GetView()});
+	RefractionResultBufferSRV =
+		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	RefractionResultBufferUAV =
+		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	Renderer.ViewableTextures.emplace("ReflectionResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+																		ReflectionResultBuffer,
+																		ReflectionResultBufferSRV.GetView()});
+	Renderer.ViewableTextures.emplace("RefractionResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+																		RefractionResultBuffer,
+																		RefractionResultBufferSRV.GetView()});
 	return true;
 }
 
@@ -418,7 +429,8 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
 		.Add(LightBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
 		.Add(ViewTransformBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
-		.Add(ReflectionRefractionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(ReflectionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(RefractionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Execute(cmdContext);
 
 	// Set Render Targets
@@ -437,33 +449,40 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 	lightingResources.ShadowMapSamplerIndex = ShadowMapSampler.Index;
 	lightingResources.LightDataBufferIndex = LightBufferCBV.Index;
 	lightingResources.ViewTransformBufferIndex = ViewTransformBufferCBV.Index;
-	lightingResources.ReflectionRefractionResultIndex = ReflectionRefractionResultBufferSRV.Index;
+	lightingResources.ReflectionResultIndex = ReflectionResultBufferSRV.Index;
+	lightingResources.RefractionResultIndex = RefractionResultBufferSRV.Index;
 
 	LightingPipelineState.BindWithResources(cmdContext, lightingResources);
 	cmdContext->DrawInstanced(4, 1, 0, 0);
 }
 void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
-	return;
 	cmdContext->RSSetViewports(1, &Viewport);
 	cmdContext->RSSetScissorRects(1, &ScissorRect);
 
 	TransitionVec{}
 		.Add(AlbedoBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-		.Add(DepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ)
+		.Add(SSDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ)
 		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(ReflectionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+		.Add(RefractionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Execute(cmdContext);
 
 	// Set Render Targets
 	{
 		auto rtv = OutputBufferRTV.GetCPUHandle();
-		auto dsv = DepthBufferDSV.GetCPUHandle();
+		auto dsv = SSDepthBufferDSV.GetCPUHandle();
 		cmdContext->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
 	}
 
 	cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
-	ForwardPassData passData{.CmdContext = cmdContext, .OutColor = &OutputBuffer, .Depth = &DepthBuffer};
+	ForwardPassData passData{.CmdContext = cmdContext,
+							 .OutColor = &OutputBuffer,
+							 .Depth = &SSDepthBuffer,
+							 .InColorSRV = OutputBufferSRV.GetView(),
+							 .InReflectionResultSRV = ReflectionResultBufferSRV.GetView(),
+							 .InRefractionResultSRV = RefractionResultBufferSRV.GetView()};
 	for (auto& renderCommand : frameRecord.Commands)
 		if (renderCommand.ForwardPass)
 			renderCommand.ForwardPass(frameRecord.View, passData);
@@ -474,7 +493,8 @@ void DeferredRenderingPipeline::ScreenSpaceRaymarchPass(CommandContext& cmdConte
 		.Add(SSReflectRefractBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(SSDepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-		.Add(ReflectionRefractionResultBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+		.Add(ReflectionResultBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+		.Add(RefractionResultBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 		.Add(ViewTransformBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
 		.Execute(cmdContext);
 	hlsl::ScreenSpaceRaymarchResources resources{};
@@ -482,11 +502,12 @@ void DeferredRenderingPipeline::ScreenSpaceRaymarchPass(CommandContext& cmdConte
 	resources.InReflectRefractNormalTextureIndex = GBuffersSRV.GetView(3).GetIndex();
 	resources.SSDepthTextureIndex = GBuffersSRV.GetView(4).GetIndex();
 	resources.DepthTextureIndex = GBuffersSRV.GetView(2).GetIndex();
-	resources.OutReflectRefractResultTextureIndex = ReflectionRefractionResultBufferUAV.Index;
+	resources.OutReflectResultTextureIndex = ReflectionResultBufferUAV.Index;
+	resources.OutRefractResultTextureIndex = RefractionResultBufferUAV.Index;
 	resources.ViewTransformBufferIndex = ViewTransformBufferCBV.Index;
 
-	uint32_t width = ReflectionRefractionResultBuffer.Info.Width;
-	uint32_t height = ReflectionRefractionResultBuffer.Info.Height;
+	uint32_t width = ReflectionResultBuffer.Info.Width;
+	uint32_t height = RefractionResultBuffer.Info.Height;
 
 	ScreenSpaceRaymarchPipelineState.ExecuteCompute(cmdContext, resources, (width + 7) / 8, (height + 7) / 8, 1);
 }

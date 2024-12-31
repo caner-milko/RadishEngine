@@ -55,6 +55,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     float water = waterMap.Sample(LinearSampler, texCoord);
     
     float3 waterNormal = FindNormal(texCoord, heightMap, waterMap, Resources.TotalLength);
+    waterNormal = waterNormal.xzy;
     waterNormal = waterNormal * 0.5 + 0.5;
     waterNormalMap[dispatchID.xy] = float4(waterNormal, 0);
     

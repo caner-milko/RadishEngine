@@ -96,12 +96,16 @@ float4 PSMain(PSIn IN) : SV_TARGET
     
     shadowCoeff = 1 - saturate(shadowCoeff);
     
-    diffuse *= shadowCoeff;
-    specular *= shadowCoeff;
+    //diffuse *= shadowCoeff;
+    //specular *= shadowCoeff;
     //return float4(saturate(dot(normal, -lightData.DirectionOrPosition)) * float3(1, 1, 1), 1);
     //return float4(albedo, 1);
-    Texture2D<float4> reflectionTex = GetBindlessResource(Resources.ReflectionRefractionResultIndex);
-    float3 reflectionUv = reflectionTex.Sample(PointSampler, IN.TexCoord).rgb;
-    return lerp(float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1),
-    float4(albedoTex.Sample(PointSampler, reflectionUv.xy).rgb, 1), reflectionUv.z);
+    
+    
+    //Texture2D<float4> reflectionTex = GetBindlessResource(Resources.ReflectionResultIndex);
+    //float4 reflectionUv = reflectionTex.Sample(PointSampler, IN.TexCoord).rgba;
+    //return lerp(float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1),
+    //float4(albedoTex.Sample(PointSampler, reflectionUv.xy).rgb, 1), reflectionUv.a);
+    
+    return float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1);
 }

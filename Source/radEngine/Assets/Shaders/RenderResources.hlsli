@@ -32,7 +32,8 @@ struct LightingResources
     uint LightDataBufferIndex;
     uint ViewTransformBufferIndex;
 
-    uint ReflectionRefractionResultIndex;
+    uint ReflectionResultIndex;
+    uint RefractionResultIndex;
 };
     
 struct BlitResources
@@ -47,8 +48,10 @@ struct ScreenSpaceRaymarchResources
     uint SSDepthTextureIndex;
     uint DepthTextureIndex;
     
-    // RG - Reflection UV, BA - Refraction UV
-    uint OutReflectRefractResultTextureIndex;
+    // RG - Reflection UV, A - Visibility
+    uint OutReflectResultTextureIndex;
+    // RG - Refraction UV, A - Visibility
+    uint OutRefractResultTextureIndex;
     // Contains camera information
     uint ViewTransformBufferIndex;
     
