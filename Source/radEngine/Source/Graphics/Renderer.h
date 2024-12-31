@@ -49,6 +49,7 @@ struct WaterPassData
 	CommandContext& CmdContext;
 	const DXTexture* OutReflectionRefraction;
 	const DXTexture* OutDepth;
+	const DescriptorAllocationView InViewTransformCBV;
 };
 
 struct ForwardPassData
@@ -56,6 +57,7 @@ struct ForwardPassData
 	CommandContext& CmdContext;
 	const DXTexture* OutColor;
 	const DXTexture* Depth;
+	const DescriptorAllocationView InViewTransformCBV;
 	const DescriptorAllocationView InColorSRV;
 	const DescriptorAllocationView InReflectionResultSRV;
 	const DescriptorAllocationView InRefractionResultSRV;

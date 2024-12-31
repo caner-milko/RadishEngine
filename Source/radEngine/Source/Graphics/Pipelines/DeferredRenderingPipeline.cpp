@@ -417,7 +417,8 @@ void DeferredRenderingPipeline::WaterRenderPass(CommandContext& cmdContext, Rend
 
 	WaterPassData passData{.CmdContext = cmdContext,
 						   .OutReflectionRefraction = &SSReflectRefractBuffer,
-						   .OutDepth = &SSDepthBuffer};
+						   .OutDepth = &SSDepthBuffer,
+						   .InViewTransformCBV = ViewTransformBufferCBV.GetView()};
 	for (auto& renderCommand : frameRecord.Commands)
 		if (renderCommand.WaterPass)
 			renderCommand.WaterPass(frameRecord.View, passData);
@@ -496,6 +497,7 @@ void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, Re
 	ForwardPassData passData{.CmdContext = cmdContext,
 							 .OutColor = &OutputBuffer,
 							 .Depth = &SSDepthBuffer,
+							 .InViewTransformCBV = ViewTransformBufferCBV.GetView(),
 							 .InColorSRV = LightingResultBufferSRV.GetView(),
 							 .InReflectionResultSRV = ReflectionResultBufferSRV.GetView(),
 							 .InRefractionResultSRV = RefractionResultBufferSRV.GetView()};

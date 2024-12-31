@@ -27,3 +27,8 @@ float ToLinearDepth(float depth, float4x4 projectionMatrix)
 {
     return projectionMatrix._34 / (depth - projectionMatrix._33);
 }
+
+float3 GetPosition(float4x4 worldMatrix)
+{
+    return float3(worldMatrix._14, worldMatrix._24, worldMatrix._34);
+}

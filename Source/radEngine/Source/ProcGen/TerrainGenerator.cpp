@@ -878,7 +878,7 @@ void TerrainErosionSystem::WaterPrepass(std::span<WaterRenderData> renderObjects
 		renderResources.ModelMatrix = renderObj.WorldMatrix;
 		renderResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
 		renderResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
-		renderResources.ViewPos = glm::vec4(view.ViewPosition, 0.0f);
+		renderResources.ViewTransformBufferIndex = passData.InViewTransformCBV.GetIndex();
 		WaterPrePassPSO.SetResources(cmd, renderResources);
 		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
 	}
@@ -903,7 +903,7 @@ void TerrainErosionSystem::WaterForwardPass(std::span<WaterRenderData> renderObj
 		renderResources.ModelMatrix = renderObj.WorldMatrix;
 		renderResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
 		renderResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
-		renderResources.ViewPos = glm::vec4(view.ViewPosition, 0.0f);
+		renderResources.ViewTransformBufferIndex = passData.InViewTransformCBV.GetIndex();
 		renderResources.ReflectionResultTextureIndex = passData.InReflectionResultSRV.GetIndex();
 		renderResources.RefractionResultTextureIndex = passData.InRefractionResultSRV.GetIndex();
 		renderResources.ColorTextureIndex = passData.InColorSRV.GetIndex();

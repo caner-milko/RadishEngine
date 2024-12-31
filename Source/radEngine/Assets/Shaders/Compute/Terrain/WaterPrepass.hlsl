@@ -59,7 +59,9 @@ PSOut PSMain(VSOut IN)
 	
     float3 waterSurfaceNormal = normalize(mul(TBN, normalMapVal));
     
-    float3 viewDir = normalize(IN.WorldPos - Resources.ViewPos.xyz);
+    ConstantBuffer<ViewTransformBuffer> viewTransform = GetBindlessResource(Resources.ViewTransformBufferIndex);
+
+    float3 viewDir = normalize(IN.WorldPos - GetPosition(viewTransform.CamInverseView));
     
     //waterSurfaceNormal = normalize(mul((float3x3) Resources.Normal, float3(0, 1, 0)));
     

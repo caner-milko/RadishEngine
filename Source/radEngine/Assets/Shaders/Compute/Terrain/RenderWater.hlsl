@@ -52,7 +52,7 @@ PSOut PSMain(VSOut IN)
     Texture2D<float> waterHeightMap = GetBindlessResource(Resources.WaterHeightMapTextureIndex);
     
     float waterHeight = waterHeightMap.Sample(MipMapSampler, IN.TexCoord);
-    if(waterHeight < 0.01)
+    if(waterHeight < 0.075)
         discard;
     
     
@@ -88,7 +88,9 @@ PSOut PSMain(VSOut IN)
 	
     float3 waterSurfaceNormal = normalize(mul(TBN, normalMapVal));
     
-    float3 viewDir = normalize(IN.WorldPos - Resources.ViewPos.xyz);
+    ConstantBuffer<ViewTransformBuffer> viewTransform = GetBindlessResource(Resources.ViewTransformBufferIndex);
+
+    float3 viewDir = normalize(IN.WorldPos - GetPosition(viewTransform.CamInverseView));
     
     float fresnel = 1 - max(dot(-viewDir, waterSurfaceNormal), 0);
     
