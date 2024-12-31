@@ -73,6 +73,7 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 		.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
 		.ClearValue = D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, .Color = {0, 0, 0, 1}}};
 	OutputBuffer = DXTexture::Create(Renderer.GetDevice(), L"OutputBuffer", outputBufferInfo);
+	LightingResultBuffer = DXTexture::Create(Renderer.GetDevice(), L"LightingResultBuffer", outputBufferInfo);
 
 	// Create RTVs and DSVs
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
@@ -93,6 +94,7 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	OutputBuffer.CreatePlacedRTV(OutputBufferRTV.GetView(), &rtvDesc);
+	LightingResultBuffer.CreatePlacedRTV(LightingResultBufferRTV.GetView(), &rtvDesc);
 
 	rtvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	SSReflectRefractBuffer.CreatePlacedRTV(SSReflectRefractBufferRTV.GetView(), &rtvDesc);
@@ -104,6 +106,7 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Texture2D.MipLevels = 1;
 	OutputBuffer.CreatePlacedSRV(OutputBufferSRV.GetView(), &srvDesc);
+	LightingResultBuffer.CreatePlacedSRV(LightingResultBufferSRV.GetView(), &srvDesc);
 	AlbedoBuffer.CreatePlacedSRV(GBuffersSRV.GetView(), &srvDesc);
 	srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	NormalBuffer.CreatePlacedSRV(GBuffersSRV.GetView(1), &srvDesc);
@@ -253,11 +256,13 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 	AlbedoBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 	NormalBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 	OutputBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
+	LightingResultBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 	SSReflectRefractBufferRTV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 
 	GBuffersSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 5);
 
 	OutputBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	LightingResultBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 	Renderer.ViewableTextures.emplace(
 		"Albedo", std::pair<Ref<DXTexture>, DescriptorAllocationView>{AlbedoBuffer, GBuffersSRV.GetView()});
@@ -267,6 +272,8 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 		"Depth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{DepthBuffer, GBuffersSRV.GetView(2)});
 	Renderer.ViewableTextures.emplace(
 		"Output", std::pair<Ref<DXTexture>, DescriptorAllocationView>{OutputBuffer, OutputBufferSRV.GetView()});
+	Renderer.ViewableTextures.emplace("LightingResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+															LightingResultBuffer, LightingResultBufferSRV.GetView()});
 	Renderer.ViewableTextures.emplace("SSReflectRefract", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
 														SSReflectRefractBuffer, GBuffersSRV.GetView(3)});
 	Renderer.ViewableTextures.emplace("SSDepth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
@@ -426,7 +433,7 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 		.Add(DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(NormalBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(ShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(LightingResultBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
 		.Add(LightBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
 		.Add(ViewTransformBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
 		.Add(ReflectionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
@@ -435,7 +442,7 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 
 	// Set Render Targets
 	{
-		auto rtv = OutputBufferRTV.GetCPUHandle();
+		auto rtv = LightingResultBufferRTV.GetCPUHandle();
 		cmdContext->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
 	}
 
@@ -454,6 +461,14 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 
 	LightingPipelineState.BindWithResources(cmdContext, lightingResources);
 	cmdContext->DrawInstanced(4, 1, 0, 0);
+
+	//Copy lighting result to output buffer
+	TransitionVec{}
+		.Add(LightingResultBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE)
+		.Add(OutputBuffer, D3D12_RESOURCE_STATE_COPY_DEST)
+		.Execute(cmdContext);
+
+	cmdContext->CopyResource(OutputBuffer.Resource.Get(), LightingResultBuffer.Resource.Get());
 }
 void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
@@ -463,6 +478,7 @@ void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, Re
 	TransitionVec{}
 		.Add(AlbedoBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(SSDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ)
+		.Add(LightingResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
 		.Add(ReflectionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(RefractionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
@@ -480,7 +496,7 @@ void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, Re
 	ForwardPassData passData{.CmdContext = cmdContext,
 							 .OutColor = &OutputBuffer,
 							 .Depth = &SSDepthBuffer,
-							 .InColorSRV = OutputBufferSRV.GetView(),
+							 .InColorSRV = LightingResultBufferSRV.GetView(),
 							 .InReflectionResultSRV = ReflectionResultBufferSRV.GetView(),
 							 .InRefractionResultSRV = RefractionResultBufferSRV.GetView()};
 	for (auto& renderCommand : frameRecord.Commands)

@@ -97,9 +97,14 @@ struct DeferredRenderingPipeline
 	DescriptorAllocation RefractionResultBufferSRV{};
 
 	GraphicsPipelineState<hlsl::LightingResources> LightingPipelineState{};
+	DXTexture LightingResultBuffer{};
+	DescriptorAllocation LightingResultBufferRTV{};
+	DescriptorAllocation LightingResultBufferSRV{};
 	DXTexture OutputBuffer{};
 	DescriptorAllocation OutputBufferRTV{};
 	DescriptorAllocation OutputBufferSRV{};
+
+
 
 	D3D12_VIEWPORT ShadowMapViewport{};
 	D3D12_VIEWPORT Viewport{};
