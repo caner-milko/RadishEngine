@@ -907,7 +907,7 @@ void TerrainErosionSystem::WaterForwardPass(std::span<WaterRenderData> renderObj
 		renderResources.ReflectionResultTextureIndex = passData.InReflectionResultSRV.GetIndex();
 		renderResources.RefractionResultTextureIndex = passData.InRefractionResultSRV.GetIndex();
 		renderResources.ColorTextureIndex = passData.InColorSRV.GetIndex();
-
+		renderResources.DepthTextureIndex = passData.InOpaqueDepthSRV.GetIndex();
 		WaterForwardPSO.SetResources(cmd, renderResources);
 		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
 	}

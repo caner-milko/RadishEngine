@@ -67,7 +67,7 @@ PSOut PSMain(VSOut IN)
     
     float3 reflectionDir = normalize(reflect(viewDir, waterSurfaceNormal));
     
-    float3 refractionDir = normalize(refract(viewDir, waterSurfaceNormal, 1.33));
+    float3 refractionDir = normalize(refract(viewDir, waterSurfaceNormal, 1/1.33));
     
     PSOut output;
     output.ReflectionRefractionNormals = float4(reflectionDir.xz, refractionDir.xz);

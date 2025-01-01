@@ -481,6 +481,7 @@ void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, Re
 		.Add(SSDepthBuffer, D3D12_RESOURCE_STATE_DEPTH_READ)
 		.Add(LightingResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(OutputBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET)
+		.Add(DepthBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(ReflectionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Add(RefractionResultBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		.Execute(cmdContext);
@@ -496,9 +497,10 @@ void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, Re
 
 	ForwardPassData passData{.CmdContext = cmdContext,
 							 .OutColor = &OutputBuffer,
-							 .Depth = &SSDepthBuffer,
+							 .SSDepth = &SSDepthBuffer,
 							 .InViewTransformCBV = ViewTransformBufferCBV.GetView(),
 							 .InColorSRV = LightingResultBufferSRV.GetView(),
+							 .InOpaqueDepthSRV = GBuffersSRV.GetView(2),
 							 .InReflectionResultSRV = ReflectionResultBufferSRV.GetView(),
 							 .InRefractionResultSRV = RefractionResultBufferSRV.GetView()};
 	for (auto& renderCommand : frameRecord.Commands)

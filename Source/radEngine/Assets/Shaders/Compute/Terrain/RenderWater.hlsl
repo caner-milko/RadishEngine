@@ -52,7 +52,7 @@ PSOut PSMain(VSOut IN)
     Texture2D<float> waterHeightMap = GetBindlessResource(Resources.WaterHeightMapTextureIndex);
     
     float waterHeight = waterHeightMap.Sample(MipMapSampler, IN.TexCoord);
-    if(waterHeight < 0.075)
+    if(waterHeight < 0.2)
         discard;
     
     
@@ -63,6 +63,7 @@ PSOut PSMain(VSOut IN)
     Texture2D<float4> reflectionResult = GetBindlessResource(Resources.ReflectionResultTextureIndex);
     Texture2D<float4> refractionResult = GetBindlessResource(Resources.RefractionResultTextureIndex);
     Texture2D<float4> colorTex = GetBindlessResource(Resources.ColorTextureIndex);
+    Texture2D<float> depthTex = GetBindlessResource(Resources.DepthTextureIndex);
     
     float4 reflectionUvVis = reflectionResult.Sample(linearSampler, IN.ScreenUv);
     float4 refractionUvVis = refractionResult.Sample(linearSampler, IN.ScreenUv);
@@ -74,8 +75,10 @@ PSOut PSMain(VSOut IN)
         reflectionColor = lerp(reflectionColor, colorTex.Sample(linearSampler, reflectionUvVis.xy).rgb, reflectionUvVis.a);
     
     float3 refractionColor = colorTex.Sample(linearSampler, IN.ScreenUv).rgb;
+    float2 refractionUv = IN.ScreenUv;
     if (refractionUvVis.a > 0)                                 
         refractionColor = lerp(refractionColor, colorTex.Sample(linearSampler, refractionUvVis.xy).rgb, refractionUvVis.a);
+    refractionUv = refractionUvVis.a > 0.5 ? refractionUvVis.xy : refractionUv;
     
     float3 normalMapVal = normalMap.Sample(MipMapSampler, IN.TexCoord).xyz * 2 - 1;
     normalMapVal = normalize(normalMapVal);
@@ -92,11 +95,29 @@ PSOut PSMain(VSOut IN)
 
     float3 viewDir = normalize(IN.WorldPos - GetPosition(viewTransform.CamInverseView));
     
-    float fresnel = 1 - max(dot(-viewDir, waterSurfaceNormal), 0);
+    float Fresnel0 = 0.02;
+    float FresnelPower = 5;
     
-    fresnel = sqrt(fresnel);
+    float fresnel = Fresnel0 + (1 - Fresnel0) * pow(1 - max(dot(-viewDir, waterSurfaceNormal), 0), FresnelPower);
+    
+    //fresnel = sqrt(fresnel);
+    
+    float refractionDepth = depthTex.Sample(MipMapSampler, refractionUv);
+    
+    float3 refractionPos = WorldPosFromDepth(viewTransform.CamInverseViewProjection, refractionUv, refractionDepth);
+    
+    float dist = length(refractionPos - IN.WorldPos);
+    float3 deepColor = float3(0.0, 0.1, 0.3);
+    
+    float3 absorption = exp(-float3(0.1, 0.05, 0.02) * dist * 40);
+    
+    refractionColor *= absorption;
+    
+    refractionColor += deepColor * (1 - pow(length(absorption)/sqrt(3), 3)) * .5;
+    
+    float alpha = lerp(0.0, 1.0, saturate(dist * 2));
     
     PSOut output;
-    output.Color = float4(lerp(refractionColor, reflectionColor, fresnel), 1);
+    output.Color = float4(lerp(refractionColor, reflectionColor, fresnel), 1.0);
     return output;
 }

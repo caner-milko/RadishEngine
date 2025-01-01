@@ -156,8 +156,8 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     * (uv.y < 0 || uv.y > 1 ? 0 : 1)
     * (1 - dirSimilarity)
     * (1 - clamp(depth / thickness, 0, 1))
-    * (1 - viewSpaceRatio);
-    
+    * (1 - viewSpaceRatio)
+    ;
     
     
     visibility = clamp(visibility, 0, 1);
@@ -195,7 +195,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 
         reflectDir = mul((float3x3) viewTransform.CamView, reflectDir);
         
-        float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance, Resources.Resolution,
+        float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance * 10, Resources.Resolution,
         Resources.Thickness, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
         
         outReflectionTex[dispatchID.xy] = float4(reflectTexCoord.xy, 0, reflectTexCoord.z);
@@ -211,7 +211,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
         refractDir = mul((float3x3)viewTransform.CamView, refractDir);
     
     
-        float3 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance, Resources.Resolution,
+        float3 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance * 10, Resources.Resolution,
             Resources.Thickness, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
     
         outRefractionTex[dispatchID.xy] = float4(refractTexCoord.xy, 0, refractTexCoord.z);

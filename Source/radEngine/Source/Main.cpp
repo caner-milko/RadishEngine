@@ -129,12 +129,12 @@ void InitGame()
 																			.AspectRatio = 16.0f / 9.0f,
 																		}});
 	ecs::Transform camTransform{};
-	camTransform.Position = {5.3f, 2.f, -1.2f};
+	camTransform.Position = {5.3f, 10.f, -1.2f};
 	camTransform.Rotation = {0.15f, -1.348f, 0.f};
 	camSceneTransform.SetTransform(camTransform);
 	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(
 		camera, ecs::CViewpointController(camSceneTransform.GetWorldTransform(), viewpoint));
-
+	controller.MoveSpeed = 40.0f;
 	auto dirLight = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(dirLight, "DirectionalLight");
 	auto& lightSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(dirLight, dirLight);
@@ -184,7 +184,7 @@ void LoadSceneData()
 	entt::entity sponzaRoot = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(sponzaRoot, "SponzaRoot");
 	auto& rootTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(sponzaRoot, sponzaRoot);
-	rootTransform.SetTransform(ecs::Transform{.Scale = glm::vec3(0.01f)});
+	rootTransform.SetTransform(ecs::Transform{.Scale = glm::vec3(0.1f)});
 	for (auto& [name, meshInfo] : sponzaObj->Meshes)
 	{
 		entt::entity mesh = g_EnttRegistry.create();
@@ -226,7 +226,7 @@ void LoadSceneData()
 			});
 
 		ecs::Transform transform{};
-		transform.Scale *= 0.01f;
+		transform.Scale *= 0.1f;
 		transform.Position = glm::vec3(0, 1, 0);
 		terrainTransform.SetTransform(transform);
 		// terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
