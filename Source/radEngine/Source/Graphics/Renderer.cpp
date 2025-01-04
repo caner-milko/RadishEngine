@@ -108,7 +108,7 @@ bool Renderer::InitializeSwapchain(HWND window, uint32_t width, uint32_t height)
 		sd.Width = width;
 		sd.Height = height;
 		sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+		sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 		sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		sd.SampleDesc.Count = 1;
 		sd.SampleDesc.Quality = 0;
@@ -227,14 +227,18 @@ void Renderer::EnqueueFrame(RenderFrameRecord record)
 
 void Renderer::Render(RenderFrameRecord& record)
 {
+	std::chrono::high_resolution_clock::time_point before = std::chrono::high_resolution_clock::now();
 	auto activeCmdContext = GetNewCommandContext();
+	auto after = std::chrono::high_resolution_clock::now();
+	auto deltaTime = std::chrono::duration<float>(after - before).count();
+	std::cout << "Frame " << record.FrameNumber << " " << deltaTime * 1000.0 << "ms" << std::endl;
 	if (!activeCmdContext)
 	{
 		std::cerr << "No command context available" << std::endl;
 		return;
 	}
 	auto cmdContext = activeCmdContext->AsCommandContext();
-	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
+	//WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
 	while (!record.CommandRecord.Queue.empty())
 	{
 		auto& command = record.CommandRecord.Queue.front();
@@ -260,7 +264,7 @@ void Renderer::Render(RenderFrameRecord& record)
 	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
 	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
 	// Present
-	Swapchain.Swapchain->Present(1, 0);
+	Swapchain.Swapchain->Present(0, DXGI_PRESENT_ALLOW_TEARING);
 }
 
 void Renderer::FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command)

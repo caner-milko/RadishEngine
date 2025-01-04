@@ -2,6 +2,7 @@
 
 ConstantBuffer<WaterRenderResources> Resources : register(b0);
 
+SamplerState PointSampler : register(s0);
 SamplerState MipMapSampler : register(s2);
 SamplerState linearSampler : register(s4);
 
@@ -15,7 +16,6 @@ struct VSOut
     float4 Pos : SV_POSITION;
     float3 WorldPos : WORLDPOS;
     float2 TexCoord : TEXCOORD;
-    float2 ScreenUv : TEXCOORD1;
 };
 
 [RootSignature(BindlessRootSignature)]
@@ -35,7 +35,6 @@ VSOut VSMain(VSIn IN)
 	OUT.Pos = mul(Resources.MVP, pos);
 	OUT.TexCoord = texCoord;
     OUT.WorldPos = mul(Resources.ModelMatrix, pos).xyz;
-    OUT.ScreenUv = float2(OUT.Pos.x, -OUT.Pos.y) / OUT.Pos.w * 0.5 + 0.5;
 	return OUT;
 }
 
@@ -55,7 +54,6 @@ PSOut PSMain(VSOut IN)
     if(waterHeight < 0.2)
         discard;
     
-    
     Texture2D<float4> albedoMap = GetBindlessResource(Resources.WaterAlbedoTextureIndex);
     Texture2D<float4> normalMap = GetBindlessResource(Resources.WaterNormalMapTextureIndex);
 	float4 diffuseCol = albedoMap.Sample(MipMapSampler, IN.TexCoord);
@@ -65,8 +63,13 @@ PSOut PSMain(VSOut IN)
     Texture2D<float4> colorTex = GetBindlessResource(Resources.ColorTextureIndex);
     Texture2D<float> depthTex = GetBindlessResource(Resources.DepthTextureIndex);
     
-    float4 reflectionUvVis = reflectionResult.Sample(linearSampler, IN.ScreenUv);
-    float4 refractionUvVis = refractionResult.Sample(linearSampler, IN.ScreenUv);
+    uint2 screenSize;
+    depthTex.GetDimensions(screenSize.x, screenSize.y);
+    
+    float2 screenUv = IN.Pos.xy / float2(screenSize);
+    
+    float4 reflectionUvVis = reflectionResult.Sample(PointSampler, screenUv);
+    float4 refractionUvVis = refractionResult.Sample(PointSampler, screenUv);
     
     // Sky color
     float3 skyColor = float3(0.53, 0.80, .92);
@@ -74,15 +77,16 @@ PSOut PSMain(VSOut IN)
     if (reflectionUvVis.a > 0)
         reflectionColor = lerp(reflectionColor, colorTex.Sample(linearSampler, reflectionUvVis.xy).rgb, reflectionUvVis.a);
     
-    float3 refractionColor = colorTex.Sample(linearSampler, IN.ScreenUv).rgb;
-    float2 refractionUv = IN.ScreenUv;
+    float3 refractionColor = colorTex.Sample(PointSampler, screenUv).rgb;
+    float2 refractionUv = screenUv;
     if (refractionUvVis.a > 0)                                 
         refractionColor = lerp(refractionColor, colorTex.Sample(linearSampler, refractionUvVis.xy).rgb, refractionUvVis.a);
-    refractionUv = refractionUvVis.a > 0.5 ? refractionUvVis.xy : refractionUv;
     
     float3 normalMapVal = normalMap.Sample(MipMapSampler, IN.TexCoord).xyz * 2 - 1;
     normalMapVal = normalize(normalMapVal);
 	
+    normalMapVal = float3(0, 0, 1);
+    
     float3 normal = normalize(mul((float3x3) Resources.Normal, float3(0, 1, 0)));
     float3 tangent = normalize(mul((float3x3) Resources.Normal, float3(-1, 0, 0)));
     float3 bitangent = normalize(cross(normal, tangent));
@@ -100,8 +104,6 @@ PSOut PSMain(VSOut IN)
     
     float fresnel = Fresnel0 + (1 - Fresnel0) * pow(1 - max(dot(-viewDir, waterSurfaceNormal), 0), FresnelPower);
     
-    //fresnel = sqrt(fresnel);
-    
     float refractionDepth = depthTex.Sample(MipMapSampler, refractionUv);
     
     float3 refractionPos = WorldPosFromDepth(viewTransform.CamInverseViewProjection, refractionUv, refractionDepth);
@@ -109,7 +111,7 @@ PSOut PSMain(VSOut IN)
     float dist = length(refractionPos - IN.WorldPos);
     float3 deepColor = float3(0.0, 0.1, 0.3);
     
-    float3 absorption = exp(-float3(0.1, 0.05, 0.02) * dist * 40);
+    float3 absorption = exp(-float3(0.1, 0.05, 0.02) * dist * 150);
     
     refractionColor *= absorption;
     

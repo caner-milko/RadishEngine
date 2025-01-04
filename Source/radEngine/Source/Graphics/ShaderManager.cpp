@@ -86,11 +86,11 @@ Shader* ShaderManager::CompileShader(std::wstring_view name, std::wstring_view s
 	compilationArgs.push_back(L"-I");
 	compilationArgs.push_back(parentPath.c_str());
 
-	if constexpr (_DEBUG)
+#ifndef NDEBUG
 		compilationArgs.push_back(DXC_ARG_DEBUG);
-	else
+#else
 		compilationArgs.push_back(DXC_ARG_OPTIMIZATION_LEVEL3);
-
+#endif
 	ComPtr<IDxcBlobEncoding> sourceEncoded;
 	Utils->LoadFile(shaderPath.data(), nullptr, &sourceEncoded);
 	if (!sourceEncoded)

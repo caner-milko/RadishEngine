@@ -45,7 +45,7 @@ float4 PSMain(PSIn IN) : SV_TARGET
     
     float diffuse = saturate(dot(normal, -lightData.DirectionOrPosition));
     
-    float halfVector = saturate(dot(normal, normalize(-lightData.DirectionOrPosition + float3(0, 0, 1))));
+    float halfVector = saturate(dot(normal, normalize(-lightData.DirectionOrPosition + -mul((float3x3) viewTransform.CamInverseView, float3(0, 0, 1)))));
     float specular = pow(halfVector, 32);
     
     float depth = depthMap.Sample(PointSampler, IN.TexCoord);
@@ -106,6 +106,6 @@ float4 PSMain(PSIn IN) : SV_TARGET
     //float4 reflectionUv = reflectionTex.Sample(PointSampler, IN.TexCoord).rgba;
     //return lerp(float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1),
     //float4(albedoTex.Sample(PointSampler, reflectionUv.xy).rgb, 1), reflectionUv.a);
-    
-    return float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1);
+
+    return float4((diffuse * lightData.Color + float3(0.4, 0.4, 0.4) * specular + lightData.AmbientColor) * albedo, 1);
 }

@@ -29,7 +29,6 @@ VSOut VSMain(VSIn IN)
 	uint2 heightMapTexCoord = texCoord * heightMapSize;
     float height = heightMap[heightMapTexCoord];
     float waterHeight = waterHeightMap[heightMapTexCoord];
-    
     float4 pos = float4((texCoord.x - 0.5) * Resources.TotalLength, height + waterHeight, (texCoord.y - 0.5) * Resources.TotalLength, 1.0f);
 	VSOut OUT;
 	OUT.Pos = mul(Resources.MVP, pos);
@@ -47,7 +46,12 @@ struct PSOut
 PSOut PSMain(VSOut IN)
 {
     Texture2D<float4> normalMap = GetBindlessResource(Resources.WaterNormalMapTextureIndex);
-
+    Texture2D<float> waterHeightMap = GetBindlessResource(Resources.WaterHeightMapTextureIndex);
+    
+    float waterHeight = waterHeightMap.Sample(MipMapSampler, IN.TexCoord);
+    if (waterHeight < 0.2)
+        discard;
+    
     float3 normalMapVal = normalMap.Sample(MipMapSampler, IN.TexCoord).xyz * 2 - 1;
     normalMapVal = normalize(normalMapVal);
 	

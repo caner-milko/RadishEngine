@@ -56,8 +56,8 @@ struct ScreenSpaceRaymarchResources
     uint ViewTransformBufferIndex;
     
     float MaxDistance DEFAULT_VALUE(15.0f);
-    float Resolution DEFAULT_VALUE(0.3f);
-    float Thickness DEFAULT_VALUE(0.5f);
+    float Resolution DEFAULT_VALUE(0.4f);
+    float ThicknessMultiplier DEFAULT_VALUE(0.2f);
     int MaxSteps DEFAULT_VALUE(16);
 };
 #ifdef __cplusplus

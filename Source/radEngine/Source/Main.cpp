@@ -134,7 +134,7 @@ void InitGame()
 	camSceneTransform.SetTransform(camTransform);
 	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(
 		camera, ecs::CViewpointController(camSceneTransform.GetWorldTransform(), viewpoint));
-	controller.MoveSpeed = 40.0f;
+	//controller.MoveSpeed = 40.0f;
 	auto dirLight = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(dirLight, "DirectionalLight");
 	auto& lightSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(dirLight, dirLight);
@@ -184,7 +184,7 @@ void LoadSceneData()
 	entt::entity sponzaRoot = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(sponzaRoot, "SponzaRoot");
 	auto& rootTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(sponzaRoot, sponzaRoot);
-	rootTransform.SetTransform(ecs::Transform{.Scale = glm::vec3(0.1f)});
+	rootTransform.SetTransform(ecs::Transform{.Scale = glm::vec3(0.01f)});
 	for (auto& [name, meshInfo] : sponzaObj->Meshes)
 	{
 		entt::entity mesh = g_EnttRegistry.create();
@@ -226,7 +226,7 @@ void LoadSceneData()
 			});
 
 		ecs::Transform transform{};
-		transform.Scale *= 0.1f;
+		transform.Scale *= 0.01f;
 		transform.Position = glm::vec3(0, 1, 0);
 		terrainTransform.SetTransform(transform);
 		// terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
@@ -364,10 +364,10 @@ int main(int argv, char** args)
 			if (sdlEvent.type == SDL_MOUSEWHEEL)
 				inputMan.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
 		}
+
 		auto now = std::chrono::high_resolution_clock::now();
 		auto deltaTime = std::chrono::duration<float>(now - lastTime).count();
 		lastTime = now;
-
 		auto frameRec = g_Renderer.BeginFrame();
 		UpdateGame(deltaTime, frameRec);
 
@@ -383,6 +383,7 @@ int main(int argv, char** args)
 		}
 
 		inputMan.Immediate = {};
+		std::cout << "Delta time: " << deltaTime * 1000.0 << "\n";
 	}
 
 	g_Renderer.WaitAllCommandContexts();

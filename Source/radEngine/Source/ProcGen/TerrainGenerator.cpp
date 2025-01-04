@@ -241,11 +241,12 @@ bool TerrainErosionSystem::Setup()
 												&Renderer.ShaderManager->BindlessRootSignature);
 	}
 	{
-		struct TerraionRenderPipelineStateStream : PipelineStateStreamBase
+		struct WaterPrepassPipelineStateStream : PipelineStateStreamBase
 		{
 			CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
 			CD3DX12_PIPELINE_STATE_STREAM_VS VS;
 			CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+			CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL DepthStencilDesc;
 			CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
 			CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
 			CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
@@ -259,6 +260,9 @@ bool TerrainErosionSystem::Setup()
 		waterPrepassPSStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 		waterPrepassPSStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
 
+		auto depthStencilDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+		depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		waterPrepassPSStream.DepthStencilDesc = depthStencilDesc;
 		waterPrepassPSStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 		D3D12_RT_FORMAT_ARRAY rtvFormats = {};
 		rtvFormats.NumRenderTargets = 1;

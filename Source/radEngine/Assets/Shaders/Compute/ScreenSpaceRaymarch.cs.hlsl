@@ -8,9 +8,10 @@ ConstantBuffer<ScreenSpaceRaymarchResources> Resources : register(b0);
 
 SamplerState LinearSampler : register(s4);
 
-float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, float resolution, float thickness, int binarySearchStepCount,
+float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, float resolution, float thicknessMultiplier, int binarySearchStepCount,
     float4x4 projectionMatrix, Texture2D<float> depthTex)
 {
+    float thickness = maxDist * thicknessMultiplier;
 	float3 camPos = float3(0, 0, 0);
 	float3 camDir = float3(0, 0, 1);
     
@@ -36,7 +37,7 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
             endPoint = curEndPoint;
             screenEnd = curScreenEnd;
             found = true;
-            if(dist >= maxDist)
+            if (dist >= maxDist)
                 break;
             dist += lastChange;
                 
@@ -71,7 +72,7 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     
     float delta = lerp(abs(deltaY), abs(deltaX), useX) * clamp(resolution, 0, 1);
     delta = min(128, max(delta, 0.001));
-
+    
     float2 increment = float2(deltaX, deltaY) / delta;
     
     float search0 = 0;
@@ -80,12 +81,14 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     int hit0 = 0;
     int hit1 = 0;
     
-    float depth = Resources.Thickness;
+    float depth = 0;
     
     float2 frag = startFrag;
     
     float viewDistance = 0;
     
+    deltaX = deltaX == 0 ? 0.0001 : deltaX;
+    deltaY = deltaY == 0 ? 0.0001 : deltaY;
     for (int i = 0; i < int(delta); i++)
     {
         frag += increment;
@@ -109,8 +112,6 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
             search0 = search1;
         }
     }
-    
-    search1 = search0 + ((search1 - search0) / 2);
     
     int steps = binarySearchStepCount * hit0;
     
@@ -150,7 +151,7 @@ float3 ScreenSpaceRaymarch(float3 startPoint, float3 startDir, float maxDist, fl
     dirSimilarity = dot(dirSimilarity, dirSimilarity);
     viewSpaceRatio = dot(viewSpaceRatio, viewSpaceRatio);
     
-    float visibility =
+    float visibility = 
       hit1
     * (uv.x < 0 || uv.x > 1 ? 0 : 1)
     * (uv.y < 0 || uv.y > 1 ? 0 : 1)
@@ -195,8 +196,8 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 
         reflectDir = mul((float3x3) viewTransform.CamView, reflectDir);
         
-        float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance * 10, Resources.Resolution,
-        Resources.Thickness, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
+        float3 reflectTexCoord = ScreenSpaceRaymarch(rayPos, reflectDir, Resources.MaxDistance, Resources.Resolution,
+        Resources.ThicknessMultiplier, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
         
         outReflectionTex[dispatchID.xy] = float4(reflectTexCoord.xy, 0, reflectTexCoord.z);
     }
@@ -211,8 +212,8 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
         refractDir = mul((float3x3)viewTransform.CamView, refractDir);
     
     
-        float3 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance * 10, Resources.Resolution,
-            Resources.Thickness, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
+        float3 refractTexCoord = ScreenSpaceRaymarch(rayPos, refractDir, Resources.MaxDistance, Resources.Resolution,
+            Resources.ThicknessMultiplier, Resources.MaxSteps, viewTransform.CamProjection, depthTex);
     
         outRefractionTex[dispatchID.xy] = float4(refractTexCoord.xy, 0, refractTexCoord.z);
     }
