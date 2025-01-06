@@ -169,7 +169,7 @@ struct Renderer
 {
 	Renderer();
 	~Renderer();
-	bool Initialize(bool debug, HWND window, uint32_t width, uint32_t height);
+	bool Initialize(HWND window, uint32_t width, uint32_t height);
 	bool OnWindowResized(uint32_t width, uint32_t height, bool initial = false);
 
 	bool Deinitialize();
@@ -190,6 +190,7 @@ struct Renderer
 	{
 		Ref<RadGraphicsCommandList> CommandList;
 		Ref<CommandContextData> CmdContext;
+		bool Executed = false;
 		CommandContext AsCommandContext()
 		{
 			return CommandContext{CmdContext->Device, CommandList, CmdContext->GPUHeapPages,
@@ -203,7 +204,7 @@ struct Renderer
 		uint64_t FenceValue;
 	};
 
-	uint64_t CurrentFrameNumber = 0;
+	uint64_t CurrentFrameNumber = 1;
 	std::optional<RenderFrameRecord> CurrentFrameRecord = std::nullopt;
 
 	RenderFrameRecord BeginFrame();
@@ -224,6 +225,7 @@ struct Renderer
 	}
 
 	std::optional<ActiveCommandContext> GetNewCommandContext();
+	void ExecuteCommandContext(ActiveCommandContext& context);
 	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context, Ref<DXFence> fence,
 															  uint64_t signalValue, bool wait = false);
 	CommandContextData& WaitAndClearCommandContext(PendingCommandContext&& context);
@@ -263,7 +265,7 @@ struct Renderer
 	std::optional<CommandContextData> CreateCommandContext();
 	Swapchain Swapchain;
 
-	bool InitializeDevice(bool debug);
+	bool InitializeDevice();
 	bool InitializeSwapchain(HWND window, uint32_t width, uint32_t height);
 	bool InitializePipelines();
 };

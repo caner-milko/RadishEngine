@@ -204,6 +204,10 @@ struct CViewpointControllerSystem
 
 struct CUISystem
 {
+	~CUISystem()
+	{
+		Destroy();
+	}
 	void Init(Renderer& renderer, SDL_Window* window);
 	void Destroy();
 	void ProcessEvent(const SDL_Event& event);

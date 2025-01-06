@@ -161,13 +161,7 @@ void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
 
 bool InitRenderer(HWND window, uint32_t width, uint32_t height)
 {
-	return g_Renderer.Initialize(
-#ifdef NDEBUG
-		false,
-#else
-		true,
-#endif
-		window, width, height);
+	return g_Renderer.Initialize(window, width, height);
 }
 
 void LoadSceneData()
@@ -317,8 +311,8 @@ int main(int argv, char** args)
 		g_Renderer.Deinitialize();
 		return 1;
 	}
-
 	InitGame();
+	
 	LoadSceneData();
 	SDL_SetRelativeMouseMode(SDL_TRUE);
 	// Main loop
@@ -389,8 +383,8 @@ int main(int argv, char** args)
 	g_Renderer.WaitAllCommandContexts();
 
 	// Cleanup
-	g_EnttSystems->UISystem.Destroy();
-
+	g_EnttSystems.reset();
+	g_EnttRegistry.clear();
 	g_Renderer.Deinitialize();
 	SDL_DestroyWindow(g_SDLWindow);
 	SDL_Quit();
