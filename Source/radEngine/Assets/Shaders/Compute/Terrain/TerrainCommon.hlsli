@@ -2,6 +2,7 @@
 #include "BindlessRootSignature.hlsli"
 #include "TerrainConstantBuffers.hlsli"
 #include "TerrainResources.hlsli"
+#include "HLSLCommon.hlsli"
 
 bool IsInBounds(int2 coord, uint2 textureSize)
 {

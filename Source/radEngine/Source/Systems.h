@@ -179,7 +179,7 @@ struct CLight
 {
 	glm::vec3 Color = {1.0f, 1.0f, 1.0f};
 	float Intensity = 1.0f;
-	glm::vec3 Ambient = {0.1f, 0.1f, 0.1f};
+	glm::vec3 Ambient = {0.12f, 0.12f, 0.1f};
 };
 struct CLightSystem
 {
@@ -204,6 +204,10 @@ struct CViewpointControllerSystem
 
 struct CUISystem
 {
+	~CUISystem()
+	{
+		Destroy();
+	}
 	void Init(Renderer& renderer, SDL_Window* window);
 	void Destroy();
 	void ProcessEvent(const SDL_Event& event);

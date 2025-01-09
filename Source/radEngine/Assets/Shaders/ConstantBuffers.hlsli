@@ -46,11 +46,19 @@ ConstantBufferStruct LightDataBuffer
     float Padding2;
 };
 
-ConstantBufferStruct LightTransformBuffer
+ConstantBufferStruct ViewTransformBuffer
 {
-    float4x4 LightViewProjection;
+    float4x4 CamView;
+    float4x4 CamProjection;
+    float4x4 CamViewProjection;
     float4x4 CamInverseView;
     float4x4 CamInverseProjection;
+    float4x4 CamInverseViewProjection;
+    float CamNear;
+    float CamFar;
+    float2 _padding;
+    
+    float4x4 LightViewProjection;
 };
 
 ConstantBufferStruct Vertex

@@ -12,7 +12,7 @@
 #include <functional>
 #include <queue>
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 #define DX12_ENABLE_DEBUG_LAYER
 #endif
 

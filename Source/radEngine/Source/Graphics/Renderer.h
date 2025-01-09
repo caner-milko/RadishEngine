@@ -18,6 +18,8 @@ struct RenderView
 	glm::mat4 ProjectionMatrix;
 	glm::vec3 ViewPosition;
 	glm::vec3 ViewDirection;
+	float NearPlane;
+	float FarPlane;
 };
 
 struct RenderLightInfo
@@ -42,11 +44,24 @@ struct DeferredPassData
 	const DXTexture* OutDepth;
 };
 
+struct WaterPassData
+{
+	CommandContext& CmdContext;
+	const DXTexture* OutReflectionRefraction;
+	const DXTexture* OutDepth;
+	const DescriptorAllocationView InViewTransformCBV;
+};
+
 struct ForwardPassData
 {
 	CommandContext& CmdContext;
 	const DXTexture* OutColor;
-	const DXTexture* Depth;
+	const DXTexture* SSDepth;
+	const DescriptorAllocationView InViewTransformCBV;
+	const DescriptorAllocationView InColorSRV;
+	const DescriptorAllocationView InOpaqueDepthSRV;
+	const DescriptorAllocationView InReflectionResultSRV;
+	const DescriptorAllocationView InRefractionResultSRV;
 };
 
 struct RenderCommand
@@ -56,6 +71,7 @@ struct RenderCommand
 	size_t Size;
 	std::function<void(const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass;
 	std::function<void(const RenderView& view, DeferredPassData& passData)> DeferredPass;
+	std::function<void(const RenderView& view, WaterPassData& passData)> WaterPass;
 	std::function<void(const RenderView& view, ForwardPassData& passData)> ForwardPass;
 	std::move_only_function<void()> Destroy;
 };
@@ -71,6 +87,7 @@ template <typename T> struct TypedRenderCommand
 	std::vector<T> Data;
 	std::function<void(std::span<T> data, const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass = nullptr;
 	std::function<void(std::span<T> data, const RenderView& view, DeferredPassData& passData)> DeferredPass = nullptr;
+	std::function<void(std::span<T> data, const RenderView& view, WaterPassData& passData)> WaterPass = nullptr;
 	std::function<void(std::span<T> data, const RenderView& view, ForwardPassData& passData)> ForwardPass = nullptr;
 };
 
@@ -123,6 +140,10 @@ struct RenderFrameRecord
 			renderCommand.DeferredPass = [span, deferredPass = std::move(command.DeferredPass)](
 											 const RenderView& view, DeferredPassData& passData)
 			{ return deferredPass(span, view, passData); };
+		if (command.WaterPass)
+			renderCommand.WaterPass =
+				[span, waterPass = std::move(command.WaterPass)](const RenderView& view, WaterPassData& passData)
+			{ return waterPass(span, view, passData); };
 		if (command.ForwardPass)
 			renderCommand.ForwardPass =
 				[span, forwardPass = std::move(command.ForwardPass)](const RenderView& view, ForwardPassData& passData)
@@ -148,7 +169,7 @@ struct Renderer
 {
 	Renderer();
 	~Renderer();
-	bool Initialize(bool debug, HWND window, uint32_t width, uint32_t height);
+	bool Initialize(HWND window, uint32_t width, uint32_t height);
 	bool OnWindowResized(uint32_t width, uint32_t height, bool initial = false);
 
 	bool Deinitialize();
@@ -169,6 +190,7 @@ struct Renderer
 	{
 		Ref<RadGraphicsCommandList> CommandList;
 		Ref<CommandContextData> CmdContext;
+		bool Executed = false;
 		CommandContext AsCommandContext()
 		{
 			return CommandContext{CmdContext->Device, CommandList, CmdContext->GPUHeapPages,
@@ -182,7 +204,7 @@ struct Renderer
 		uint64_t FenceValue;
 	};
 
-	uint64_t CurrentFrameNumber = 0;
+	uint64_t CurrentFrameNumber = 1;
 	std::optional<RenderFrameRecord> CurrentFrameRecord = std::nullopt;
 
 	RenderFrameRecord BeginFrame();
@@ -203,6 +225,7 @@ struct Renderer
 	}
 
 	std::optional<ActiveCommandContext> GetNewCommandContext();
+	void ExecuteCommandContext(ActiveCommandContext& context);
 	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context, Ref<DXFence> fence,
 															  uint64_t signalValue, bool wait = false);
 	CommandContextData& WaitAndClearCommandContext(PendingCommandContext&& context);
@@ -242,7 +265,7 @@ struct Renderer
 	std::optional<CommandContextData> CreateCommandContext();
 	Swapchain Swapchain;
 
-	bool InitializeDevice(bool debug);
+	bool InitializeDevice();
 	bool InitializeSwapchain(HWND window, uint32_t width, uint32_t height);
 	bool InitializePipelines();
 };

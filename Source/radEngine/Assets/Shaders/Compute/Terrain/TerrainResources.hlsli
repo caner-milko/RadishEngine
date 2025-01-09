@@ -40,13 +40,19 @@ struct TerrainRenderResources
 
 struct WaterRenderResources
 {
+    float4x4 ModelMatrix;
     float4x4 MVP;
     float4x4 Normal;
     uint MeshResX, MeshResY;
+    uint ViewTransformBufferIndex;
     uint HeightMapTextureIndex;
     uint WaterHeightMapTextureIndex;
     uint WaterAlbedoTextureIndex;
     uint WaterNormalMapTextureIndex;
+    uint ReflectionResultTextureIndex;
+    uint RefractionResultTextureIndex;
+    uint ColorTextureIndex;
+    uint DepthTextureIndex;
     float TotalLength DEFAULT_VALUE(1024.0f);
 };
 

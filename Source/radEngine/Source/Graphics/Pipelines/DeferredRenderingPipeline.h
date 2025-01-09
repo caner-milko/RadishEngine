@@ -47,24 +47,33 @@ struct DeferredRenderingPipeline
 		return GBuffersSRV.GetView(1);
 	}
 
+	void BeginFrame(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	void WaterRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 	void ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	void ScreenSpaceRaymarchPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
 
   private:
 	bool SetupLightingPass();
 	bool SetupShadowMapPass();
+	bool SetupScreenSpaceRaymarchPass();
 
 	Renderer& Renderer;
 
 	DXTexture DepthBuffer{};
 	DXTexture AlbedoBuffer{};
 	DXTexture NormalBuffer{};
+	// RG - Reflection Normal, BA - Refraction Normal
+	DXTexture SSReflectRefractBuffer{};
+	DXTexture SSDepthBuffer{};
 
 	DescriptorAllocation DepthBufferDSV{};
 	DescriptorAllocation AlbedoBufferRTV{};
 	DescriptorAllocation NormalBufferRTV{};
+	DescriptorAllocation SSReflectRefractBufferRTV{};
+	DescriptorAllocation SSDepthBufferDSV{};
 	DescriptorAllocation GBuffersSRV{};
 
 	DXTexture ShadowMap{};
@@ -74,13 +83,28 @@ struct DeferredRenderingPipeline
 
 	DXBuffer LightBuffer{};
 	DescriptorAllocation LightBufferCBV{};
-	DXBuffer LightTransformationMatricesBuffer{};
-	DescriptorAllocation LightTransformationMatricesBufferCBV{};
+	DXTypedSingularBuffer<hlsl::ViewTransformBuffer> ViewTransformBuffer{};
+	DescriptorAllocation ViewTransformBufferCBV{};
+
+	ComputePipelineState<hlsl::ScreenSpaceRaymarchResources> ScreenSpaceRaymarchPipelineState{};
+	// RG - Reflection UV, A - Visibility
+	DXTexture ReflectionResultBuffer{};
+	DescriptorAllocation ReflectionResultBufferUAV{};
+	DescriptorAllocation ReflectionResultBufferSRV{};
+	// RG - Refraction UV, A - Visibility
+	DXTexture RefractionResultBuffer{};
+	DescriptorAllocation RefractionResultBufferUAV{};
+	DescriptorAllocation RefractionResultBufferSRV{};
 
 	GraphicsPipelineState<hlsl::LightingResources> LightingPipelineState{};
+	DXTexture LightingResultBuffer{};
+	DescriptorAllocation LightingResultBufferRTV{};
+	DescriptorAllocation LightingResultBufferSRV{};
 	DXTexture OutputBuffer{};
 	DescriptorAllocation OutputBufferRTV{};
 	DescriptorAllocation OutputBufferSRV{};
+
+
 
 	D3D12_VIEWPORT ShadowMapViewport{};
 	D3D12_VIEWPORT Viewport{};

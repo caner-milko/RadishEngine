@@ -57,6 +57,7 @@ template <typename T, bool IsCompute> struct TypedPipelineState : PipelineState
 	}
 	inline void SetResources(RadGraphicsCommandList& cmdList, T const& resources) const
 	{
+		static_assert(sizeof(T) / sizeof(uint32_t) <= 64);
 		if constexpr (!IsCompute)
 			cmdList.SetGraphicsRoot32BitConstants(0, sizeof(T) / sizeof(uint32_t), &resources, 0);
 		else

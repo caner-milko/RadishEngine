@@ -129,12 +129,12 @@ void InitGame()
 																			.AspectRatio = 16.0f / 9.0f,
 																		}});
 	ecs::Transform camTransform{};
-	camTransform.Position = {5.3f, 2.f, -1.2f};
+	camTransform.Position = {5.3f, 10.f, -1.2f};
 	camTransform.Rotation = {0.15f, -1.348f, 0.f};
 	camSceneTransform.SetTransform(camTransform);
 	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(
 		camera, ecs::CViewpointController(camSceneTransform.GetWorldTransform(), viewpoint));
-
+	//controller.MoveSpeed = 40.0f;
 	auto dirLight = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(dirLight, "DirectionalLight");
 	auto& lightSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(dirLight, dirLight);
@@ -161,13 +161,7 @@ void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
 
 bool InitRenderer(HWND window, uint32_t width, uint32_t height)
 {
-	return g_Renderer.Initialize(
-#ifdef NDEBUG
-		false,
-#else
-		true,
-#endif
-		window, width, height);
+	return g_Renderer.Initialize(window, width, height);
 }
 
 void LoadSceneData()
@@ -192,9 +186,9 @@ void LoadSceneData()
 		auto& meshTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh, mesh);
 		meshTransform.SetParent(&rootTransform);
 		assert(meshInfo.Model && meshInfo.Material);
-		//g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{.Vertices = *meshInfo.Model,
-		//																			.Indices = meshInfo.Indices,
-		//																			.Material = *meshInfo.Material});
+		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{.Vertices = *meshInfo.Model,
+																					.Indices = meshInfo.Indices,
+																					.Material = *meshInfo.Material});
 	}
 
 	{
@@ -227,7 +221,7 @@ void LoadSceneData()
 
 		ecs::Transform transform{};
 		transform.Scale *= 0.01f;
-		transform.Position = glm::vec3(0, -1, 0);
+		transform.Position = glm::vec3(0, 1, 0);
 		terrainTransform.SetTransform(transform);
 		// terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
 		hlsl::MaterialBuffer terrainMaterial = {};
@@ -317,8 +311,8 @@ int main(int argv, char** args)
 		g_Renderer.Deinitialize();
 		return 1;
 	}
-
 	InitGame();
+	
 	LoadSceneData();
 	SDL_SetRelativeMouseMode(SDL_TRUE);
 	// Main loop
@@ -364,10 +358,10 @@ int main(int argv, char** args)
 			if (sdlEvent.type == SDL_MOUSEWHEEL)
 				inputMan.Immediate.MouseWheelDelta = sdlEvent.wheel.y;
 		}
+
 		auto now = std::chrono::high_resolution_clock::now();
 		auto deltaTime = std::chrono::duration<float>(now - lastTime).count();
 		lastTime = now;
-
 		auto frameRec = g_Renderer.BeginFrame();
 		UpdateGame(deltaTime, frameRec);
 
@@ -383,13 +377,14 @@ int main(int argv, char** args)
 		}
 
 		inputMan.Immediate = {};
+		std::cout << "Delta time: " << deltaTime * 1000.0 << "\n";
 	}
 
 	g_Renderer.WaitAllCommandContexts();
 
 	// Cleanup
-	g_EnttSystems->UISystem.Destroy();
-
+	g_EnttSystems.reset();
+	g_EnttRegistry.clear();
 	g_Renderer.Deinitialize();
 	SDL_DestroyWindow(g_SDLWindow);
 	SDL_Quit();

@@ -11,16 +11,17 @@ namespace rad
 {
 Renderer::Renderer() = default;
 Renderer::~Renderer() = default;
-bool Renderer::InitializeDevice(bool debug)
+bool Renderer::InitializeDevice()
 {
 	// [DEBUG] Enable debug interface
+#ifdef DX12_ENABLE_DEBUG_LAYER
 	ComPtr<ID3D12Debug> pdx12Debug = nullptr;
 	if (debug)
 	{
 		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
 			pdx12Debug->EnableDebugLayer();
 	}
-
+#endif
 	// Create device
 	D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_12_0;
 	if (D3D12CreateDevice(nullptr, featureLevel, IID_PPV_ARGS(&Device)) != S_OK)
@@ -108,7 +109,7 @@ bool Renderer::InitializeSwapchain(HWND window, uint32_t width, uint32_t height)
 		sd.Width = width;
 		sd.Height = height;
 		sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+		sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 		sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		sd.SampleDesc.Count = 1;
 		sd.SampleDesc.Quality = 0;
@@ -134,15 +135,16 @@ bool Renderer::InitializePipelines()
 	return DeferredPipeline->Setup() && BlitPipeline->Setup();
 }
 
-bool Renderer::Initialize(bool debug, HWND window, uint32_t width, uint32_t height)
+bool Renderer::Initialize(HWND window, uint32_t width, uint32_t height)
 {
-	return InitializeDevice(debug) && InitializePipelines() && InitializeSwapchain(window, width, height);
+	return InitializeDevice() && InitializePipelines() && InitializeSwapchain(window, width, height);
 }
 
 bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 {
 	if (!initial)
 	{
+		WaitAllCommandContexts();
 		Swapchain.BackBuffers.clear();
 		DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
 		ThrowIfFailed(Swapchain.Swapchain->GetDesc(&swapChainDesc));
@@ -177,6 +179,8 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 bool Renderer::Deinitialize()
 {
 	WaitAllCommandContexts();
+	DeferredPipeline.reset();
+	BlitPipeline.reset();
 	ModelManager.reset();
 	TextureManager.reset();
 	ShaderManager.reset();
@@ -208,7 +212,7 @@ bool Renderer::Deinitialize()
 
 	if (ComPtr<IDXGIDebug1> pDebug = nullptr; SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
 	{
-		pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY);
+		pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_DETAIL);
 	}
 #endif
 
@@ -234,7 +238,6 @@ void Renderer::Render(RenderFrameRecord& record)
 		return;
 	}
 	auto cmdContext = activeCmdContext->AsCommandContext();
-	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
 	while (!record.CommandRecord.Queue.empty())
 	{
 		auto& command = record.CommandRecord.Queue.front();
@@ -242,8 +245,11 @@ void Renderer::Render(RenderFrameRecord& record)
 		record.CommandRecord.Queue.pop();
 	}
 
+	DeferredPipeline->BeginFrame(cmdContext, record);
 	DeferredPipeline->ShadowMapPass(cmdContext, record);
 	DeferredPipeline->DeferredRenderPass(cmdContext, record);
+	DeferredPipeline->WaterRenderPass(cmdContext, record);
+	DeferredPipeline->ScreenSpaceRaymarchPass(cmdContext, record);
 	DeferredPipeline->LightingPass(cmdContext, record);
 	DeferredPipeline->ForwardRenderPass(cmdContext, record);
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
@@ -255,9 +261,11 @@ void Renderer::Render(RenderFrameRecord& record)
 	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);
 	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), &cmdContext.CommandList);
 	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
-	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
+	ExecuteCommandContext(*activeCmdContext);
 	// Present
-	Swapchain.Swapchain->Present(1, 0);
+	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
+	Swapchain.Swapchain->Present(1, 0/*DXGI_PRESENT_ALLOW_TEARING*/);
+	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
 }
 
 void Renderer::FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command)
@@ -279,6 +287,7 @@ void Renderer::SubmitFrameIndependentCommands(Ref<DXFence> fence, uint64_t signa
 {
 	if (FrameIndependentCommandContext.has_value())
 	{
+		ExecuteCommandContext(*FrameIndependentCommandContext);
 		SubmitCommandContext(std::move(*FrameIndependentCommandContext), fence, signalValue, wait);
 		FrameIndependentCommandContext = std::nullopt;
 	}
@@ -309,13 +318,19 @@ std::optional<Renderer::ActiveCommandContext> Renderer::GetNewCommandContext()
 	CommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 	return ActiveCommandContext{*CommandList.Get(), *cmdContext};
 }
+void Renderer::ExecuteCommandContext(ActiveCommandContext& context) 
+{
+	assert(!context.Executed);
+	context.CommandList->Close();
+	ID3D12CommandList* cmdLists[] = {&context.CommandList.get()};
+	CommandQueue->ExecuteCommandLists(1, cmdLists);
+	context.Executed = true;
+}
 std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(ActiveCommandContext&& context,
 																			  Ref<DXFence> fence, uint64_t signalValue,
 																			  bool wait)
 {
-	context.CommandList->Close();
-	ID3D12CommandList* cmdLists[] = {&context.CommandList.get()};
-	CommandQueue->ExecuteCommandLists(1, cmdLists);
+	assert(context.Executed);
 	CommandQueue->Signal(fence->Fence.Get(), signalValue);
 	PendingCommandContext pendingContext{context.CmdContext, fence, signalValue};
 	if (wait)
@@ -328,8 +343,12 @@ std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(Ac
 }
 Renderer::CommandContextData& Renderer::WaitAndClearCommandContext(PendingCommandContext&& pendingContext)
 {
-	pendingContext.Fence->Fence->SetEventOnCompletion(pendingContext.FenceValue, pendingContext.Fence->FenceEvent);
-	WaitForSingleObject(pendingContext.Fence->FenceEvent, INFINITE);
+	auto completedValue = pendingContext.Fence->Fence->GetCompletedValue(); 
+	if (completedValue < pendingContext.FenceValue)
+	{
+		pendingContext.Fence->Fence->SetEventOnCompletion(pendingContext.FenceValue, pendingContext.Fence->FenceEvent);
+		WaitForSingleObject(pendingContext.Fence->FenceEvent, INFINITE);
+	}
 	auto cmdContext = pendingContext.CmdContext;
 	for (auto const& [type, heapPage] : cmdContext->GPUHeapPages)
 		g_GPUDescriptorAllocator->Heaps[type]->FreePage(heapPage);

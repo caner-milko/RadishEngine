@@ -212,7 +212,19 @@ bool TerrainErosionSystem::Setup()
 		} waterPSStream;
 
 		waterPSStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
+		
+		waterPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+		auto depthStencilDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+		depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+		depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		waterPSStream.DepthStencilDesc = depthStencilDesc;
+		auto blendDesc = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+		blendDesc.RenderTarget[0].BlendEnable = true;
+		blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+		blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+		waterPSStream.BlendDesc = blendDesc;
 		auto [vertexShader, pixelShader] = Renderer.ShaderManager->CompileBindlessGraphicsShader(
 			L"RenderWater", RAD_SHADERS_DIR L"Compute/Terrain/RenderWater.hlsl");
 
@@ -225,20 +237,42 @@ bool TerrainErosionSystem::Setup()
 		rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 		waterPSStream.RTVFormats = rtvFormats;
 
-		waterPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		auto depthStencilDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-		depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-		waterPSStream.DepthStencilDesc = depthStencilDesc;
-		auto blendDesc = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-		blendDesc.RenderTarget[0].BlendEnable = true;
-		blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-		blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-		blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-		waterPSStream.BlendDesc = blendDesc;
-
 		WaterForwardPSO = PipelineState::Create("WaterRender", Renderer.GetDevice(), waterPSStream,
 												&Renderer.ShaderManager->BindlessRootSignature);
+	}
+	{
+		struct WaterPrepassPipelineStateStream : PipelineStateStreamBase
+		{
+			CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+			CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+			CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+			CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL DepthStencilDesc;
+			CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+			CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+			CD3DX12_PIPELINE_STATE_STREAM_RASTERIZER Rasterizer;
+		} waterPrepassPSStream;
+
+		waterPrepassPSStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+		auto [vertexShader, pixelShader] = Renderer.ShaderManager->CompileBindlessGraphicsShader(
+			L"WaterPrepass", RAD_SHADERS_DIR L"Compute/Terrain/WaterPrepass.hlsl");
+
+		waterPrepassPSStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
+		waterPrepassPSStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
+
+		auto depthStencilDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+		depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		waterPrepassPSStream.DepthStencilDesc = depthStencilDesc;
+		waterPrepassPSStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+		D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+		rtvFormats.NumRenderTargets = 1;
+		rtvFormats.RTFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		waterPrepassPSStream.RTVFormats = rtvFormats;
+
+		waterPrepassPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+		WaterPrePassPSO = PipelineState::Create("WaterPrepass", Renderer.GetDevice(), waterPrepassPSStream,
+													&Renderer.ShaderManager->BindlessRootSignature);
 	}
 
 	return true;
@@ -717,7 +751,6 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 			GenerateBaseHeightMap(frameRecord.CommandRecord, terrain, parameters, terrainRenderable, waterRenderable);
 		if (parameters.ErodeEachFrame || inputMan.IsKeyPressed(SDL_SCANCODE_K))
 			ErodeTerrain(frameRecord.CommandRecord, terrain, parameters, terrainRenderable, waterRenderable);
-
 	}
 
 	auto terrainRenderableView = registry.view<ecs::CSceneTransform, CIndexedPlane, CTerrainRenderable>();
@@ -779,6 +812,7 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 
 	frameRecord.Push(TypedRenderCommand<WaterRenderData>{.Name = "WaterRender",
 														 .Data = std::move(waterRenderDataVec),
+														 .WaterPass = [this](auto span, auto view, auto passData) { WaterPrepass(span, view, passData); },
 														 .ForwardPass = [this](auto span, auto view, auto passData)
 														 { WaterForwardPass(span, view, passData); }});
 }
@@ -829,6 +863,31 @@ void TerrainErosionSystem::TerrainDeferredPass(std::span<TerrainRenderData> rend
 	}
 }
 
+void TerrainErosionSystem::WaterPrepass(std::span<WaterRenderData> renderObjects, const RenderView& view,
+										WaterPassData& passData)
+{
+	auto& cmd = passData.CmdContext;
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	WaterPrePassPSO.Bind(cmd);
+
+	WaterRenderData lastRenderData{};
+	for (auto& renderObj : renderObjects)
+	{
+		if (renderObj.IndexBufferView.BufferLocation != lastRenderData.IndexBufferView.BufferLocation)
+		{
+			lastRenderData.IndexBufferView = renderObj.IndexBufferView;
+			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
+		}
+		rad::hlsl::WaterRenderResources renderResources = renderObj.Resources;
+		renderResources.ModelMatrix = renderObj.WorldMatrix;
+		renderResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
+		renderResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
+		renderResources.ViewTransformBufferIndex = passData.InViewTransformCBV.GetIndex();
+		WaterPrePassPSO.SetResources(cmd, renderResources);
+		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+	}
+}
+
 void TerrainErosionSystem::WaterForwardPass(std::span<WaterRenderData> renderObjects, const RenderView& view,
 											ForwardPassData& passData)
 {
@@ -845,8 +904,14 @@ void TerrainErosionSystem::WaterForwardPass(std::span<WaterRenderData> renderObj
 			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
 		}
 		rad::hlsl::WaterRenderResources renderResources = renderObj.Resources;
+		renderResources.ModelMatrix = renderObj.WorldMatrix;
 		renderResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
 		renderResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
+		renderResources.ViewTransformBufferIndex = passData.InViewTransformCBV.GetIndex();
+		renderResources.ReflectionResultTextureIndex = passData.InReflectionResultSRV.GetIndex();
+		renderResources.RefractionResultTextureIndex = passData.InRefractionResultSRV.GetIndex();
+		renderResources.ColorTextureIndex = passData.InColorSRV.GetIndex();
+		renderResources.DepthTextureIndex = passData.InOpaqueDepthSRV.GetIndex();
 		WaterForwardPSO.SetResources(cmd, renderResources);
 		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
 	}

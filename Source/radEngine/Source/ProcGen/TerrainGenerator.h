@@ -128,6 +128,7 @@ struct TerrainErosionSystem
 
 	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainDeferredPSO;
 	GraphicsPipelineState<hlsl::TerrainRenderResources> TerrainDepthOnlyPSO;
+	GraphicsPipelineState<hlsl::WaterRenderResources> WaterPrePassPSO;
 	GraphicsPipelineState<hlsl::WaterRenderResources> WaterForwardPSO;
 
 	struct TerrainRenderData
@@ -151,6 +152,7 @@ struct TerrainErosionSystem
 		hlsl::WaterRenderResources Resources;
 	};
 
+	void WaterPrepass(std::span<WaterRenderData> renderObjects, const RenderView& view, WaterPassData& passData);
 	void WaterForwardPass(std::span<WaterRenderData> renderObjects, const RenderView& view, ForwardPassData& passData);
 };
 

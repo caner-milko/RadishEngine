@@ -1,6 +1,7 @@
 #include "FullscreenVS.hlsli"
 #include "RenderResources.hlsli"
 #include "ConstantBuffers.hlsli"
+#include "HLSLCommon.hlsli"
 
 ConstantBuffer<LightingResources> Resources : register(b0);
 
@@ -13,20 +14,9 @@ struct PSIn
     float2 TexCoord : TEXCOORD;
 };
 
-float3 WorldPosFromDepth(LightTransformBuffer lightTransform, float2 texCoord, float depth)
+float3 LightSpaceFromWorld(float4x4 viewProjection, float3 worldPos)
 {
-    float2 screenPos = texCoord * 2 - 1;
-    screenPos.y = -screenPos.y;
-    float4 clipPos = float4(screenPos, depth, 1);
-    float4 viewPos = mul(lightTransform.CamInverseProjection, clipPos);
-    viewPos /= viewPos.w;
-    float4 worldPos = mul(lightTransform.CamInverseView, viewPos);
-    return worldPos.xyz;
-}
-
-float3 LightSpaceFromWorld(LightTransformBuffer lightTransform, float3 worldPos)
-{
-    float4 lightSpacePos = mul(lightTransform.LightViewProjection, float4(worldPos, 1));
+    float4 lightSpacePos = mul(viewProjection, float4(worldPos, 1));
     lightSpacePos /= lightSpacePos.w;
     // Transform from [-1, 1] to [0, 1]
     lightSpacePos.xy = lightSpacePos.xy * 0.5 + 0.5;
@@ -48,21 +38,19 @@ float4 PSMain(PSIn IN) : SV_TARGET
     Texture2D<float> shadowMap = GetBindlessResource(Resources.ShadowMapTextureIndex);
     SamplerComparisonState shadowMapSampler = GetBindlessSampler(Resources.ShadowMapSamplerIndex);
     ConstantBuffer<LightDataBuffer> lightData = GetBindlessResource(Resources.LightDataBufferIndex);
-    ConstantBuffer<LightTransformBuffer> lightTransform = GetBindlessResource(Resources.LightTransformBufferIndex);
+    ConstantBuffer<ViewTransformBuffer> viewTransform = GetBindlessResource(Resources.ViewTransformBufferIndex);
     
     float3 normal = normalTex.Sample(PointSampler, IN.TexCoord).rgb;
     float3 albedo = albedoTex.Sample(PointSampler, IN.TexCoord).rgb;
     
     float diffuse = saturate(dot(normal, -lightData.DirectionOrPosition));
     
-    float halfVector = saturate(dot(normal, normalize(-lightData.DirectionOrPosition + float3(0, 0, 1))));
+    float halfVector = saturate(dot(normal, normalize(-lightData.DirectionOrPosition + -mul((float3x3) viewTransform.CamInverseView, float3(0, 0, 1)))));
     float specular = pow(halfVector, 32);
     
-    diffuse *= lightData.Intensity;
-    
     float depth = depthMap.Sample(PointSampler, IN.TexCoord);
-    float3 worldPos = WorldPosFromDepth(lightTransform, IN.TexCoord, depth);
-    float3 lightSpacePos = LightSpaceFromWorld(lightTransform, worldPos);
+    float3 worldPos = WorldPosFromDepth(viewTransform.CamInverseViewProjection, IN.TexCoord, depth);
+    float3 lightSpacePos = LightSpaceFromWorld(viewTransform.LightViewProjection, worldPos);
     
     bool inBounds = lightSpacePos.x > 0 && lightSpacePos.x < 1 && lightSpacePos.y > 0 && lightSpacePos.y < 1 && lightSpacePos.z > 0 && lightSpacePos.z < 1;
     
@@ -112,5 +100,12 @@ float4 PSMain(PSIn IN) : SV_TARGET
     specular *= shadowCoeff;
     //return float4(saturate(dot(normal, -lightData.DirectionOrPosition)) * float3(1, 1, 1), 1);
     //return float4(albedo, 1);
-    return float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1);
+    
+    
+    //Texture2D<float4> reflectionTex = GetBindlessResource(Resources.ReflectionResultIndex);
+    //float4 reflectionUv = reflectionTex.Sample(PointSampler, IN.TexCoord).rgba;
+    //return lerp(float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1),
+    //float4(albedoTex.Sample(PointSampler, reflectionUv.xy).rgb, 1), reflectionUv.a);
+
+    return float4((diffuse * lightData.Color + float3(0.4, 0.4, 0.4) * specular + lightData.AmbientColor) * albedo, 1);
 }

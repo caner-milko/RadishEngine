@@ -30,12 +30,35 @@ struct LightingResources
     uint ShadowMapTextureIndex;
     uint ShadowMapSamplerIndex;
     uint LightDataBufferIndex;
-    uint LightTransformBufferIndex;
+    uint ViewTransformBufferIndex;
+
+    uint ReflectionResultIndex;
+    uint RefractionResultIndex;
 };
     
 struct BlitResources
 {
     uint SourceTextureIndex;
+};
+
+struct ScreenSpaceRaymarchResources
+{
+    // RG - Reflection Normal, BA - Refraction Normal
+    uint InReflectRefractNormalTextureIndex;
+    uint SSDepthTextureIndex;
+    uint DepthTextureIndex;
+    
+    // RG - Reflection UV, A - Visibility
+    uint OutReflectResultTextureIndex;
+    // RG - Refraction UV, A - Visibility
+    uint OutRefractResultTextureIndex;
+    // Contains camera information
+    uint ViewTransformBufferIndex;
+    
+    float MaxDistance DEFAULT_VALUE(15.0f);
+    float Resolution DEFAULT_VALUE(0.4f);
+    float ThicknessMultiplier DEFAULT_VALUE(0.2f);
+    int MaxSteps DEFAULT_VALUE(16);
 };
 #ifdef __cplusplus
 };

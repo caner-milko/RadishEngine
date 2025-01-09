@@ -266,6 +266,19 @@ template <typename T> struct DXTypedSingularBuffer : DXTypedBuffer<T>
 			DXTypedBuffer<T>::CreateAndUpload(device, name, commandCtx, std::span{&data, 1}, state, flags));
 	}
 
+	void WriteImmediate(CommandContext& cmdContext, T const& data)
+	{
+		TransitionVec(*this, D3D12_RESOURCE_STATE_COPY_DEST).Execute(cmdContext);
+		constexpr size_t paramCount = sizeof(T) / sizeof(UINT);
+		D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[paramCount] = {};
+		for (size_t i = 0; i < paramCount; i++)
+		{
+			params[i].Dest = DXBuffer::GPUAddress(i * sizeof(UINT));
+			params[i].Value = reinterpret_cast<const UINT*>(&data)[i];
+		}
+		cmdContext->WriteBufferImmediate(paramCount, params, nullptr);
+	}
+
 	using DXTypedBuffer<T>::DXTypedBuffer;
 	explicit DXTypedSingularBuffer(DXBuffer const& buf) : DXTypedBuffer<T>(buf) {}
 };
