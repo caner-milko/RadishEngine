@@ -260,7 +260,7 @@ void CLightSystem::Update(entt::registry& registry, RenderFrameRecord& frameReco
 		auto worldTransform = transform.GetWorldTransform();
 
 		frameRecord.LightInfo = {
-			.View = ViewpointToRenderView(viewpoint, transform), .Color = light.Color, .Intensity = light.Intensity};
+			.View = ViewpointToRenderView(viewpoint, transform), .Color = light.Color, .Intensity = light.Intensity, .AmbientColor = light.Ambient};
 	}
 }
 void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& io, float deltaTime, Renderer& renderer)
