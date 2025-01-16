@@ -42,13 +42,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     waterHeightMap[dispatchID.xy] = newWater;
     float avgWater = (newWater + curWater) / 2;
-    if (avgWater < 0.0001f)
-    {
-        velocityMap[dispatchID.xy] = float2(0, 0);
-    }
-    else
-    {
-        float invAvgL = 1 / (avgWater * Resources.PipeLength);
-        velocityMap[dispatchID.xy] = 0.5f * float2(xChange, yChange) * invAvgL;
-    }
+    avgWater = max(avgWater, 0.001);
+    float invAvgL = 1 / (avgWater * Resources.PipeLength);
+    velocityMap[dispatchID.xy] = 0.5f * float2(xChange, yChange) * invAvgL;
 }

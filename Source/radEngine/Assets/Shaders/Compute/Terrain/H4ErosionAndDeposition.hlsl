@@ -5,7 +5,7 @@ ConstantBuffer<HydrolicErosionAndDepositionResources> Resources : register(b0);
 struct ConditionalSample
 {
     float Result;
-    uint Distance;
+    float Distance;
 };
 
 ConditionalSample SampleDirection(Texture2D<float> heightMap, uint2 textureSize, uint2 pos, int2 offset)
@@ -27,7 +27,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 {
     Texture2D<float2> inVelocityMap = GetBindlessResource(Resources.InVelocityMapIndex);
     Texture2D<float> inOldHeightMap = GetBindlessResource(Resources.InOldHeightMapIndex);
-    RWTexture2D<float> softnessMap = GetBindlessResource(Resources.InOutSoftnessMapIndex);
+    RWTexture2D<float> hardnessMap = GetBindlessResource(Resources.InOutHardnessMapIndex);
     RWTexture2D<float> outHeightMap = GetBindlessResource(Resources.OutHeightMapIndex);
     RWTexture2D<float> outWaterMap = GetBindlessResource(Resources.OutWaterMapIndex);
     RWTexture2D<float> outSedimentMap = GetBindlessResource(Resources.OutSedimentMapIndex);
@@ -41,39 +41,52 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     ConditionalSample top = SampleDirection(inOldHeightMap, textureSize, dispatchID.xy, int2(0, 1));
     ConditionalSample bottom = SampleDirection(inOldHeightMap, textureSize, dispatchID.xy, int2(0, -1));
     
-    float3 dhdx = normalize(float3((right.Distance + left.Distance) * Resources.PipeLength, (right.Result - left.Result), 0));
-    float3 dhdy = normalize(float3(0, (top.Result - bottom.Result), (top.Distance + bottom.Distance) * Resources.PipeLength));
+    left.Result = (left.Result + curHeight) * 0.5;
+    right.Result = (right.Result + curHeight) * 0.5;
+    top.Result = (top.Result + curHeight) * 0.5;
+    bottom.Result = (bottom.Result + curHeight) * 0.5;
+    
+    left.Distance = left.Distance * 0.5;
+    right.Distance = right.Distance * 0.5;
+    top.Distance = top.Distance * 0.5;
+    bottom.Distance = bottom.Distance * 0.5;
+    
+    float3 dhdx = normalize(float3(1.0, abs(right.Result - left.Result) / (Resources.PipeLength * (right.Distance + left.Distance)), 0));
+    float3 dhdy = normalize(float3(0, abs(top.Result - bottom.Result) / ((top.Distance + bottom.Distance) * Resources.PipeLength), 1.0));
     
     float3 normal = normalize(cross(dhdx, dhdy));
     
     //normal = normalize(float3(left.Result - right.Result, 2.0 * 2.25, top.Result - bottom.Result));
     
-    float sinTiltAngle = abs(sqrt(1.0 - normal.y * normal.y));
+    float sinTiltAngle = sin(acos(abs(normal.y)));
     //sinTiltAngle = abs(normal.y);
+    
+    sinTiltAngle = sinTiltAngle < 0.15 ? 0 : sinTiltAngle;
     
     float2 velocity = inVelocityMap[dispatchID.xy];
     
     float curWater = outWaterMap[dispatchID.xy];
-    float lmax = saturate(1 - max(0, Resources.MaximalErosionDepth - curWater) / Resources.MaximalErosionDepth);
-    float hardness = softnessMap[dispatchID.xy];
-    float sedimentTransportCapacity = Resources.SedimentCapacity * length(velocity) * max(sinTiltAngle, 0.05)  * lmax;
-    //sedimentTransportCapacity = min(sedimentTransportCapacity, Resources.SedimentCapacity);
+    float lmax = sqrt(saturate(1 - max(0, Resources.MaximalErosionDepth - curWater) / Resources.MaximalErosionDepth));
+    float hardness = hardnessMap[dispatchID.xy];
+    float sedimentTransportCapacity = Resources.SedimentCapacity * max(0.15, length(velocity)) * saturate(sinTiltAngle) * lmax;
     float sediment = outSedimentMap[dispatchID.xy];
     
     if (sediment < sedimentTransportCapacity)
     {
-        float mod = min(hardness * Resources.DeltaTime * Resources.SoilSuspensionRate * (sedimentTransportCapacity - sediment), curHeight);
+        float mod = Resources.DeltaTime * (1 - hardness) * Resources.SoilSuspensionRate * (sedimentTransportCapacity - sediment);
         outHeightMap[dispatchID.xy] = curHeight - mod;
         outSedimentMap[dispatchID.xy] += mod;
         outWaterMap[dispatchID.xy] += mod;
-        softnessMap[dispatchID.xy] = max(Resources.MinimumSoftness, hardness - mod * Resources.SoilHardeningRate);
+        hardnessMap[dispatchID.xy] = clamp(hardness + Resources.SoilHardeningRate * mod, 0.0, Resources.MaximumHardness);
     }
     else
     {
-        float mod = min(Resources.DeltaTime * Resources.SedimentDepositionRate * (sediment - sedimentTransportCapacity), curWater);
+        float mod = Resources.DeltaTime * Resources.SedimentDepositionRate * (sediment - sedimentTransportCapacity);
+        mod = min(mod, curWater);
         outHeightMap[dispatchID.xy] = curHeight + mod;
         outSedimentMap[dispatchID.xy] -= mod;
         outWaterMap[dispatchID.xy] -= mod;
-        softnessMap[dispatchID.xy] = min(1.0, hardness + mod * Resources.SoilSofteningRate);
+        
+        hardnessMap[dispatchID.xy] = clamp(hardness - Resources.SoilHardeningRate * mod, 0.0, Resources.MaximumHardness);
     }
 }

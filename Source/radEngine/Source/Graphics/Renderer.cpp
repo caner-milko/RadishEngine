@@ -16,11 +16,8 @@ bool Renderer::InitializeDevice()
 	// [DEBUG] Enable debug interface
 #ifdef DX12_ENABLE_DEBUG_LAYER
 	ComPtr<ID3D12Debug> pdx12Debug = nullptr;
-	if (debug)
-	{
-		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
-			pdx12Debug->EnableDebugLayer();
-	}
+	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
+		pdx12Debug->EnableDebugLayer();
 #endif
 	// Create device
 	D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_12_0;

@@ -22,10 +22,21 @@ float3 FindNormal(float2 uv, Texture2D<float> heightMap, float totalLength)
     float2 topCoord = clamp(uv - float2(0, texelSize.y), 0, 1);
     float2 bottomCoord = clamp(uv + float2(0, texelSize.y), 0, 1);
     
+    leftCoord = (uv + leftCoord) * 0.5;
+    rightCoord = (uv + rightCoord) * 0.5;
+    topCoord = (uv + topCoord) * 0.5;
+    bottomCoord = (uv + bottomCoord) * 0.5;
+    
+    float centerHeight = heightMap.Sample(LinearSampler, uv);
     float heightLeft = heightMap.Sample(LinearSampler, leftCoord);
     float heightRight = heightMap.Sample(LinearSampler, rightCoord);
     float heightTop = heightMap.Sample(LinearSampler, topCoord);
     float heightBottom = heightMap.Sample(LinearSampler, bottomCoord);
+    
+    //heightLeft = (centerHeight + heightLeft) * 0.5;
+    //heightRight = (centerHeight + heightRight) * 0.5;
+    //heightTop = (centerHeight + heightTop) * 0.5;
+    //heightBottom = (centerHeight + heightBottom) * 0.5;
     
     float xDif = (heightLeft - heightRight);
     float yDif = (heightBottom - heightTop);
@@ -69,23 +80,48 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     float3 surfaceColor;
     heightCenter /= 100.0;
+    
+    float slopeMinSand = 180.0;
+    float slopeMaxSand = 180.0;
+    
+    float slopeMinGrass = 45.0;
+    float slopeMaxGrass = 48.0;
+    
+    float slopeMinSnow = 40.0;
+    float slopeMaxSnow = 42.0;
+    
+    float slopeMin = 0.0;
+    float slopeMax = 0.0;
+    
     if (heightCenter < waterHeight)
     {
         surfaceColor = sandColor;
+        slopeMin = slopeMinSand;
+        slopeMax = slopeMaxSand;
     }
     else if (heightCenter < waterHeight + transitionDist)
     {
-        surfaceColor = lerp(sandColor, grassColor, (heightCenter - waterHeight) / transitionDist);
+        float transitionInterp = (heightCenter - waterHeight) / transitionDist;
+        surfaceColor = lerp(sandColor, grassColor, transitionInterp);
+        slopeMin = lerp(slopeMinSand, slopeMinGrass, transitionInterp);
+        slopeMax = lerp(slopeMaxSand, slopeMaxGrass, transitionInterp);
     }
     else if (heightCenter < grassHeight)
     {
         surfaceColor = grassColor;
+        slopeMin = slopeMinGrass;
+        slopeMax = slopeMaxGrass;
     }
     else
     {
-        surfaceColor = lerp(grassColor, snowColor, (heightCenter - grassHeight) / (snowHeight - grassHeight));
+        float transitionInterp = saturate((heightCenter - grassHeight) / (snowHeight - grassHeight));
+        surfaceColor = lerp(grassColor, snowColor, transitionInterp);
+        slopeMin = lerp(slopeMinGrass, slopeMinSnow, transitionInterp);
+        slopeMax = lerp(slopeMaxGrass, slopeMaxSnow, transitionInterp);
     }
-    float slopeMin = 50.0 / 180.0;
-    surfaceColor = lerp(surfaceColor, float3(0.25, 0.25, 0.25), max(0, slope / (PI / 2) - slopeMin) / (1 - slopeMin));
+    
+    float interpolatedSlope = saturate((slope / PI * 180.0 - slopeMin) / (slopeMax - slopeMin));
+    
+    surfaceColor = lerp(surfaceColor, float3(0.25, 0.25, 0.25), interpolatedSlope);
     albedoTex[dispatchID.xy] = float4(surfaceColor, 1);
 }

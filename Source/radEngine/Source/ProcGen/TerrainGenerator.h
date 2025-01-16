@@ -34,7 +34,7 @@ struct CTerrain
 	std::shared_ptr<RWTexture> VelocityMap{};
 	std::shared_ptr<RWTexture> ThermalPipe1{};
 	std::shared_ptr<RWTexture> ThermalPipe2{};
-	std::shared_ptr<RWTexture> SoftnessMap{};
+	std::shared_ptr<RWTexture> HardnessMap{};
 	uint32_t IterationCount = 0;
 };
 
@@ -68,24 +68,24 @@ struct CErosionParameters
 	bool Random = false;
 	int Seed = 0;
 	bool BaseFromFile = false;
-	float InitialRoughness = 4.0f;
+	float InitialRoughness = 2.0f;
 	float MinHeight = 0.0f;
-	float MaxHeight = 120.0f;
+	float MaxHeight = 200.0f;
+	float DeltaTime = 0.002f;
 	int Iterations = 1;
-	float RainRate = 0.015f;
-	float EvaporationRate = 0.006f;
+	float RainRate = 0.04f;
+	float EvaporationRate = 0.02f;
 	float TotalLength = 1024.0;
-	float PipeCrossSection = 20.0f;
+	float PipeCrossSection = 4.0f;
 	float SedimentCapacity = 1.0f;
-	float SoilSuspensionRate = 0.6f;
+	float SoilSuspensionRate = 0.3f;
 	float SedimentDepositionRate = 0.8f;
-	float SoilHardeningRate = 0.2f;
-	float SoilSofteningRate = 0.2f;
-	float MinimumSoilSoftness = 0.0f;
+	float SoilHardeningRate = 0.5f;
+	float MaximumSoilHardness = 1.0f;
 	float MaximalErosionDepth = 10.0f;
 
-	float SoftnessTalusCoefficient = 0.6f;
-	float MinTalusCoefficient = 0.3f;
+	float TalusAngleTangentCoeff = 0.8f;
+	float TalusAngleTangentBias = 0.3f;
 	float ThermalErosionRate = 0.1f;
 	bool MeshWithWater = false;
 };

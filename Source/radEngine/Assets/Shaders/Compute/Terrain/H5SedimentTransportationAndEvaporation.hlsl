@@ -18,10 +18,10 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     float2 velocity = inVelocityMap[dispatchID.xy];
     float2 pos = dispatchID.xy / float2(textureDimensions);
-    float2 oldPos = saturate(pos + texelSize * 0.5 - velocity * Resources.DeltaTime * texelSize * Resources.PipeLength);
+    float2 oldPos = saturate(pos + texelSize * 0.5 - velocity * Resources.DeltaTime * texelSize);
     float oldSediment = inOldSedimentMap.Sample(linearSampler, oldPos );
     outSedimentMap[dispatchID.xy] = oldSediment;
     // Evaporation
     RWTexture2D<float> waterMap = GetBindlessResource(Resources.InOutWaterMapIndex);
-    waterMap[dispatchID.xy] *= 1 - Resources.EvaporationRate * Resources.DeltaTime;
+    waterMap[dispatchID.xy] *= max(1 - Resources.EvaporationRate * Resources.DeltaTime, 0.0);
 }

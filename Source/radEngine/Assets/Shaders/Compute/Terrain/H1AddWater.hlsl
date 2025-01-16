@@ -48,5 +48,5 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     float rain = Resources.RainRate * Resources.DeltaTime;
     
-    waterMap[dispatchID.xy] = waterMap[dispatchID.xy] + toAdd + rain * 0.0;
+    waterMap[dispatchID.xy] = waterMap[dispatchID.xy] + rain;
 }

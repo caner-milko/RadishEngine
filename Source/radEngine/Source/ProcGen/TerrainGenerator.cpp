@@ -11,6 +11,7 @@
 
 namespace rad::proc
 {
+constexpr std::array<float, 4> HardnessClearCol = {0.5f, 0.5f, 0.5f, 0.5f};
 size_t GetIndex(size_t x, size_t y, size_t width)
 {
 	return x + y * width;
@@ -323,7 +324,7 @@ CTerrain TerrainErosionSystem::CreateTerrain(uint32_t heightMapWidth)
 		std::make_shared<RWTexture>(DXTexture::Create(Renderer.GetDevice(), L"TempHeightMap", baseTextureInfo));
 	terrain.TempSedimentMap =
 		std::make_shared<RWTexture>(DXTexture::Create(Renderer.GetDevice(), L"TempSedimentMap", baseTextureInfo));
-	terrain.SoftnessMap =
+	terrain.HardnessMap =
 		std::make_shared<RWTexture>(DXTexture::Create(Renderer.GetDevice(), L"HardnessMap", baseTextureInfo));
 
 	baseTextureInfo.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -387,14 +388,14 @@ void TerrainErosionSystem::GenerateBaseHeightMap(CommandRecord& cmdRecord, CTerr
 	cmdRecord.Push(
 		"ClearMaps",
 		[waterHeightMap = terrain.WaterHeightMap, sedimentMap = terrain.SedimentMap,
-		 waterOutflux = terrain.WaterOutflux, softnessMap = terrain.SoftnessMap](CommandContext& cmdContext)
+		 waterOutflux = terrain.WaterOutflux, hardnessMap = terrain.HardnessMap](CommandContext& cmdContext)
 		{
 			// Clear water/sediment/outflux/hardness maps
 			TransitionVec()
 				.Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 				.Add(*sedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 				.Add(*waterOutflux, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-				.Add(*softnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+				.Add(*hardnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 				.Execute(cmdContext);
 			float clearValue[4] = {0.f, 0.f, 0.f, 0.f};
 			auto cpuUAV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
@@ -414,11 +415,10 @@ void TerrainErosionSystem::GenerateBaseHeightMap(CommandRecord& cmdRecord, CTerr
 			waterOutflux->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
 			cmdContext->ClearUnorderedAccessViewFloat(waterOutflux->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(),
 													  waterOutflux->Resource.Get(), clearValue, 0, nullptr);
-			uavDesc.Format = softnessMap->Info.Format;
-			float hardnessClearValue[4] = {0.5f, 0.5f, 0.5f, 0.5f};
-			softnessMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
-			cmdContext->ClearUnorderedAccessViewFloat(softnessMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(),
-													  softnessMap->Resource.Get(), hardnessClearValue, 0, nullptr);
+			uavDesc.Format = hardnessMap->Info.Format;
+			hardnessMap->CreatePlacedUAV(cpuUAV.GetView(), &uavDesc);
+			cmdContext->ClearUnorderedAccessViewFloat(hardnessMap->UAV.GetGPUHandle(), cpuUAV.GetCPUHandle(),
+													  hardnessMap->Resource.Get(), HardnessClearCol.data(), 0, nullptr);
 			g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StaticPage->Top--;
 		});
 
@@ -441,7 +441,7 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 			"Erosion",
 			[heightMap = terrain.HeightMap, waterHeightMap = terrain.WaterHeightMap, sedimentMap = terrain.SedimentMap,
 			 tempHeightMap = terrain.TempHeightMap, tempSedimentMap = terrain.TempSedimentMap,
-			 softnessMap = terrain.SoftnessMap, thermalPipe1 = terrain.ThermalPipe1,
+			 hardnessMap = terrain.HardnessMap, thermalPipe1 = terrain.ThermalPipe1,
 			 thermalPipe2 = terrain.ThermalPipe2, waterOutflux = terrain.WaterOutflux,
 			 velocityMap = terrain.VelocityMap, parameters = CErosionParameters(parameters),
 			 iterationCount = terrain.IterationCount, hydrolicAddWaterPSO = Ref(HydrolicAddWaterPSO),
@@ -460,14 +460,14 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 
 				hlsl::ThermalOutfluxResources outfluxResources{
 					.InHeightMapIndex = heightMap->SRV.Index,
-					.InHardnessMapIndex = softnessMap->SRV.Index,
+					.InHardnessMapIndex = hardnessMap->SRV.Index,
 					.OutFluxTextureIndex1 = thermalPipe1->UAV.Index,
 					.OutFluxTextureIndex2 = thermalPipe2->UAV.Index,
 					.ThermalErosionRate = parameters.ThermalErosionRate,
 					.PipeLength = pipeLength,
-					.SoftnessTalusCoefficient = parameters.SoftnessTalusCoefficient,
-					.MinTalusCoefficient = parameters.MinTalusCoefficient,
-				};
+					.TalusAngleTangentCoeff = parameters.TalusAngleTangentCoeff,
+					.TalusAngleTangentBias = parameters.TalusAngleTangentBias,
+					.DeltaTime = parameters.DeltaTime};
 
 				hlsl::ThermalDepositResources depositResources{
 					.InFluxTextureIndex1 = thermalPipe1->SRV.Index,
@@ -477,6 +477,7 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 				hlsl::HydrolicAddWaterResources addWaterResources{
 					.WaterMapIndex = waterHeightMap->UAV.Index,
 					.RainRate = parameters.RainRate,
+					.DeltaTime = parameters.DeltaTime,
 					.Iteration = iterationCount,
 				};
 				TransitionVec().Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS).Execute(commandCtx);
@@ -488,7 +489,7 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 					.OutFluxTextureIndex = waterOutflux->UAV.Index,
 					.PipeCrossSection = crossSection,
 					.PipeLength = pipeLength,
-				};
+					.DeltaTime = parameters.DeltaTime};
 				TransitionVec()
 					.Add(*heightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
 					.Add(*waterHeightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
@@ -502,7 +503,7 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 					.OutWaterMapIndex = waterHeightMap->UAV.Index,
 					.OutVelocityMapIndex = velocityMap->UAV.Index,
 					.PipeLength = pipeLength,
-				};
+					.DeltaTime = parameters.DeltaTime};
 				TransitionVec()
 					.Add(*waterOutflux, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
 					.Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
@@ -514,7 +515,7 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 				hlsl::HydrolicErosionAndDepositionResources erosionAndDepositionResources{
 					.InVelocityMapIndex = velocityMap->SRV.Index,
 					.InOldHeightMapIndex = heightMap->SRV.Index,
-					.InOutSoftnessMapIndex = softnessMap->UAV.Index,
+					.InOutHardnessMapIndex = hardnessMap->UAV.Index,
 					.OutHeightMapIndex = tempHeightMap->UAV.Index,
 					.OutWaterMapIndex = waterHeightMap->UAV.Index,
 					.OutSedimentMapIndex = sedimentMap->UAV.Index,
@@ -523,17 +524,16 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 					.SoilSuspensionRate = parameters.SoilSuspensionRate,
 					.SedimentDepositionRate = parameters.SedimentDepositionRate,
 					.SoilHardeningRate = parameters.SoilHardeningRate,
-					.SoilSofteningRate = parameters.SoilSofteningRate,
-					.MinimumSoftness = parameters.MinimumSoilSoftness,
+					.MaximumHardness = parameters.MaximumSoilHardness,
 					.MaximalErosionDepth = parameters.MaximalErosionDepth,
-				};
+					.DeltaTime = parameters.DeltaTime};
 				TransitionVec()
 					.Add(*velocityMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
 					.Add(*heightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
 					.Add(*waterHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 					.Add(*tempHeightMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 					.Add(*sedimentMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-					.Add(*softnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+					.Add(*hardnessMap, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 					.Execute(commandCtx);
 				hydrolicErosionAndDepositionPSO->ExecuteCompute(commandCtx, erosionAndDepositionResources, width / 8,
 																height / 8, 1);
@@ -545,14 +545,13 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 				commandCtx->CopyResource(heightMap->Resource.Get(), tempHeightMap->Resource.Get());
 
 				hlsl::HydrolicSedimentTransportationAndEvaporationResources
-					sedimentTransportationAndEvaporationResources{
-						.InVelocityMapIndex = velocityMap->SRV.Index,
-						.InOldSedimentMapIndex = sedimentMap->SRV.Index,
-						.OutSedimentMapIndex = tempSedimentMap->UAV.Index,
-						.PipeLength = pipeLength,
-						.InOutWaterMapIndex = waterHeightMap->UAV.Index,
-						.EvaporationRate = parameters.EvaporationRate,
-					};
+					sedimentTransportationAndEvaporationResources{.InVelocityMapIndex = velocityMap->SRV.Index,
+																  .InOldSedimentMapIndex = sedimentMap->SRV.Index,
+																  .OutSedimentMapIndex = tempSedimentMap->UAV.Index,
+																  .PipeLength = pipeLength,
+																  .InOutWaterMapIndex = waterHeightMap->UAV.Index,
+																  .EvaporationRate = parameters.EvaporationRate,
+																  .DeltaTime = parameters.DeltaTime};
 				TransitionVec()
 					.Add(*velocityMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
 					.Add(*sedimentMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
@@ -572,7 +571,7 @@ void TerrainErosionSystem::ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terr
 					.Add(*thermalPipe1, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 					.Add(*thermalPipe2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 					.Add(*heightMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
-					.Add(*softnessMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+					.Add(*hardnessMap, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
 					.Execute(commandCtx);
 				thermalOutfluxPSO->ExecuteCompute(commandCtx, outfluxResources, width / 8, height / 8, 1);
 

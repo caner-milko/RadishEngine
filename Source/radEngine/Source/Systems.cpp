@@ -538,6 +538,7 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 				ImGui::SliderFloat("Min Height", &erosionParams.MinHeight, 0.0f, 100.0f);
 				ImGui::SliderFloat("Max Height", &erosionParams.MaxHeight, 0.0f, 200.0f);
 				ImGui::Checkbox("Erode Each Frame", &erosionParams.ErodeEachFrame);
+				ImGui::SliderFloat("Delta Time", &erosionParams.DeltaTime, 0.0f, 0.01f);
 				ImGui::SliderInt("Iterations", &erosionParams.Iterations, 1, 1024);
 				ImGui::SliderFloat("Total Length", &erosionParams.TotalLength, 100.0f, 2048.0f);
 
@@ -548,12 +549,11 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 				ImGui::SliderFloat("Soil Suspension Rate", &erosionParams.SoilSuspensionRate, 0.0f, 2.f);
 				ImGui::SliderFloat("Sediment Deposition Rate", &erosionParams.SedimentDepositionRate, 0.0f, 3.0f);
 				ImGui::SliderFloat("Soil Hardening Rate", &erosionParams.SoilHardeningRate, 0.0f, 2.0f);
-				ImGui::SliderFloat("Soil Softening Rate", &erosionParams.SoilSofteningRate, 0.0f, 2.0f);
-				ImGui::SliderFloat("Minimum Soil Softness", &erosionParams.MinimumSoilSoftness, 0.0f, 1.0f);
+				ImGui::SliderFloat("Maximum Soil Hardness", &erosionParams.MaximumSoilHardness, 0.0f, 1.0f);
 				ImGui::SliderFloat("Maximal Erosion Depth", &erosionParams.MaximalErosionDepth, 0.0f, 40.0f);
 
-				ImGui::SliderFloat("Softness Talus Coefficient", &erosionParams.SoftnessTalusCoefficient, 0.0f, 1.0f);
-				ImGui::SliderFloat("Min Talus Coefficient", &erosionParams.MinTalusCoefficient, 0.0f, 1.0f);
+				ImGui::SliderFloat("Hardness Talus Coefficient", &erosionParams.TalusAngleTangentCoeff, 0.0f, 1.0f);
+				ImGui::SliderFloat("Talus Coefficient Bias", &erosionParams.TalusAngleTangentBias, 0.0f, 1.0f);
 				ImGui::SliderFloat("Thermal Erosion Rate", &erosionParams.ThermalErosionRate, 0.0f, 5.0f);
 
 				ImGui::PopID();

@@ -43,7 +43,6 @@ struct PSOut
     float4 Color : SV_TARGET;
 };
 
-
 [RootSignature(BindlessRootSignature)]
 PSOut PSMain(VSOut IN)
 {

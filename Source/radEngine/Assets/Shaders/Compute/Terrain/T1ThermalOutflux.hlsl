@@ -32,7 +32,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     float effectiveTotalHeightDiffs = 0;
     float maxHeightDiff = 0;
 	
-    float talusAngle = hardness * (1.0 - Resources.SoftnessTalusCoefficient) + Resources.MinTalusCoefficient;
+    float talusAngle = hardness * Resources.TalusAngleTangentCoeff + Resources.TalusAngleTangentBias;
 	
     for (uint i = 0; i < 8; i++)
     {
@@ -54,7 +54,7 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
 
 	float cellArea = Resources.PipeLength * Resources.PipeLength;
 	
-    float deltaS = cellArea * effectiveTotalHeightDiffs * Resources.DeltaTime * hardness * Resources.ThermalErosionRate * 0.5;
+    float deltaS = cellArea * effectiveTotalHeightDiffs * Resources.DeltaTime * (1 - hardness) * Resources.ThermalErosionRate * 0.5;
 	
 	float4 outFlux1 = 0;
 	float4 outFlux2 = 0;

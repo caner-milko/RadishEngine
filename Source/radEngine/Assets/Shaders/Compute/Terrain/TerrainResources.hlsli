@@ -56,7 +56,7 @@ struct WaterRenderResources
     float TotalLength DEFAULT_VALUE(1024.0f);
 };
 
-#define EROSION_DELTA_TIME 0.02f
+#define EROSION_DELTA_TIME 0.002f
 
 struct ThermalOutfluxResources
 {
@@ -66,8 +66,8 @@ struct ThermalOutfluxResources
     uint OutFluxTextureIndex2;
     float ThermalErosionRate DEFAULT_VALUE(0.15);
     float PipeLength DEFAULT_VALUE(1.0f);
-    float SoftnessTalusCoefficient DEFAULT_VALUE(0.8f);
-    float MinTalusCoefficient DEFAULT_VALUE(0.1f);
+    float TalusAngleTangentCoeff DEFAULT_VALUE(0.8f);
+    float TalusAngleTangentBias DEFAULT_VALUE(0.1f);
     float DeltaTime DEFAULT_VALUE(EROSION_DELTA_TIME);
 };
 
@@ -110,7 +110,7 @@ struct HydrolicErosionAndDepositionResources
 {
     uint InVelocityMapIndex;
     uint InOldHeightMapIndex;
-    uint InOutSoftnessMapIndex;
+    uint InOutHardnessMapIndex;
     uint OutHeightMapIndex;
     uint OutWaterMapIndex;
     uint OutSedimentMapIndex;
@@ -118,9 +118,8 @@ struct HydrolicErosionAndDepositionResources
     float SedimentCapacity DEFAULT_VALUE(1.0f);
     float SoilSuspensionRate DEFAULT_VALUE(0.5f);
     float SedimentDepositionRate DEFAULT_VALUE(1.0f);
-    float SoilHardeningRate DEFAULT_VALUE(0.1f);
-    float SoilSofteningRate DEFAULT_VALUE(0.3f);
-    float MinimumSoftness DEFAULT_VALUE(0.01f);
+    float SoilHardeningRate DEFAULT_VALUE(0.3f);
+    float MaximumHardness DEFAULT_VALUE(0.01f);
     float MaximalErosionDepth DEFAULT_VALUE(1.0f);
     float DeltaTime DEFAULT_VALUE(EROSION_DELTA_TIME);
 };

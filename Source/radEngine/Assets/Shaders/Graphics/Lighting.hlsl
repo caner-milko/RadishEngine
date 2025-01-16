@@ -107,5 +107,5 @@ float4 PSMain(PSIn IN) : SV_TARGET
     //return lerp(float4((diffuse * lightData.Color + float3(0.1, 0.1, 0.1) * specular + lightData.AmbientColor) * albedo, 1),
     //float4(albedoTex.Sample(PointSampler, reflectionUv.xy).rgb, 1), reflectionUv.a);
 
-    return float4((diffuse * lightData.Color + float3(0.4, 0.4, 0.4) * specular + lightData.AmbientColor) * albedo, 1);
+    return float4((diffuse * lightData.Color + float3(0., 0., 0.) * specular + lightData.AmbientColor) * albedo, 1);
 }

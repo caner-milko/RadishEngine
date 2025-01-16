@@ -61,5 +61,5 @@ void CSMain(uint3 dispatchID : SV_DispatchThreadID)
     
     float sediment = sedimentMap.Sample(LinearSampler, texCoord);
     float3 waterCol = lerp(float3(0.0, 0.0, 1.0), float3(1.0, 0.0, 0.0), saturate(sediment * 1.0));
-    waterAlbedoTex[dispatchID.xy] = float4(waterCol, lerp(0, 1, water > 0.05));
+    waterAlbedoTex[dispatchID.xy] = float4(waterCol, 1.0);
 }

@@ -240,9 +240,9 @@ void LoadSceneData()
 		g_Renderer.ViewableTextures.emplace("TerrainSedimentMap",
 											std::pair<Ref<DXTexture>, DescriptorAllocationView>{
 												*terrain.SedimentMap, terrain.SedimentMap->SRV.GetView()});
-		g_Renderer.ViewableTextures.emplace("TextureSoftnessMap",
+		g_Renderer.ViewableTextures.emplace("TextureHardnessMap",
 											std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-												*terrain.SoftnessMap, terrain.SoftnessMap->SRV.GetView()});
+												*terrain.HardnessMap, terrain.HardnessMap->SRV.GetView()});
 		g_Renderer.ViewableTextures.emplace("TerrainThermalPipe1",
 											std::pair<Ref<DXTexture>, DescriptorAllocationView>{
 												*terrain.ThermalPipe1, terrain.ThermalPipe1->SRV.GetView()});
