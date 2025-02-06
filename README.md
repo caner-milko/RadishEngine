@@ -48,7 +48,7 @@ Make sure to have pre-requisites installed & submodules initialized
 - [CMake 3.24](https://cmake.org/download/)
 - [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/)
 
-``bash
+```bash
 git submodule update --init --recursive
 ```
 
