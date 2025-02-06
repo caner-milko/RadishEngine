@@ -137,6 +137,56 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 		renderObjects.push_back(renderData);
 	}
 
+	/*
+		struct StaticDepthOnlyRenderData
+		{
+			RGView<VertexBuffer> VertexBufferView;
+			RGView<IndexBuffer> IndexBufferView;
+			RGView<ConstantBuffer> WorldMatrix;
+		};
+		struct StaticDeferredRenderData
+		{
+			RGView<VertexBuffer> VertexBufferView;
+			RGView<IndexBuffer> IndexBufferView;
+			RGView<ConstantBuffer> WorldMatrix;
+			RGView<ConstantBuffer> Material;
+			RGView<Texture2D> AlbedoTex;
+			RGView<Texture2D> NormalTex;
+		};
+		std::vector<StaticDepthOnlyRenderData> depthOnlyRenderData;
+		std::vector<StaticDeferredRenderData> deferredRenderData;
+		for(renderable : renderObjects)
+		{
+			StaticDepthOnlyRenderData depthOnlyRenderData;
+			depthOnlyRenderData.VertexBufferView = depthPassTemplate.AddVertexBuffer(renderable.VertexBufferView);
+			depthOnlyRenderData.IndexBufferView = depthPassTemplate.AddIndexBuffer(renderable.IndexBufferView);
+			depthOnlyRenderData.WorldMatrix = depthPassTemplate.AddCBV(renderable.WorldMatrix);
+			depthOnlyRenderData.push_back(std::move(depthOnlyRenderData));
+
+			StaticDeferredRenderData deferredRenderData;
+			deferredRenderData.VertexBufferView = pass.AddVertexBuffer(renderable.VertexBufferView);
+			deferredRenderData.IndexBufferView = pass.AddIndexBuffer(renderable.IndexBufferView);
+			deferredRenderData.WorldMatrix = pass.AddCBV(renderable.WorldMatrix);
+			deferredRenderData.Material = pass.AddCBV(renderable.Material);
+			deferredRenderData.AlbedoTex = pass.AddSRV(renderable.AlbedoTex);
+			deferredRenderData.NormalTex = pass.AddSRV(renderable.NormalTex);
+			deferredRenderData.push_back(std::move(deferredRenderData));
+		}
+
+		DepthOnlyPass depthPass; //DepthOnlyPass is a sub-pass of the main DepthOnlyPass RenderPass
+
+		depthPassTemplate.SetUserData(depthOnlyRenderData);
+		depthPassTemplate.SetRenderPass<StaticDepthOnlyRenderData>("StaticDepthOnlyRender", std::move(renderObjects),
+			[this](auto span, auto& depthPassData) { DepthOnlyPass(span, depthPassData); });
+
+		auto futView = pass.AddCBV(view.ViewMatrix);
+		auto normalRT = pass.AddRTV(DeferredRenderingPipeline.NormalBuffer);
+		auto albedoRT = pass.AddRTV(DeferredRenderingPipeline.AlbedoBuffer);
+		auto depthDSV = pass.AddDSV(DeferredRenderingPipeline.DepthBuffer);
+
+
+	*/
+
 	frameRecord.Push(TypedRenderCommand<StaticRenderData>{
 		.Name = "StaticRender",
 		.Data = std::move(renderObjects),
