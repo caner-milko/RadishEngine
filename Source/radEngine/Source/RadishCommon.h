@@ -122,6 +122,26 @@ template <typename T> struct OptionalRef
 
 } // namespace rad
 
+namespace std
+{
+template <typename T> 
+struct hash<rad::Ref<T>>
+{
+	size_t operator()(rad::Ref<T> const& ref) const
+	{
+		return hash<T*>{}(&ref.get());
+	}
+};
+template <typename T>
+struct hash<rad::OptionalRef<T>>
+{
+	size_t operator()(rad::OptionalRef<T> const& resource) const
+	{
+		return hash<T*>{}(resource.Ptr);
+	}
+};
+} // namespace std
+
 #define RAD_ID_STRUCT_U32(name_space, name)                                                                            \
 	namespace name_space                                                                                               \
 	{                                                                                                                  \
