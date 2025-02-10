@@ -10,6 +10,7 @@
 #include <optional>
 #include <unordered_map>
 #include <variant>
+#include <unordered_set>
 
 #define GLM_FORCE_LEFT_HANDED
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE

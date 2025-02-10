@@ -70,9 +70,7 @@ RGBOutputResource& RenderGraphBuilder::InitializeResourceProvider(std::string na
 }
 RGBInputResource& RenderPassBuilder::AddInput(std::string name, RGBOutputResource& output, RGResourceUsage usage)
 {
-	auto [descriptorDesc, descriptorRef] =
-		RGBuilder->ResourceManager.ResourceMap[output.ResourceRef].Descriptors.emplace_back(usage.DescriptorDesc,
-																							  RGResourceDescriptor{});
+	auto& descriptorRef = RGBuilder->ResourceManager.GetDescriptor(output.ResourceRef, usage.DescriptorDesc);
 	auto& inRef = Inputs.emplace_back(std::move(name), *this, output, std::move(usage), std::move(usage), descriptorRef);
 	output.ConnectedInputs.push_back(inRef);
 	return inRef;
@@ -87,7 +85,7 @@ std::pair<RGBInputResource&, RGBOutputResource&> RenderPassBuilder::AddInOutReso
 	return {input, output};
 }
 
-void RenderGraphBuilder::Build()
+void RenderGraphBuilder::Build(Renderer& renderer, CommandContext& cmd)
 {
 	/*
 		1. Create all graph resources

@@ -77,8 +77,6 @@ struct DXTexture : DXResource
 	void CreatePlacedRTV(DescriptorAllocationView alloc, D3D12_RENDER_TARGET_VIEW_DESC const* rtvDesc);
 	void CreatePlacedDSV(DescriptorAllocationView alloc, D3D12_DEPTH_STENCIL_VIEW_DESC const* dsvDesc);
 
-	TextureCreateInfo Info;
-
 	DXTexture() = default;
 	DXTexture(std::wstring name, ComPtr<ID3D12Resource> resource, D3D12_RESOURCE_STATES startState,
 			  TextureCreateInfo const& info) noexcept

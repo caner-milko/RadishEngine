@@ -1,58 +1,14 @@
 #pragma once
-#include "Graphics/RendererCommon.h"
+#include "RendererCommon.h"
+#include "ResourcePool.h"
 
 namespace rad
 {
 
-struct RGTextureCreateInfo
-{
-	D3D12_RESOURCE_DESC Desc;
-};
-
-struct RGBufferCreateInfo
-{
-	D3D12_RESOURCE_DESC Desc;
-};
-
-template<typename DXType, typename RGCreateInfo> struct RGResourceTemplate;
-
-using RGTexture = RGResourceTemplate<DXTexture, RGTextureCreateInfo>;
-using RGBuffer = RGResourceTemplate<DXBuffer, RGBufferCreateInfo>;
-
-struct RGResourceCreateInfo
-{
-	std::variant<RGTextureCreateInfo> CreateInfo;
-	
-	template <typename T> 
-	T& GetCreateInfo()
-	{
-		return *std::get_if<T>(&CreateInfo);
-	}
-};
-
-struct RGCPUDescriptorDesc
-{
-	std::variant<D3D12_SHADER_RESOURCE_VIEW_DESC, D3D12_UNORDERED_ACCESS_VIEW_DESC, D3D12_CONSTANT_BUFFER_VIEW_DESC,
-				 D3D12_RENDER_TARGET_VIEW_DESC, D3D12_DEPTH_STENCIL_VIEW_DESC, D3D12_VERTEX_BUFFER_VIEW,
-				 D3D12_INDEX_BUFFER_VIEW>
-		ViewDesc;
-};
-
-struct RGGPUDescriptorDesc
-{
-	std::variant<D3D12_SHADER_RESOURCE_VIEW_DESC, D3D12_UNORDERED_ACCESS_VIEW_DESC, D3D12_CONSTANT_BUFFER_VIEW_DESC>
-		ViewDesc;
-};
-
-struct RGDescriptorDesc
-{
-	std::variant<RGCPUDescriptorDesc, RGGPUDescriptorDesc> DescriptorDesc;
-};
-
 struct RGResourceUsage
 {
 	D3D12_RESOURCE_STATES State;
-	RGDescriptorDesc DescriptorDesc;
+	DescriptorDesc DescriptorDesc;
 
 	bool IsCompatibleWith(const RGResourceUsage& other) const
 	{
@@ -88,21 +44,6 @@ struct RGExternalResource
 };
 
 using RGResourceRef = std::variant<Ref<RGGraphResource>, Ref<RGExternalResource>>;
-
-struct RGCPUResourceDescriptor
-{
-	std::variant<D3D12_GPU_DESCRIPTOR_HANDLE, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_VERTEX_BUFFER_VIEW, D3D12_INDEX_BUFFER_VIEW> ViewDesc;
-};
-
-struct RGGPUResourceDescriptor
-{
-	std::variant<D3D12_SHADER_RESOURCE_VIEW_DESC, D3D12_UNORDERED_ACCESS_VIEW_DESC, D3D12_CONSTANT_BUFFER_VIEW_DESC> ViewDesc;
-};
-
-struct RGResourceDescriptor
-{
-	std::variant<RGCPUResourceDescriptor, RGGPUResourceDescriptor> Descriptor;
-};
 
 struct RGResourceViewBase
 {
@@ -219,7 +160,7 @@ struct RGResourceManager
 	std::unordered_map<RGResourceRef, RGDecidedResource> ResourceMap;
 
 	DXResource* CreateResource(const RGResourceCreateInfo& createInfo, RGResourceUsage initialUsage);
-
+	RGResourceDescriptor& GetDescriptor(RGResourceRef resource, RGDescriptorDesc descriptorDesc);
 };
 
 struct RenderGraphBuilder
@@ -233,7 +174,7 @@ struct RenderGraphBuilder
 	}
 	RGBOutputResource& AddGraphResource(std::string name, RGResourceCreateInfo createInfo);
 	RGBOutputResource& AddExternalResource(std::string name, DXResource& resource, RGResourceCreateInfo createInfo, RGResourceUsage initialUsage);
-	void Build();
+	void Build(Renderer& renderer, CommandContext& cmd);
 
 private:
 	RGBOutputResource& InitializeResourceProvider(std::string name, RGResourceRef resourceRef);
