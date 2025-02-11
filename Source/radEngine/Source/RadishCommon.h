@@ -95,6 +95,21 @@ template <typename T> struct Ref : public std::reference_wrapper<T>
 	{
 		return &this->get();
 	}
+
+	T& operator*() const noexcept
+	{
+		return this->get();
+	}
+
+	T* operator&() const noexcept
+	{
+		return &this->get();
+	}
+
+	bool operator==(const Ref<T>& other) const noexcept
+	{
+		return this->Ptr() == other.Ptr();
+	}
 };
 
 template <typename T> struct OptionalRef

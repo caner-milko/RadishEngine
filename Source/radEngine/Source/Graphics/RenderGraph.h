@@ -18,29 +18,25 @@ struct RGResourceUsage
 
 struct RGGraphResource
 {
-	RGGraphResource(std::string name, RGResourceCreateInfo createInfo) : Name(std::move(name)), CreateInfo(createInfo)
+	RGGraphResource(std::string name, ResourceCreateInfo createInfo) : Name(std::move(name)), CreateInfo(createInfo)
 	{
 	}
-	std::string Name;
-	RGResourceCreateInfo CreateInfo;
+	ResourceCreateInfo CreateInfo;
 
 	friend struct RGResourceManager;
 	friend struct RGResourceViewBase;
 
   private:
-	DXResource* AssociatedResource;
+	Resource* AssociatedResource;
 };
 
 struct RGExternalResource
 {
-	RGExternalResource(std::string name, DXResource& resource, RGResourceCreateInfo createInfo, RGResourceUsage initialUsage)
-		: Name(std::move(name)), Resource(resource), CreateInfo(std::move(createInfo)), InitialUsage(std::move(initialUsage))
+	RGExternalResource(Resource& poolResource)
+		: PoolResource(poolResource)
 	{
 	}
-	std::string Name;
-	Ref<DXResource> Resource;
-	RGResourceCreateInfo CreateInfo;
-	RGResourceUsage InitialUsage;
+	Ref<Resource> PoolResource;
 };
 
 using RGResourceRef = std::variant<Ref<RGGraphResource>, Ref<RGExternalResource>>;
@@ -152,7 +148,7 @@ struct RGResourceManager
 {
 	struct RGDecidedResource
 	{
-		std::deque<std::pair<RGDescriptorDesc, RGResourceDescriptor>> Descriptors;
+		std::deque<std::pair<DescriptorDesc, ResourceDescriptor>> Descriptors;
 		DXResource* ResourceToBeDecided;
 	};
 	std::deque<RGExternalResource> ExternalResources;

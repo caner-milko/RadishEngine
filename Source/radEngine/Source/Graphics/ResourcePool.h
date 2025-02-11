@@ -139,15 +139,44 @@ namespace rad
 struct Resource
 {
 	ResourceCreateInfo CreateInfo;
-	std::variant<DXTexture, DXBuffer> Resource;
-	std::unordered_map<DescriptorDesc, std::deque<ResourceDescriptor>> Descriptors;
+	Ref<ID3D12Resource> Resource;
+	D3D12_RESOURCE_STATES State;
+	std::unordered_map<DescriptorDesc, ResourceDescriptor> Descriptors;
 };
+
 
 struct ResourcePool
 {
-	std::unordered_map<ResourceCreateInfo, std::unordered_set<std::unique_ptr<Resource>>> Resources;
-
-	Resource& GetResource(const ResourceCreateInfo& CreateInfo);
-	ResourceDescriptor& GetDescriptor(const ResourceCreateInfo& CreateInfo, const DescriptorDesc& Desc);
+	struct OwnedResource
+	{
+		ComPtr<ID3D12Resource> Resource;
+		Ref<rad::Resource> Info;
+		operator rad::Resource&()
+		{
+			return *Info;
+		}
+		operator const rad::Resource&() const
+		{
+			return *Info;
+		}
+		rad::Resource* operator->()
+		{
+			return &Info;
+		}
+		const rad::Resource* operator->() const
+		{
+			return &Info;
+		}
+	};
+	ResourcePool(Renderer& renderer);
+	Renderer& Renderer;
+	std::unordered_map<ResourceCreateInfo, std::deque<OwnedResource>> OwnedResources;
+	std::unordered_map<Ref<ID3D12Resource>, Resource> Resources;
+	const OwnedResource& GetResource(const ResourceCreateInfo& createInfo);
+	void FreeResource(const OwnedResource& resource);
+	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
+	ResourceDescriptor& GetDescriptor(ID3D12Resource& resourceRef, const DescriptorDesc& desc);
+private:
+	std::unordered_map<ResourceCreateInfo, std::deque<Ref<const OwnedResource>>> FreeResources;
 };
 } // namespace rad
