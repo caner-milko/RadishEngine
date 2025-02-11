@@ -50,13 +50,13 @@ void Test()
 		// Draw static meshes to GBuffer
 	};
 }
-RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, RGResourceCreateInfo createInfo)
+RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
 {
 	auto& resource = ResourceManager.GraphResources.emplace_back(name, createInfo);
 	return InitializeResourceProvider(std::move(name), resource);
 }
 RGBOutputResource& RenderGraphBuilder::AddExternalResource(std::string name, DXResource& resource,
-														   RGResourceCreateInfo createInfo,
+														   ResourceCreateInfo createInfo,
 														   RGResourceUsage initialUsage)
 {
 	auto& externalResource = ResourceManager.ExternalResources.emplace_back(name, resource, std::move(createInfo), std::move(initialUsage));

@@ -38,6 +38,10 @@ bool ShaderResourceViewDesc::operator==(const ShaderResourceViewDesc& Other) con
 		COMPARE_VIEW(TEXTURECUBEARRAY, TextureCubeArray, &Desc::MostDetailedMip, &Desc::MipLevels,
 					 &Desc::First2DArrayFace, &Desc::NumCubes, &Desc::ResourceMinLODClamp)
 		COMPARE_VIEW(RAYTRACING_ACCELERATION_STRUCTURE, RaytracingAccelerationStructure, &Desc::Location)
+	default:
+		assert(false);
+		return false;
+#undef COMPARE_VIEW
 	}
 }
 size_t ShaderResourceViewDesc::Hash() const
@@ -70,6 +74,7 @@ size_t ShaderResourceViewDesc::Hash() const
 	default:
 		assert(false);
 		break;
+#undef HASH_VIEW
 	}
 	return hash;
 }
@@ -99,6 +104,7 @@ bool UnorderedAccessViewDesc::operator==(const UnorderedAccessViewDesc& Other) c
 	default:
 		assert(false);
 		return false;
+#undef COMPARE_VIEW
 	}
 }
 size_t UnorderedAccessViewDesc::Hash() const
@@ -111,7 +117,7 @@ size_t UnorderedAccessViewDesc::Hash() const
 	case D3D12_UAV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
 		auto& desc = Desc.ViewName;                                                                                    \
-		HashCombine(hash, desc, __VA_ARGS__);                                                                          \
+		HashCombine(hash, __VA_ARGS__);                                                                          \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(BUFFER, Buffer, desc.FirstElement, desc.NumElements, desc.StructureByteStride,
@@ -125,6 +131,7 @@ size_t UnorderedAccessViewDesc::Hash() const
 	default:
 		assert(false);
 		break;
+#undef HASH_VIEW
 	}
 	return hash;
 }
@@ -166,6 +173,7 @@ bool RenderTargetViewDesc::operator==(const RenderTargetViewDesc& Other) const
 	default:
 		assert(false);
 		return false;
+#undef COMPARE_VIEW
 	}
 }
 size_t RenderTargetViewDesc::Hash() const
@@ -178,7 +186,7 @@ size_t RenderTargetViewDesc::Hash() const
 	case D3D12_RTV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
 		auto& desc = Desc.ViewName;                                                                                    \
-		HashCombine(hash, desc, __VA_ARGS__);                                                                          \
+		HashCombine(hash, __VA_ARGS__);                                                                          \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(BUFFER, Buffer, desc.FirstElement)
@@ -192,6 +200,7 @@ size_t RenderTargetViewDesc::Hash() const
 	default:
 		assert(false);
 		break;
+#undef HASH_VIEW
 	}
 	return hash;
 }
@@ -219,6 +228,7 @@ bool DepthStencilViewDesc::operator==(const DepthStencilViewDesc& Other) const
 	default:
 		assert(false);
 		return false;
+#undef COMPARE_VIEW
 	}
 }
 size_t DepthStencilViewDesc::Hash() const
@@ -231,7 +241,7 @@ size_t DepthStencilViewDesc::Hash() const
 	case D3D12_DSV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
 		auto& desc = Desc.ViewName;                                                                                    \
-		HashCombine(hash, desc, __VA_ARGS__);                                                                          \
+		HashCombine(hash, __VA_ARGS__);                                                                          \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(TEXTURE1D, Texture1D, desc.MipSlice)
@@ -243,6 +253,7 @@ size_t DepthStencilViewDesc::Hash() const
 	default:
 		assert(false);
 		break;
+#undef HASH_VIEW
 	}
 	return hash;
 }
@@ -273,18 +284,35 @@ size_t IndexBufferViewDesc::Hash() const
 
 ResourcePool::ResourcePool(rad::Renderer& renderer) : Renderer(renderer) {}
 
-const ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo& createInfo)
+ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo& createInfo, std::string acquireName)
 {
+	if (auto it = FreeResources.find(createInfo); it != FreeResources.end())
+	{
+		if (!it->second.empty())
+		{
+			OwnedResource& resource = it->second.back();
+			FreeResources.erase(it);
+			resource.AcquiredName = std::move(acquireName);
+			return resource;
+		}
+	}
 	// Create ID3D12Resource from CreateInfo
 	ComPtr<ID3D12Resource> resource;
 
 	auto& resInfo = AddResourceInfo(*resource.Get(), createInfo, D3D12_RESOURCE_STATE_COMMON);
-	auto& ownedResource = OwnedResources[createInfo].emplace_back(resource, resInfo);
-	FreeResources[createInfo].emplace_back(ownedResource);
+	auto& ownedResource = OwnedResources[createInfo].emplace_back(OwnedResource(std::move(resource), resInfo));
+	ownedResource.AcquiredName = std::move(acquireName);
 	return ownedResource;
 }
 
-void ResourcePool::FreeResource(const OwnedResource& resource) 
+ResourcePool::ExternalResource& ResourcePool::AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
+	D3D12_RESOURCE_STATES initialState)
+{
+	auto& resInfo = AddResourceInfo(resource, createInfo, initialState);
+	return ExternalResources.insert_or_assign(resource, ExternalResource(resource, name, resInfo)).first->second;
+}
+
+void ResourcePool::FreeResource(OwnedResource& resource) 
 {
 	FreeResources[resource->CreateInfo].emplace_back(resource);
 }

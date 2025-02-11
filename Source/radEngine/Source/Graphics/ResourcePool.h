@@ -149,8 +149,6 @@ struct ResourcePool
 {
 	struct OwnedResource
 	{
-		ComPtr<ID3D12Resource> Resource;
-		Ref<rad::Resource> Info;
 		operator rad::Resource&()
 		{
 			return *Info;
@@ -167,16 +165,59 @@ struct ResourcePool
 		{
 			return &Info;
 		}
+		std::string const& GetName() const
+		{
+			assert(AcquiredName.has_value());
+			return *AcquiredName;
+		}
+	  private:
+		friend struct ResourcePool;
+		OwnedResource(ComPtr<ID3D12Resource> resource, rad::Resource& resInfo) : Resource(resource), Info(resInfo) {}
+		ComPtr<ID3D12Resource> Resource;
+		Ref<rad::Resource> Info;
+		std::optional<std::string> AcquiredName;
+	};
+	struct ExternalResource
+	{
+		operator rad::Resource&()
+		{
+			return *Info;
+		}
+		operator const rad::Resource&() const
+		{
+			return *Info;
+		}
+		rad::Resource* operator->()
+		{
+			return &Info;
+		}
+		const rad::Resource* operator->() const
+		{
+			return &Info;
+		}
+		std::string const& GetName() const
+		{
+			return Name;
+		}
+	  private:
+		ExternalResource(ID3D12Resource& resource, std::string name, rad::Resource& resInfo) : Resource(resource), Name(std::move(name)), Info(resInfo) {}
+		Ref<ID3D12Resource> Resource;
+		std::string Name;
+		Ref<rad::Resource> Info;
+		friend struct ResourcePool;
 	};
 	ResourcePool(Renderer& renderer);
 	Renderer& Renderer;
-	std::unordered_map<ResourceCreateInfo, std::deque<OwnedResource>> OwnedResources;
-	std::unordered_map<Ref<ID3D12Resource>, Resource> Resources;
-	const OwnedResource& GetResource(const ResourceCreateInfo& createInfo);
-	void FreeResource(const OwnedResource& resource);
-	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
+	OwnedResource& GetResource(const ResourceCreateInfo& createInfo, std::string acquireName);
+	void FreeResource(OwnedResource& resource);
+	ExternalResource& AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
+										  D3D12_RESOURCE_STATES initialState);
 	ResourceDescriptor& GetDescriptor(ID3D12Resource& resourceRef, const DescriptorDesc& desc);
 private:
-	std::unordered_map<ResourceCreateInfo, std::deque<Ref<const OwnedResource>>> FreeResources;
+	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
+	std::unordered_map<ResourceCreateInfo, std::deque<OwnedResource>> OwnedResources;
+	std::unordered_map<Ref<ID3D12Resource>, Resource> Resources;
+	std::unordered_map<Ref<ID3D12Resource>, ExternalResource> ExternalResources;
+	std::unordered_map<ResourceCreateInfo, std::deque<Ref<OwnedResource>>> FreeResources;
 };
 } // namespace rad

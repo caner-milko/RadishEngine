@@ -18,7 +18,7 @@ struct RGResourceUsage
 
 struct RGGraphResource
 {
-	RGGraphResource(std::string name, ResourceCreateInfo createInfo) : Name(std::move(name)), CreateInfo(createInfo)
+	RGGraphResource(ResourceCreateInfo createInfo) : CreateInfo(createInfo)
 	{
 	}
 	ResourceCreateInfo CreateInfo;
@@ -30,32 +30,31 @@ struct RGGraphResource
 	Resource* AssociatedResource;
 };
 
-struct RGExternalResource
-{
-	RGExternalResource(Resource& poolResource)
-		: PoolResource(poolResource)
-	{
-	}
-	Ref<Resource> PoolResource;
-};
+using RGExternalResource = Resource;
 
 using RGResourceRef = std::variant<Ref<RGGraphResource>, Ref<RGExternalResource>>;
 
 struct RGResourceViewBase
 {
 	RGResourceRef Resource;
-	Ref<RGResourceDescriptor> Descriptor;
+	Ref<ResourceDescriptor> Descriptor;
 
-	RGResourceCreateInfo& GetCreateInfo()
+	ResourceCreateInfo& GetCreateInfo()
 	{
 		if (auto tempResource = std::get_if<Ref<RGGraphResource>>(&Resource))
+		{
+			if (auto& res = (*tempResource)->AssociatedResource)
+				return res->CreateInfo;
+			// Is this really used?
+			assert(false);
 			return (*tempResource)->CreateInfo;
+		}
 		else
 			return (*std::get_if<Ref<RGExternalResource>>(&Resource))->CreateInfo;
 	}
 
 	/// Returns the underlying DXResource
-	DXResource& GetResource() 
+	rad::Resource& GetResource() 
 	{
 		if (auto tempResource = std::get_if<Ref<RGGraphResource>>(&Resource))
 		{
@@ -63,25 +62,15 @@ struct RGResourceViewBase
 			return *(*tempResource)->AssociatedResource;
 		}
 		else
-			return (*std::get_if<Ref<RGExternalResource>>(&Resource))->Resource;
+			return (*std::get_if<Ref<RGExternalResource>>(&Resource));
 	}
-	operator DXResource&()
+	operator rad::Resource&()
 	{
 		return GetResource();
 	}
-};
-
-template<typename T>
-requires std::is_base_of_v<DXResource, T>
-struct RGResourceViewT : RGResourceViewBase
-{
-	T& GetResource()
+	rad::Resource* operator->()
 	{
-		return static_cast<T&>(RGResourceView::GetResource());
-	}
-	operator T&()
-	{
-		return GetResource();
+		return &GetResource();
 	}
 };
 
@@ -109,7 +98,7 @@ struct RGBOutputResource
 struct RGBInputResource
 {
 	RGBInputResource(std::string name, RenderPassBuilder& ownerPass, RGBOutputResource& source, RGResourceUsage usage,
-					 RGResourceDescriptor& descriptor)
+					 ResourceDescriptor& descriptor)
 		: Name(std::move(name)), OwnerPass(ownerPass), Source(source), Usage(std::move(usage)), Descriptor(descriptor)
 	{
 	}
@@ -118,27 +107,23 @@ struct RGBInputResource
 	Ref<RenderPassBuilder> OwnerPass;
 	Ref<RGBOutputResource> Source;
 	RGResourceUsage Usage;
-	Ref<RGResourceDescriptor> Descriptor;
+	Ref<ResourceDescriptor> Descriptor;
 
-	template <typename T>
-		requires std::is_base_of_v<DXResource, T>
-	operator RGResourceViewT<T>()
+	operator RGResourceViewBase()
 	{
-		return static_cast<RGResourceViewT<T>>(ResourceView);
+		return RGResourceViewBase{Source->ResourceRef, Descriptor};
 	}
 };
 
 struct RenderPassBuilder
 {
-	RenderPassBuilder(std::string name, RenderGraphBuilder& rgBuilder) : Name(std::move(name)), RGBuilder(&rgBuilder) {}
+	RenderPassBuilder(std::string name, RenderGraphBuilder& rgBuilder) : Name(std::move(name)), RGBuilder(rgBuilder) {}
 	
 	std::string Name;
 	std::deque<RGBInputResource> Inputs;
 	std::deque<RGBOutputResource> Outputs;
 	std::function<void(CommandContext&)> Execute;
 	Ref<RenderGraphBuilder> RGBuilder;
-#define RAD_RENDER_PASS_RESOURCE_TEX(Name, Variable) Name = static_cast<RGResourceViewT<DXTexture>>(Variable))
-#define RAD_RENDER_PASS_RESOURCE_BUF(Name, Variable) Name = static_cast<RGResourceViewT<DXBuffer>>(Variable))
 
 	RGBInputResource& AddInput(std::string name, RGBOutputResource& resource, RGResourceUsage usage);
 	std::pair<RGBInputResource&, RGBOutputResource&> AddInOutResource(std::string name, RGBOutputResource& resource, RGResourceUsage usage);
@@ -146,17 +131,12 @@ struct RenderPassBuilder
 
 struct RGResourceManager
 {
-	struct RGDecidedResource
-	{
-		std::deque<std::pair<DescriptorDesc, ResourceDescriptor>> Descriptors;
-		DXResource* ResourceToBeDecided;
-	};
 	std::deque<RGExternalResource> ExternalResources;
 	std::deque<RGGraphResource> GraphResources;
-	std::unordered_map<RGResourceRef, RGDecidedResource> ResourceMap;
+	std::unordered_map<RGResourceRef, Ref<Resource>> CreatedGraphResourcesMap;
 
-	DXResource* CreateResource(const RGResourceCreateInfo& createInfo, RGResourceUsage initialUsage);
-	RGResourceDescriptor& GetDescriptor(RGResourceRef resource, RGDescriptorDesc descriptorDesc);
+	DXResource* CreateResource(const ResourceCreateInfo& createInfo, RGResourceUsage initialUsage);
+	ResourceDescriptor& GetDescriptor(RGResourceRef resource, DescriptorDesc descriptorDesc);
 };
 
 struct RenderGraphBuilder
@@ -168,8 +148,8 @@ struct RenderGraphBuilder
 	{
 		return Passes.emplace_back(std::move(name));
 	}
-	RGBOutputResource& AddGraphResource(std::string name, RGResourceCreateInfo createInfo);
-	RGBOutputResource& AddExternalResource(std::string name, DXResource& resource, RGResourceCreateInfo createInfo, RGResourceUsage initialUsage);
+	RGBOutputResource& AddGraphResource(std::string name, ResourceCreateInfo createInfo);
+	RGBOutputResource& AddExternalResource(Resource& externalResource);
 	void Build(Renderer& renderer, CommandContext& cmd);
 
 private:
