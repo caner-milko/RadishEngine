@@ -27,12 +27,12 @@ struct RGGraphResource
 	friend struct RGResourceViewBase;
 
   private:
-	Resource* AssociatedResource;
+	std::optional<PoolResourceView> AssociatedResource;
 };
 
-using RGExternalResource = Resource;
+using RGExternalResourceRef = PoolResourceView;
 
-using RGResourceRef = std::variant<Ref<RGGraphResource>, Ref<RGExternalResource>>;
+using RGResourceRef = std::variant<Ref<RGGraphResource>, RGExternalResourceRef>;
 
 struct RGResourceViewBase
 {
@@ -44,17 +44,17 @@ struct RGResourceViewBase
 		if (auto tempResource = std::get_if<Ref<RGGraphResource>>(&Resource))
 		{
 			if (auto& res = (*tempResource)->AssociatedResource)
-				return res->CreateInfo;
+				return (*res)->CreateInfo;
 			// Is this really used?
 			assert(false);
 			return (*tempResource)->CreateInfo;
 		}
 		else
-			return (*std::get_if<Ref<RGExternalResource>>(&Resource))->CreateInfo;
+			return (*std::get_if<RGExternalResourceRef>(&Resource))->CreateInfo;
 	}
 
 	/// Returns the underlying DXResource
-	rad::Resource& GetResource() 
+	PoolResourceView& GetResource() 
 	{
 		if (auto tempResource = std::get_if<Ref<RGGraphResource>>(&Resource))
 		{
@@ -62,13 +62,13 @@ struct RGResourceViewBase
 			return *(*tempResource)->AssociatedResource;
 		}
 		else
-			return (*std::get_if<Ref<RGExternalResource>>(&Resource));
+			return (*std::get_if<RGExternalResourceRef>(&Resource));
 	}
-	operator rad::Resource&()
+	operator PoolResourceView&()
 	{
 		return GetResource();
 	}
-	rad::Resource* operator->()
+	PoolResourceView* operator->()
 	{
 		return &GetResource();
 	}
@@ -131,12 +131,9 @@ struct RenderPassBuilder
 
 struct RGResourceManager
 {
-	std::deque<RGExternalResource> ExternalResources;
+	std::deque<PoolResourceView> ExternalResources;
 	std::deque<RGGraphResource> GraphResources;
-	std::unordered_map<RGResourceRef, Ref<Resource>> CreatedGraphResourcesMap;
-
-	DXResource* CreateResource(const ResourceCreateInfo& createInfo, RGResourceUsage initialUsage);
-	ResourceDescriptor& GetDescriptor(RGResourceRef resource, DescriptorDesc descriptorDesc);
+	std::unordered_map<RGResourceRef, PoolResourceView> CreatedGraphResourcesMap;
 };
 
 struct RenderGraphBuilder
@@ -149,7 +146,7 @@ struct RenderGraphBuilder
 		return Passes.emplace_back(std::move(name));
 	}
 	RGBOutputResource& AddGraphResource(std::string name, ResourceCreateInfo createInfo);
-	RGBOutputResource& AddExternalResource(Resource& externalResource);
+	RGBOutputResource& AddExternalResource(PoolResourceView& externalResource);
 	void Build(Renderer& renderer, CommandContext& cmd);
 
 private:

@@ -5,38 +5,44 @@ namespace rad
 {
 void Test()
 {
-	DXResource* vertexBuffer = nullptr;
-	DXResource* indexBuffer = nullptr;
+	PoolResourceView* vertexBuffer = nullptr;
+	PoolResourceView* indexBuffer = nullptr;
 
 	RenderGraphBuilder builder;
 	auto& shadowMap = builder.AddGraphResource(
 		"Shadow Map",
-		RGResourceCreateInfo{/*.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D, .Width = 1024, .Height = 1024*/});
+		TextureCreateInfo{{.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D, .Width = 1024, .Height = 1024}});
 
 	auto& staticVertexBuffer =
-		builder.AddExternalResource("Static Mesh Vertex Buffer", *vertexBuffer,
-									RGResourceUsage{/*.State = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/});
-	auto& staticIndexBuffer =
-		builder.AddExternalResource("Static Mesh Index Buffer", *indexBuffer,
-									RGResourceUsage{/*.State = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER*/});
+		builder.AddExternalResource(*vertexBuffer);
+	auto& staticIndexBuffer = builder.AddExternalResource(*indexBuffer);
 
 	auto& shadowPass = builder.AddPass("Static Mesh Shadow Pass");
-	auto [depthBufShadowMapIn, depthBufShadowMapOut] =
-		shadowPass.AddInOutResource("Shadow Map", shadowMap, RGResourceUsage{/*.State = D3D12_RESOURCE_STATE_DEPTH_WRITE*/});
+	auto [depthBufShadowMapIn, depthBufShadowMapOut] = shadowPass.AddInOutResource(
+		"Shadow Map", shadowMap,
+		RGResourceUsage{.State = D3D12_RESOURCE_STATE_DEPTH_WRITE,
+						.DescriptorDesc = CPUDescriptorDesc{DepthStencilViewDesc{D3D12_DEPTH_STENCIL_VIEW_DESC{
+								.Format = DXGI_FORMAT_D32_FLOAT, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D}}}});
 
-	shadowPass.Execute = [
-		RAD_RENDER_PASS_RESOURCE_TEX(shadowMap, depthBufShadowMapIn),
-		 RAD_RENDER_PASS_RESOURCE_BUF(vertexBuf, shadowPass.AddInput("Vertex Buffer", staticVertexBuffer, RGResourceUsage{})),
-		 RAD_RENDER_PASS_RESOURCE_BUF(indexBuf, shadowPass.AddInput("Index Buffer", staticIndexBuffer, RGResourceUsage{}))
-	](CommandContext& cmd) {
+	shadowPass.Execute =
+		[shadowMap = RGResourceViewBase(depthBufShadowMapIn),
+		 vertexBuf =
+			 RGResourceViewBase(shadowPass.AddInput("Vertex Buffer", staticVertexBuffer,
+													RGResourceUsage{D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+																	CPUDescriptorDesc{VertexBufferViewDesc{}}})),
+		 indexBuf = RGResourceViewBase(shadowPass.AddInput(
+			 "Index Buffer", staticIndexBuffer,
+			 RGResourceUsage{D3D12_RESOURCE_STATE_INDEX_BUFFER, CPUDescriptorDesc{IndexBufferViewDesc{}}}))
+	](CommandContext& cmd)
+				{
 		// Draw static meshes to shadow map
 		D3D12_VIEWPORT vp = {};
 		//cmd->RSSetViewports(1, shadowMap->GetCreateInfo()
 	};
 
-	auto& gbufferDepth = builder.AddGraphResource("GBuffer Depth", RGResourceCreateInfo{});
-	auto& gbufferAlbedo = builder.AddGraphResource("GBuffer Albedo", RGResourceCreateInfo{});
-	auto& gbufferNormal = builder.AddGraphResource("GBuffer Normal", RGResourceCreateInfo{});
+	auto& gbufferDepth = builder.AddGraphResource("GBuffer Depth", ResourceCreateInfo{});
+	auto& gbufferAlbedo = builder.AddGraphResource("GBuffer Albedo", ResourceCreateInfo{});
+	auto& gbufferNormal = builder.AddGraphResource("GBuffer Normal", ResourceCreateInfo{});
 
 	auto& mainPass = builder.AddPass("Static Mesh Deferred Render Pass");
 	auto& vbBuf = mainPass.AddInput("Vertex Buffer", staticVertexBuffer, RGResourceUsage{});
@@ -44,8 +50,9 @@ void Test()
 	auto [depthBufIn, depthBufOut] = mainPass.AddInOutResource("GBuffer Depth", gbufferDepth, RGResourceUsage{});
 	auto [albedoBufIn, albedoBufOut] = mainPass.AddInOutResource("GBuffer Albedo", gbufferAlbedo, RGResourceUsage{});
 	auto [normalBufIn, normalBufOut] = mainPass.AddInOutResource("GBuffer Normal", gbufferNormal, RGResourceUsage{});
-	mainPass.Execute = [vbBuf = Ref(vbBuf), ibBuf = Ref(ibBuf), depthBuf = Ref(depthBufIn),
-						albedoBuf = Ref(albedoBufIn), normalBuf = Ref(normalBufIn)](CommandContext& ctx)
+	mainPass.Execute = [vbBuf = RGResourceViewBase(vbBuf), ibBuf = RGResourceViewBase(ibBuf),
+						depthBuf = Ref(depthBufIn), albedoBuf = RGResourceViewBase(albedoBufIn),
+						normalBuf = RGResourceViewBase(normalBufIn)](CommandContext& ctx)
 	{
 		// Draw static meshes to GBuffer
 	};
@@ -55,12 +62,10 @@ RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, Resour
 	auto& resource = ResourceManager.GraphResources.emplace_back(name, createInfo);
 	return InitializeResourceProvider(std::move(name), resource);
 }
-RGBOutputResource& RenderGraphBuilder::AddExternalResource(std::string name, DXResource& resource,
-														   ResourceCreateInfo createInfo,
-														   RGResourceUsage initialUsage)
+RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView& resource)
 {
-	auto& externalResource = ResourceManager.ExternalResources.emplace_back(name, resource, std::move(createInfo), std::move(initialUsage));
-	return InitializeResourceProvider(std::move(name), externalResource);
+	auto& externalResource = ResourceManager.ExternalResources.emplace_back(resource);
+	return InitializeResourceProvider(std::move(resource.), externalResource);
 }
 RGBOutputResource& RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
 {

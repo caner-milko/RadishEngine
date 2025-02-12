@@ -4,69 +4,58 @@
 
 namespace rad
 {
-struct ShaderResourceViewDesc
+struct ShaderResourceViewDesc : D3D12_SHADER_RESOURCE_VIEW_DESC
 {
-	D3D12_SHADER_RESOURCE_VIEW_DESC Desc;
 	bool operator==(const ShaderResourceViewDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct UnorderedAccessViewDesc
+struct UnorderedAccessViewDesc : D3D12_UNORDERED_ACCESS_VIEW_DESC
 {
-	D3D12_UNORDERED_ACCESS_VIEW_DESC Desc;
 	bool operator==(const UnorderedAccessViewDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct ConstantBufferViewDesc
+struct ConstantBufferViewDesc : D3D12_CONSTANT_BUFFER_VIEW_DESC
 {
-	D3D12_CONSTANT_BUFFER_VIEW_DESC Desc;
 	bool operator==(const ConstantBufferViewDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct RenderTargetViewDesc
+struct RenderTargetViewDesc : D3D12_RENDER_TARGET_VIEW_DESC
 {
-	D3D12_RENDER_TARGET_VIEW_DESC Desc;
 	bool operator==(const RenderTargetViewDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct DepthStencilViewDesc
+struct DepthStencilViewDesc : D3D12_DEPTH_STENCIL_VIEW_DESC
 {
-	D3D12_DEPTH_STENCIL_VIEW_DESC Desc;
 	bool operator==(const DepthStencilViewDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct VertexBufferViewDesc
+struct VertexBufferViewDesc : D3D12_VERTEX_BUFFER_VIEW
 {
-	D3D12_VERTEX_BUFFER_VIEW Desc;
 	bool operator==(const VertexBufferViewDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct IndexBufferViewDesc
+struct IndexBufferViewDesc : D3D12_INDEX_BUFFER_VIEW
 {
-	D3D12_INDEX_BUFFER_VIEW Desc;
 	bool operator==(const IndexBufferViewDesc& Other) const;
 	size_t Hash() const;
 };
 
 struct CPUDescriptorDesc
+	: std::variant<ShaderResourceViewDesc, UnorderedAccessViewDesc, ConstantBufferViewDesc, RenderTargetViewDesc,
+				   DepthStencilViewDesc, VertexBufferViewDesc, IndexBufferViewDesc>
 {
-	std::variant<ShaderResourceViewDesc, UnorderedAccessViewDesc, ConstantBufferViewDesc, RenderTargetViewDesc,
-				 DepthStencilViewDesc, VertexBufferViewDesc,
-				 IndexBufferViewDesc>
-		ViewDesc;
 	bool operator==(const CPUDescriptorDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct GPUDescriptorDesc
+struct GPUDescriptorDesc : std::variant<ShaderResourceViewDesc, UnorderedAccessViewDesc, ConstantBufferViewDesc>
 {
-	std::variant<ShaderResourceViewDesc, UnorderedAccessViewDesc, ConstantBufferViewDesc>
-		ViewDesc;
 	bool operator==(const GPUDescriptorDesc& Other) const;
 	size_t Hash() const;
 };
@@ -88,16 +77,14 @@ struct GPUResourceDescriptor
 
 using ResourceDescriptor = std::variant<CPUResourceDescriptor, GPUResourceDescriptor>;
 
-struct TextureCreateInfo
+struct TextureCreateInfo : D3D12_RESOURCE_DESC
 {
-	D3D12_RESOURCE_DESC Desc;
 	bool operator==(const TextureCreateInfo& Other) const;
 	size_t Hash() const;
 };
 
-struct BufferCreateInfo
+struct BufferCreateInfo : D3D12_RESOURCE_DESC
 {
-	D3D12_RESOURCE_DESC Desc;
 	bool operator==(const BufferCreateInfo& Other) const;
 	size_t Hash() const;
 };
@@ -136,32 +123,43 @@ DECLARE_HASH(rad::BufferCreateInfo)
 
 namespace rad
 {
-struct Resource
-{
-	ResourceCreateInfo CreateInfo;
-	Ref<ID3D12Resource> Resource;
-	D3D12_RESOURCE_STATES State;
-	std::unordered_map<DescriptorDesc, ResourceDescriptor> Descriptors;
-};
-
-
+struct PoolResourceView;
 struct ResourcePool
 {
+	struct Resource
+	{
+		ResourceCreateInfo CreateInfo;
+		Ref<ID3D12Resource> DXRes;
+		D3D12_RESOURCE_STATES State;
+		std::unordered_map<DescriptorDesc, ResourceDescriptor> Descriptors;
+
+		Resource(Resource&&) = default;
+		Resource& operator=(Resource&&) = default;
+
+	  private:
+		friend struct ResourcePool;
+		Resource(ResourceCreateInfo createInfo, ID3D12Resource& resource, D3D12_RESOURCE_STATES initialState)
+			: CreateInfo(createInfo), DXRes(resource), State(initialState)
+		{
+		}
+		Resource(const Resource&) = delete;
+		Resource& operator=(const Resource&) = delete;
+	};
 	struct OwnedResource
 	{
-		operator rad::Resource&()
+		operator Resource&()
 		{
 			return *Info;
 		}
-		operator const rad::Resource&() const
+		operator const Resource&() const
 		{
 			return *Info;
 		}
-		rad::Resource* operator->()
+		Resource* operator->()
 		{
 			return &Info;
 		}
-		const rad::Resource* operator->() const
+		const Resource* operator->() const
 		{
 			return &Info;
 		}
@@ -170,28 +168,32 @@ struct ResourcePool
 			assert(AcquiredName.has_value());
 			return *AcquiredName;
 		}
+		OwnedResource(OwnedResource&&) = default;
+		OwnedResource& operator=(OwnedResource&&) = default;
 	  private:
 		friend struct ResourcePool;
-		OwnedResource(ComPtr<ID3D12Resource> resource, rad::Resource& resInfo) : Resource(resource), Info(resInfo) {}
-		ComPtr<ID3D12Resource> Resource;
-		Ref<rad::Resource> Info;
+		OwnedResource(ComPtr<ID3D12Resource> resource, Resource& resInfo) : DXRes(resource), Info(resInfo) {}
+		OwnedResource(const OwnedResource&) = delete;
+		OwnedResource& operator=(const OwnedResource&) = delete;
+		ComPtr<ID3D12Resource> DXRes;
+		Ref<Resource> Info;
 		std::optional<std::string> AcquiredName;
 	};
 	struct ExternalResource
 	{
-		operator rad::Resource&()
+		operator Resource&()
 		{
 			return *Info;
 		}
-		operator const rad::Resource&() const
+		operator const Resource&() const
 		{
 			return *Info;
 		}
-		rad::Resource* operator->()
+		Resource* operator->()
 		{
 			return &Info;
 		}
-		const rad::Resource* operator->() const
+		const Resource* operator->() const
 		{
 			return &Info;
 		}
@@ -199,25 +201,64 @@ struct ResourcePool
 		{
 			return Name;
 		}
+		ExternalResource(ExternalResource&&) = default;
+		ExternalResource& operator=(ExternalResource&&) = default;
 	  private:
-		ExternalResource(ID3D12Resource& resource, std::string name, rad::Resource& resInfo) : Resource(resource), Name(std::move(name)), Info(resInfo) {}
-		Ref<ID3D12Resource> Resource;
+		ExternalResource(ID3D12Resource& resource, std::string name, Resource& resInfo) : DXRes(resource), Name(std::move(name)), Info(resInfo) {}
+		ExternalResource(const ExternalResource&) = delete;
+		ExternalResource& operator=(const ExternalResource&) = delete;
+		Ref<ID3D12Resource> DXRes;
 		std::string Name;
-		Ref<rad::Resource> Info;
+		Ref<Resource> Info;
 		friend struct ResourcePool;
 	};
 	ResourcePool(Renderer& renderer);
-	Renderer& Renderer;
-	OwnedResource& GetResource(const ResourceCreateInfo& createInfo, std::string acquireName);
+	PoolResourceView GetResource(const ResourceCreateInfo& createInfo, std::string acquireName);
 	void FreeResource(OwnedResource& resource);
-	ExternalResource& AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
+	PoolResourceView AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
 										  D3D12_RESOURCE_STATES initialState);
-	ResourceDescriptor& GetDescriptor(ID3D12Resource& resourceRef, const DescriptorDesc& desc);
+	ResourceDescriptor& GetDescriptor(PoolResourceView& resource, const DescriptorDesc& desc);
 private:
-	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
+	Renderer& Renderer;
+	Resource& AddResourceInfo(PoolResourceView resourceView, const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
 	std::unordered_map<ResourceCreateInfo, std::deque<OwnedResource>> OwnedResources;
-	std::unordered_map<Ref<ID3D12Resource>, Resource> Resources;
+	std::unordered_map<std::variant<Ref<OwnedResource>, Ref<ExternalResource>>, Resource> Resources;
 	std::unordered_map<Ref<ID3D12Resource>, ExternalResource> ExternalResources;
 	std::unordered_map<ResourceCreateInfo, std::deque<Ref<OwnedResource>>> FreeResources;
+};
+struct PoolResourceView
+{
+	operator ResourcePool::Resource&()
+	{
+		return *Info;
+	}
+	operator const ResourcePool::Resource&() const
+	{
+		return *Info;
+	}
+	ResourcePool::Resource* operator->()
+	{
+		return &Info;
+	}
+	const ResourcePool::Resource* operator->() const
+	{
+		return &Info;
+	}
+	std::string const& GetName() const
+	{
+		return Name;
+	}
+
+  private:
+	PoolResourceView(std::variant<Ref<ResourcePool::OwnedResource>, Ref<ResourcePool::ExternalResource>> resInfo)
+		: Info(std::visit([](auto&& arg) -> ResourcePool::Resource& { return *arg; }, resInfo)),
+		  Name(std::visit([](auto&& arg) -> std::string const& { return arg->GetName(); }, resInfo)),
+		  UnderlyingResource(resInfo)
+	{
+	}
+	Ref<ResourcePool::Resource> Info;
+	Ref<const std::string> Name;
+	std::variant<Ref<ResourcePool::OwnedResource>, Ref<ResourcePool::ExternalResource>> UnderlyingResource;
+	friend struct ResourcePool;
 };
 } // namespace rad
