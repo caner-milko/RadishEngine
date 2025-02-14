@@ -12,27 +12,21 @@ template <> struct hash<glm::vec2>
 {
 	size_t operator()(glm::vec2 const& v) const
 	{
-		size_t seed = 0;
-		rad::HashCombine(seed, v.x, v.y);
-		return seed;
+		return rad::HashCombine(v.x, v.y);
 	}
 };
 template <> struct hash<glm::vec3>
 {
 	size_t operator()(glm::vec3 const& v) const
 	{
-		size_t seed = 0;
-		rad::HashCombine(seed, v.x, v.y, v.z);
-		return seed;
+		return rad::HashCombine(v.x, v.y, v.z);
 	}
 };
 template <> struct hash<rad::Vertex>
 {
 	size_t operator()(rad::Vertex const& vertex) const
 	{
-		size_t seed = 0;
-		rad::HashCombine(seed, vertex.Position, vertex.Normal, vertex.TexCoord);
-		return seed;
+		return rad::HashCombine(vertex.Position, vertex.Normal, vertex.TexCoord);
 	}
 };
 } // namespace std

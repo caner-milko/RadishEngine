@@ -1,4 +1,5 @@
 #include "ResourcePool.h"
+#include "Renderer.h"
 
 namespace rad
 {
@@ -18,8 +19,8 @@ bool ShaderResourceViewDesc::operator==(const ShaderResourceViewDesc& Other) con
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
 	case D3D12_SRV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		auto& otherDesc = Other.ViewName;                                                                         \
+		auto& desc = ViewName;                                                                                         \
+		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
 		return CompareDesc<Desc, __VA_ARGS__>(desc, otherDesc);                                                        \
 	}
@@ -46,15 +47,14 @@ bool ShaderResourceViewDesc::operator==(const ShaderResourceViewDesc& Other) con
 }
 size_t ShaderResourceViewDesc::Hash() const
 {
-	size_t hash = 0;
-	HashCombine(hash, Format, ViewDimension, Shader4ComponentMapping);
+	size_t hash = HashCombine(Format, ViewDimension, Shader4ComponentMapping);
 	switch (ViewDimension)
 	{
 #define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
 	case D3D12_SRV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		HashCombine(hash, __VA_ARGS__);                                                                          \
+		auto& desc = ViewName;                                                                                         \
+		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(BUFFER, Buffer, desc.FirstElement, desc.NumElements, desc.StructureByteStride, desc.Flags)
@@ -88,8 +88,8 @@ bool UnorderedAccessViewDesc::operator==(const UnorderedAccessViewDesc& Other) c
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
 	case D3D12_UAV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		auto& otherDesc = Other.ViewName;                                                                         \
+		auto& desc = ViewName;                                                                                         \
+		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
 		return CompareDesc<Desc, __VA_ARGS__>(desc, otherDesc);                                                        \
 	}
@@ -109,15 +109,14 @@ bool UnorderedAccessViewDesc::operator==(const UnorderedAccessViewDesc& Other) c
 }
 size_t UnorderedAccessViewDesc::Hash() const
 {
-	size_t hash = 0;
-	HashCombine(hash, Format, ViewDimension);
+	size_t hash = HashCombine(Format, ViewDimension);
 	switch (ViewDimension)
 	{
 #define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
 	case D3D12_UAV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		HashCombine(hash, __VA_ARGS__);                                                                          \
+		auto& desc = ViewName;                                                                                         \
+		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(BUFFER, Buffer, desc.FirstElement, desc.NumElements, desc.StructureByteStride,
@@ -142,9 +141,7 @@ bool ConstantBufferViewDesc::operator==(const ConstantBufferViewDesc& Other) con
 }
 size_t ConstantBufferViewDesc::Hash() const
 {
-	size_t hash = 0;
-	HashCombine(hash, BufferLocation, SizeInBytes);
-	return hash;
+	return HashCombine(BufferLocation, SizeInBytes);
 }
 
 bool RenderTargetViewDesc::operator==(const RenderTargetViewDesc& Other) const
@@ -156,8 +153,8 @@ bool RenderTargetViewDesc::operator==(const RenderTargetViewDesc& Other) const
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
 	case D3D12_RTV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		auto& otherDesc = Other.ViewName;                                                                         \
+		auto& desc = ViewName;                                                                                         \
+		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
 		return CompareDesc<Desc, __VA_ARGS__>(desc, otherDesc);                                                        \
 	}
@@ -178,15 +175,14 @@ bool RenderTargetViewDesc::operator==(const RenderTargetViewDesc& Other) const
 }
 size_t RenderTargetViewDesc::Hash() const
 {
-	size_t hash = 0;
-	HashCombine(hash, Format, ViewDimension);
+	size_t hash = HashCombine(Format, ViewDimension);
 	switch (ViewDimension)
 	{
-#define HASH_VIEW(ViewType, ViewName, ...)     \
+#define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
 	case D3D12_RTV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		HashCombine(hash, __VA_ARGS__);                                                                          \
+		auto& desc = ViewName;                                                                                         \
+		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(BUFFER, Buffer, desc.FirstElement)
@@ -214,8 +210,8 @@ bool DepthStencilViewDesc::operator==(const DepthStencilViewDesc& Other) const
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
 	case D3D12_DSV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		auto& otherDesc = Other.ViewName;                                                                         \
+		auto& desc = ViewName;                                                                                         \
+		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
 		return CompareDesc<Desc, __VA_ARGS__>(desc, otherDesc);                                                        \
 	}
@@ -233,15 +229,14 @@ bool DepthStencilViewDesc::operator==(const DepthStencilViewDesc& Other) const
 }
 size_t DepthStencilViewDesc::Hash() const
 {
-	size_t hash = 0;
-	HashCombine(hash, Format, ViewDimension);
+	size_t hash = HashCombine(Format, ViewDimension);
 	switch (ViewDimension)
 	{
 #define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
 	case D3D12_DSV_DIMENSION_##ViewType:                                                                               \
 	{                                                                                                                  \
-		auto& desc = ViewName;                                                                                    \
-		HashCombine(hash, __VA_ARGS__);                                                                          \
+		auto& desc = ViewName;                                                                                         \
+		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(TEXTURE1D, Texture1D, desc.MipSlice)
@@ -265,23 +260,51 @@ bool VertexBufferViewDesc::operator==(const VertexBufferViewDesc& Other) const
 }
 size_t VertexBufferViewDesc::Hash() const
 {
-	size_t hash = 0;
-	HashCombine(hash, BufferLocation, SizeInBytes, StrideInBytes);
-	return hash;
+	return HashCombine(BufferLocation, SizeInBytes, StrideInBytes);
 }
 
 bool IndexBufferViewDesc::operator==(const IndexBufferViewDesc& Other) const
 {
-	return BufferLocation == Other.BufferLocation && SizeInBytes == Other.SizeInBytes &&
-		   Format == Other.Format;
+	return BufferLocation == Other.BufferLocation && SizeInBytes == Other.SizeInBytes && Format == Other.Format;
 }
 size_t IndexBufferViewDesc::Hash() const
 {
-	size_t hash = 0;
-	HashCombine(hash, BufferLocation, SizeInBytes, Format);
-	return hash;
+	return HashCombine(BufferLocation, SizeInBytes, Format);
 }
 
+bool ResourceCreateInfo::operator==(const ResourceCreateInfo& Other) const
+{
+#define COMPARE_FIELDS(Field, ...)                                                                                     \
+	{                                                                                                                  \
+		using T = decltype(Field);                                                                                     \
+		if (!CompareDesc<T, __VA_ARGS__>(Field, Other.Field))                                                          \
+			return false;                                                                                              \
+	}
+	COMPARE_FIELDS(Desc, &T::Dimension, &T::Alignment, &T::Width, &T::Height, &T::DepthOrArraySize, &T::MipLevels,
+				   &T::Format, &T::Layout, &T::Flags);
+	if (Desc.SampleDesc.Count != Other.Desc.SampleDesc.Count ||
+		Desc.SampleDesc.Quality != Other.Desc.SampleDesc.Quality)
+		return false;
+
+	if (Flags != Other.Flags)
+		return false;
+
+	COMPARE_FIELDS(HeapDesc, &T::SizeInBytes, &T::Alignment, &T::Flags);
+	COMPARE_FIELDS(HeapDesc.Properties, &T::Type, &T::CPUPageProperty, &T::MemoryPoolPreference, &T::CreationNodeMask,
+				   &T::VisibleNodeMask);
+
+	if (HeapFlags != Other.HeapFlags)
+		return false;
+	return true;
+}
+size_t ResourceCreateInfo::Hash() const
+{
+	return HashCombine(Desc.Dimension, Desc.Alignment, Desc.Width, Desc.Height, Desc.DepthOrArraySize, Desc.MipLevels,
+					   Desc.Format, Desc.Layout, Desc.Flags, Desc.SampleDesc.Count, Desc.SampleDesc.Quality, Flags,
+					   HeapDesc.SizeInBytes, HeapDesc.Alignment, HeapDesc.Flags, HeapDesc.Properties.Type,
+					   HeapDesc.Properties.CPUPageProperty, HeapDesc.Properties.MemoryPoolPreference,
+					   HeapDesc.Properties.CreationNodeMask, HeapDesc.Properties.VisibleNodeMask, HeapFlags);
+}
 ResourcePool::ResourcePool(rad::Renderer& renderer) : Renderer(renderer) {}
 
 PoolResourceView ResourcePool::GetResource(const ResourceCreateInfo& createInfo, std::string acquireName)
@@ -306,34 +329,94 @@ PoolResourceView ResourcePool::GetResource(const ResourceCreateInfo& createInfo,
 }
 
 PoolResourceView ResourcePool::AddExternalResource(ID3D12Resource& resource, std::string name,
-											   const ResourceCreateInfo& createInfo,
-	D3D12_RESOURCE_STATES initialState)
+												   const ResourceCreateInfo& createInfo,
+												   D3D12_RESOURCE_STATES initialState)
 {
 	auto& resInfo = AddResourceInfo(resource, createInfo, initialState);
 	return PoolResourceView(
 		ExternalResources.insert_or_assign(resource, ExternalResource(resource, name, resInfo)).first->second);
 }
 
-void ResourcePool::FreeResource(OwnedResource& resource) 
+void ResourcePool::FreeResource(OwnedResource& resource)
 {
 	FreeResources[resource->CreateInfo].emplace_back(resource);
 }
 
-ResourcePool::Resource& ResourcePool::AddResourceInfo(
-	PoolResourceView resourceView,
-	const ResourceCreateInfo& createInfo,
-											D3D12_RESOURCE_STATES initialState)
+ResourcePool::Resource& ResourcePool::AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo,
+													  D3D12_RESOURCE_STATES initialState)
 {
-	return Resources.insert_or_assign(resourceView.UnderlyingResource, Resource{createInfo, resourceView->DXRes, initialState}).first->second;
+	return Resources.insert_or_assign(resource, Resource{createInfo, resource, initialState}).first->second;
 }
 ResourceDescriptor& ResourcePool::GetDescriptor(PoolResourceView& resourceView, const DescriptorDesc& desc)
 {
-	assert(Resources.contains(resourceView.UnderlyingResource) && "Resource not found in pool");
-	auto& resource = Resources.at(resourceView.UnderlyingResource);
+	assert(Resources.contains(resourceView->DXRes) && "Resource not found in pool");
+	auto& resource = Resources.at(resourceView->DXRes);
 	auto& descriptors = resource.Descriptors;
 	if (auto it = descriptors.find(desc); it != descriptors.end())
 		return it->second;
 
 	// Create descriptor
+	if (auto* gpuDesc = std::get_if<GPUDescriptorDesc>(&desc))
+	{
+		auto alloc = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+		if (auto* srvDesc = std::get_if<ShaderResourceViewDesc>(gpuDesc))
+			Renderer.GetDevice().CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle());
+		else if (auto* uavDesc = std::get_if<UnorderedAccessViewDesc>(gpuDesc))
+			Renderer.GetDevice().CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc,
+														   alloc.GetCPUHandle());
+		else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(gpuDesc))
+			Renderer.GetDevice().CreateConstantBufferView(cbvDesc, alloc.GetCPUHandle());
+		else
+			assert(false && "Invalid descriptor type");
+		return descriptors.emplace(desc, ResourceDescriptor{alloc}).first->second;
+	}
+	else if (auto* cpuDesc = std::get_if<CPUDescriptorDesc>(&desc))
+	{
+		CPUResourceDescriptor resoureDesc;
+		if (auto* srvDesc = std::get_if<ShaderResourceViewDesc>(cpuDesc))
+		{
+			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			Renderer.GetDevice().CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle());
+			resoureDesc.ViewDesc = alloc;
+		}
+		else if (auto* uavDesc = std::get_if<UnorderedAccessViewDesc>(cpuDesc))
+		{
+			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			Renderer.GetDevice().CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc,
+														   alloc.GetCPUHandle());
+			resoureDesc.ViewDesc = alloc;
+		}
+		else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(cpuDesc))
+		{
+			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			Renderer.GetDevice().CreateConstantBufferView(cbvDesc, alloc.GetCPUHandle());
+			resoureDesc.ViewDesc = alloc;
+		}
+		else if (auto* rtvDesc = std::get_if<RenderTargetViewDesc>(cpuDesc))
+		{
+			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
+			Renderer.GetDevice().CreateRenderTargetView(&resourceView->DXRes, rtvDesc, alloc.GetCPUHandle());
+			resoureDesc.ViewDesc = alloc;
+		}
+		else if (auto* dsvDesc = std::get_if<DepthStencilViewDesc>(cpuDesc))
+		{
+			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
+			Renderer.GetDevice().CreateDepthStencilView(&resourceView->DXRes, dsvDesc, alloc.GetCPUHandle());
+			resoureDesc.ViewDesc = alloc;
+		}
+		else if (auto* vbvDesc = std::get_if<VertexBufferViewDesc>(cpuDesc))
+			resoureDesc.ViewDesc = *vbvDesc;
+		else if (auto* ibvDesc = std::get_if<IndexBufferViewDesc>(cpuDesc))
+			resoureDesc.ViewDesc = *ibvDesc;
+		else
+			assert(false && "Invalid descriptor type");
+
+		return descriptors.emplace(desc, ResourceDescriptor{resoureDesc}).first->second;
+	}
+	else
+	{
+		assert(false && "Invalid descriptor type");
+		return descriptors.emplace(desc, ResourceDescriptor{}).first->second;
+	}
 }
-}
+} // namespace rad

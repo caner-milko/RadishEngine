@@ -44,10 +44,18 @@ inline std::string ws2s(std::wstring_view wstr)
 	return converterX.to_bytes(wstr.data(), wstr.data() + wstr.size());
 }
 
-template <typename T, typename... Rest> void HashCombine(std::size_t& seed, const T& v, const Rest&... rest)
+template <typename T, typename... Rest> void HashCombineRecursive(std::size_t& seed, const T& v, const Rest&... rest)
 {
 	seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-	(HashCombine(seed, rest), ...);
+	(HashCombineRecursive(seed, rest), ...);
+}
+
+template <typename... Rest> 
+size_t HashCombine(const Rest&... rest)
+{
+	size_t seed = 0;
+	HashCombineRecursive(seed, rest...);
+	return seed;
 }
 
 template <typename T> struct Singleton

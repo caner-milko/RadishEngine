@@ -11,7 +11,7 @@ void Test()
 	RenderGraphBuilder builder;
 	auto& shadowMap = builder.AddGraphResource(
 		"Shadow Map",
-		TextureCreateInfo{{.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D, .Width = 1024, .Height = 1024}});
+		ResourceCreateInfo{.Desc = {.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D, .Width = 1024, .Height = 1024}});
 
 	auto& staticVertexBuffer =
 		builder.AddExternalResource(*vertexBuffer);
@@ -57,26 +57,30 @@ void Test()
 		// Draw static meshes to GBuffer
 	};
 }
+
 RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
 {
-	auto& resource = ResourceManager.GraphResources.emplace_back(name, createInfo);
+	auto& resource = ResourceManager.GraphResources.emplace_back(createInfo);
 	return InitializeResourceProvider(std::move(name), resource);
 }
+
 RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView& resource)
 {
 	auto& externalResource = ResourceManager.ExternalResources.emplace_back(resource);
-	return InitializeResourceProvider(std::move(resource.), externalResource);
+	return InitializeResourceProvider(resource.GetName(), externalResource);
 }
+
 RGBOutputResource& RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
 {
 	auto& providerPass = AddPass(std::move(name) + " Provider");
 	auto& outRef = providerPass.Outputs.emplace_back(std::move(name), providerPass, resourceRef);
 	return outRef;
 }
+
 RGBInputResource& RenderPassBuilder::AddInput(std::string name, RGBOutputResource& output, RGResourceUsage usage)
 {
-	auto& descriptorRef = RGBuilder->ResourceManager.GetDescriptor(output.ResourceRef, usage.DescriptorDesc);
-	auto& inRef = Inputs.emplace_back(std::move(name), *this, output, std::move(usage), std::move(usage), descriptorRef);
+	auto& rgDesc = RGBuilder->ResourceManager.GetDescriptor(output.ResourceRef, usage.DescriptorDesc);
+	auto& inRef = Inputs.emplace_back(std::move(name), *this, output, std::move(usage), rgDesc);
 	output.ConnectedInputs.push_back(inRef);
 	return inRef;
 }
