@@ -65,12 +65,10 @@ using GPUResourceDescriptor = DescriptorAllocation;
 
 using ResourceDescriptor = std::variant<CPUResourceDescriptor, GPUResourceDescriptor>;
 
-
 struct ResourceCreateInfo
 {
 	D3D12_RESOURCE_DESC Desc;
-	D3D12_RESOURCE_FLAGS Flags;
-	D3D12_HEAP_DESC HeapDesc;
+	D3D12_HEAP_PROPERTIES HeapProps;
 	D3D12_HEAP_FLAGS HeapFlags;
 	bool operator==(const ResourceCreateInfo& Other) const;
 	size_t Hash() const;
@@ -249,3 +247,81 @@ struct PoolResourceView
 };
 } // namespace rad
 RAD_DECLARE_HASH(rad::PoolResourceView)
+namespace rad
+{
+enum class ResourcePresetFlags : uint32_t
+{
+	None = 0,
+	RenderTarget = 1 << 0,
+	DepthStencil = 1 << 1,
+	ShaderResource = 1 << 2,
+	UnorderedAccess = 1 << 3,
+	VertexBuffer = 1 << 4,
+	IndexBuffer = 1 << 5,
+	ConstantBuffer = 1 << 6,
+	MipMaps = 1 << 7,
+	MipMappedTexture = ShaderResource | MipMaps,
+
+	UploadResource = 1 << 8,
+};
+struct ResourceCreateHelper
+{
+	enum class PresetType
+	{
+		InvalidType = 0,
+		Buffer,
+		Texture2D,
+		Texture2DArray,
+		Texture2DCube,
+		Texture3D,
+	};
+	
+	static D3D12_RESOURCE_FLAGS ToResourceFlags(ResourcePresetFlags flags);
+	static D3D12_HEAP_FLAGS ToHeapFlags(ResourcePresetFlags flags, PresetType type);
+	static D3D12_HEAP_PROPERTIES ToHeapProps(ResourcePresetFlags flags);
+
+	static ResourceCreateInfo Buffer(uint64_t size, ResourcePresetFlags flags,
+									 std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
+									 D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
+									 D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+	static ResourceCreateInfo Texture2D(uint32_t width, uint32_t height, DXGI_FORMAT format, ResourcePresetFlags flags,
+										std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
+										D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
+										D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+	static ResourceCreateInfo Texture2DArray(uint32_t width, uint32_t height, uint32_t arraySize, DXGI_FORMAT format,
+											 ResourcePresetFlags flags,
+											 std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
+											 D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
+											 D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+	static ResourceCreateInfo Texture2DCube(uint32_t width, uint32_t height, DXGI_FORMAT format,
+											ResourcePresetFlags flags,
+											std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
+											D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
+											D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+	static ResourceCreateInfo Texture3D(uint32_t width, uint32_t height, uint32_t depth, DXGI_FORMAT format,
+										ResourcePresetFlags flags,
+										std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
+										D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
+										D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+};
+inline ResourcePresetFlags operator|(ResourcePresetFlags a, ResourcePresetFlags b)
+{
+	return static_cast<ResourcePresetFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+inline ResourcePresetFlags operator&(ResourcePresetFlags a, ResourcePresetFlags b)
+{
+	return static_cast<ResourcePresetFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+inline ResourcePresetFlags& operator|=(ResourcePresetFlags& a, ResourcePresetFlags b)
+{
+	return a = a | b;
+}
+inline ResourcePresetFlags& operator&=(ResourcePresetFlags& a, ResourcePresetFlags b)
+{
+	return a = a & b;
+}
+inline bool operator!(ResourcePresetFlags a)
+{
+	return static_cast<uint32_t>(a) == 0;
+}
+} // namespace rad

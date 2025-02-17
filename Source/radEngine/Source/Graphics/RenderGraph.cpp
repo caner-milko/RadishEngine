@@ -161,6 +161,7 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 			}
 		}
 	}
+	ResourceManager.FreeResources(renderer);
 }
 
 PoolResourceView& RGResourceManager::AddExternalResource(PoolResourceView resource)

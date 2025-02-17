@@ -214,7 +214,7 @@ bool Renderer::Deinitialize()
 	{
 		CloseHandle(Swapchain.SwapChainWaitableObject);
 	}
-
+	ResourcePool.reset();
 	g_CPUDescriptorAllocator = nullptr;
 	g_GPUDescriptorAllocator = nullptr;
 	Device = nullptr;
@@ -269,15 +269,9 @@ void Renderer::Render(RenderFrameRecord& record)
 
 	RenderGraphBuilder builder{};
 	builder.AddExternalResource(poolRes->AsView());
-	builder.AddGraphResource("TestTexture", ResourceCreateInfo{.Desc = D3D12_RESOURCE_DESC{.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-																	  .Width = 1024,
-																	  .Height = 1024,
-																	  .DepthOrArraySize = 1,
-																	  .MipLevels = 1,
-																	  .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
-																	  .SampleDesc = {1, 0},
-																	  .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
-																	  .Flags = D3D12_RESOURCE_FLAG_NONE}});
+	builder.AddGraphResource("TestTexture", ResourceCreateHelper::Texture2D(1024, 1024, DXGI_FORMAT_R8G8B8A8_UNORM,
+																			ResourcePresetFlags::RenderTarget |
+																				ResourcePresetFlags::ShaderResource));
 	builder.BuildAndExecute(*this, cmdContext);
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
 	BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
