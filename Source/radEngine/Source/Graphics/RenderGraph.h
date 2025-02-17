@@ -5,7 +5,7 @@
 namespace rad
 {
 
-template <typename T> struct RGFuture
+template <typename T, bool Ref> struct RGFuture
 {
 	operator T&()
 	{
@@ -13,7 +13,7 @@ template <typename T> struct RGFuture
 	}
 	bool HasValue()
 	{
-		return Future.has_value();
+		return !!Future;
 	}
 	T& Get()
 	{
@@ -22,11 +22,14 @@ template <typename T> struct RGFuture
 
   protected:
 	RGFuture() {}
-	std::optional<T> Future = std::nullopt;
-	void ResourceDecided(T&& resource)
+	std::conditional_t<Ref, T*, std::optional<T>> Future = {};
+	void ResourceDecided(std::conditional_t<Ref, T&, T&&> resource)
 	{
 		assert(!Future);
-		Future = std::move(resource);
+		if constexpr (Ref)
+			Future = &resource;
+		else
+			Future = std::move(resource);
 	}
 	friend struct RGResourceManager;
 };
@@ -42,10 +45,11 @@ struct RGResourceUsage
 	}
 };
 
-struct RGGraphResource : RGFuture<PoolResourceView>
+struct RGGraphResource : RGFuture<PoolResourceView, false>
 {
-	RGGraphResource(ResourceCreateInfo createInfo) : CreateInfo(createInfo) {}
+	RGGraphResource(ResourceCreateInfo createInfo, std::string name) : CreateInfo(createInfo), Name(std::move(name)) {}
 	ResourceCreateInfo CreateInfo;
+	std::string Name;
 
 	friend struct RGResourceManager;
 	friend struct RGResourceRef;
@@ -60,7 +64,7 @@ struct RGResourceRef : std::variant<Ref<RGGraphResource>, RGExternalResourceRef>
 	RGResourceRef(RGGraphResource& resource) : std::variant<Ref<RGGraphResource>, RGExternalResourceRef>(Ref(resource))
 	{
 	}
-	PoolResourceView& GetResource()
+	const PoolResourceView& GetResource() const
 	{
 		if (auto tempResource = std::get_if<Ref<RGGraphResource>>(this))
 		{
@@ -69,6 +73,12 @@ struct RGResourceRef : std::variant<Ref<RGGraphResource>, RGExternalResourceRef>
 		else
 			return (*std::get_if<RGExternalResourceRef>(this));
 	}
+	PoolResourceView& GetResource()
+	{
+		return const_cast<PoolResourceView&>(const_cast<const RGResourceRef*>(this)->GetResource());
+	}
+
+
 	ResourceCreateInfo& GetCreateInfo()
 	{
 		if (auto tempResource = std::get_if<Ref<RGGraphResource>>(this))
@@ -118,7 +128,7 @@ template <> struct hash<rad::RGResourceRef>
 namespace rad
 {
 
-using RGResourceDescriptor = RGFuture<ResourceDescriptor>;
+using RGResourceDescriptor = RGFuture<ResourceDescriptor, true>;
 
 struct RGResourceViewBase : RGResourceRef
 {
@@ -158,15 +168,24 @@ struct RGBInputResource
 	{
 	}
 
+
 	std::string Name;
 	Ref<RenderPassBuilder> OwnerPass;
 	Ref<RGBOutputResource> Source;
 	RGResourceUsage Usage;
 	Ref<RGResourceDescriptor> Descriptor;
 
-	operator RGResourceViewBase()
+	RGResourceViewBase GetResourceView()
 	{
 		return RGResourceViewBase{Source->ResourceRef, Descriptor};
+	}
+	operator RGResourceViewBase()
+	{
+		return GetResourceView();
+	}
+	ResourcePool::Resource* operator->()
+	{
+		return GetResourceView()->operator->();
 	}
 };
 
@@ -188,12 +207,17 @@ struct RGResourceManager
 {
 	std::deque<PoolResourceView> ExternalResources;
 	std::deque<RGGraphResource> GraphResources;
-	std::unordered_map<RGResourceRef, std::unordered_map<DescriptorDesc, RGResourceDescriptor>>
-		CreatedGraphResourcesMap;
-	RGResourceDescriptor& GetDescriptor(RGResourceRef const& resource, DescriptorDesc const& desc)
+	struct ResourceInfo
 	{
-		return CreatedGraphResourcesMap[resource].try_emplace(desc, RGResourceDescriptor{}).first->second;
-	}
+		std::unordered_map<DescriptorDesc, RGResourceDescriptor> Descriptors;
+		D3D12_RESOURCE_STATES LastState;
+	};
+	std::unordered_map<RGResourceRef, ResourceInfo> CreatedGraphResourcesMap;
+	PoolResourceView& AddExternalREsource(PoolResourceView& resource);
+	RGGraphResource& AddGraphResource(ResourceCreateInfo createInfo, std::string name);
+	RGResourceDescriptor& GetDescriptor(RGResourceRef const& resource, DescriptorDesc const& desc);
+	D3D12_RESOURCE_STATES& GetLastState(RGResourceRef const& resource);
+	void CreateResourcesAndDescriptors(Renderer& renderer);
 };
 
 struct RenderGraphBuilder
@@ -207,7 +231,8 @@ struct RenderGraphBuilder
 	}
 	RGBOutputResource& AddGraphResource(std::string name, ResourceCreateInfo createInfo);
 	RGBOutputResource& AddExternalResource(PoolResourceView& externalResource);
-	void Build(Renderer& renderer, CommandContext& cmd);
+
+	void BuildAndExecute(Renderer& renderer, CommandContext& cmd);
 
 private:
 	RGBOutputResource& InitializeResourceProvider(std::string name, RGResourceRef resourceRef);

@@ -9,6 +9,7 @@ namespace rad
 {
 struct DeferredRenderingPipeline;
 struct BlitPipeline;
+struct ResourcePool;
 
 struct RenderView
 {
@@ -252,6 +253,8 @@ struct Renderer
 	std::unique_ptr<TextureManager> TextureManager;
 	std::unique_ptr<ModelManager> ModelManager;
 
+	std::unique_ptr<ResourcePool> ResourcePool;
+
 	DXFence Fence;
 	UINT64 FenceLastSignaledValue = 0;
 
@@ -266,6 +269,7 @@ struct Renderer
 	Swapchain Swapchain;
 
 	bool InitializeDevice();
+	bool InitializeResourcePool();
 	bool InitializeSwapchain(HWND window, uint32_t width, uint32_t height);
 	bool InitializePipelines();
 };

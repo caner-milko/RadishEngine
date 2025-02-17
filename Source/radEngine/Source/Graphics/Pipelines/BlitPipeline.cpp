@@ -38,6 +38,10 @@ bool BlitPipeline::Setup()
 void BlitPipeline::Blit(CommandContext& commandCtx, DXTexture& dstTex, DXTexture& srcTex,
 						DescriptorAllocationView dstRTV, DescriptorAllocationView srcSRV)
 {
+	D3D12_RECT scissorRect = {};
+	scissorRect.right = dstTex.Info.Width;
+	scissorRect.bottom = dstTex.Info.Height;
+	commandCtx->RSSetScissorRects(1, &scissorRect);
 	D3D12_VIEWPORT viewport = {};
 	viewport.Width = static_cast<float>(dstTex.Info.Width);
 	viewport.Height = static_cast<float>(dstTex.Info.Height);

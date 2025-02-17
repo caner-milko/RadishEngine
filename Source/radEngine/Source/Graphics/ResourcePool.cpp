@@ -347,7 +347,7 @@ ResourcePool::Resource& ResourcePool::AddResourceInfo(ID3D12Resource& resource, 
 {
 	return Resources.insert_or_assign(resource, Resource{createInfo, resource, initialState}).first->second;
 }
-ResourceDescriptor& ResourcePool::GetDescriptor(PoolResourceView& resourceView, const DescriptorDesc& desc)
+ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resourceView, const DescriptorDesc& desc)
 {
 	assert(Resources.contains(resourceView->DXRes) && "Resource not found in pool");
 	auto& resource = Resources.at(resourceView->DXRes);

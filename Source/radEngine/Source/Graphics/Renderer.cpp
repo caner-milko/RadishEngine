@@ -5,6 +5,7 @@
 #include "ModelManager.h"
 #include "Pipelines/DeferredRenderingPipeline.h"
 #include "Pipelines/BlitPipeline.h"
+#include "ResourcePool.h"
 #include "imgui_impl_dx12.h"
 
 namespace rad
@@ -90,6 +91,12 @@ bool Renderer::InitializeDevice()
 	return true;
 }
 
+bool Renderer::InitializeResourcePool()
+{
+	ResourcePool = std::make_unique<rad::ResourcePool>(*this);
+	return true;
+}
+
 bool Renderer::InitializeSwapchain(HWND window, uint32_t width, uint32_t height)
 {
 	// Allocate RTV, SRGB RTV
@@ -134,7 +141,8 @@ bool Renderer::InitializePipelines()
 
 bool Renderer::Initialize(HWND window, uint32_t width, uint32_t height)
 {
-	return InitializeDevice() && InitializePipelines() && InitializeSwapchain(window, width, height);
+	return InitializeDevice() && InitializeResourcePool() && InitializePipelines() &&
+		   InitializeSwapchain(window, width, height);
 }
 
 bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)

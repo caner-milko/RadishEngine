@@ -1,5 +1,7 @@
 #include "RenderGraph.h"
 #include "DXResource.h"
+#include "ResourcePool.h"
+#include "Renderer.h"
 
 namespace rad
 {
@@ -13,8 +15,7 @@ void Test()
 		"Shadow Map",
 		ResourceCreateInfo{.Desc = {.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D, .Width = 1024, .Height = 1024}});
 
-	auto& staticVertexBuffer =
-		builder.AddExternalResource(*vertexBuffer);
+	auto& staticVertexBuffer = builder.AddExternalResource(*vertexBuffer);
 	auto& staticIndexBuffer = builder.AddExternalResource(*indexBuffer);
 
 	auto& shadowPass = builder.AddPass("Static Mesh Shadow Pass");
@@ -22,7 +23,7 @@ void Test()
 		"Shadow Map", shadowMap,
 		RGResourceUsage{.State = D3D12_RESOURCE_STATE_DEPTH_WRITE,
 						.DescriptorDesc = CPUDescriptorDesc{DepthStencilViewDesc{D3D12_DEPTH_STENCIL_VIEW_DESC{
-								.Format = DXGI_FORMAT_D32_FLOAT, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D}}}});
+							.Format = DXGI_FORMAT_D32_FLOAT, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D}}}});
 
 	shadowPass.Execute =
 		[shadowMap = RGResourceViewBase(depthBufShadowMapIn),
@@ -32,12 +33,12 @@ void Test()
 																	CPUDescriptorDesc{VertexBufferViewDesc{}}})),
 		 indexBuf = RGResourceViewBase(shadowPass.AddInput(
 			 "Index Buffer", staticIndexBuffer,
-			 RGResourceUsage{D3D12_RESOURCE_STATE_INDEX_BUFFER, CPUDescriptorDesc{IndexBufferViewDesc{}}}))
-	](CommandContext& cmd)
-				{
+			 RGResourceUsage{D3D12_RESOURCE_STATE_INDEX_BUFFER, CPUDescriptorDesc{IndexBufferViewDesc{}}}))](
+			CommandContext& cmd)
+	{
 		// Draw static meshes to shadow map
 		D3D12_VIEWPORT vp = {};
-		//cmd->RSSetViewports(1, shadowMap->GetCreateInfo()
+		// cmd->RSSetViewports(1, shadowMap->GetCreateInfo()
 	};
 
 	auto& gbufferDepth = builder.AddGraphResource("GBuffer Depth", ResourceCreateInfo{});
@@ -60,13 +61,13 @@ void Test()
 
 RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
 {
-	auto& resource = ResourceManager.GraphResources.emplace_back(createInfo);
+	auto& resource = ResourceManager.AddGraphResource(std::move(createInfo), std::move(name));
 	return InitializeResourceProvider(std::move(name), resource);
 }
 
 RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView& resource)
 {
-	auto& externalResource = ResourceManager.ExternalResources.emplace_back(resource);
+	auto& externalResource = ResourceManager.AddExternalREsource(resource);
 	return InitializeResourceProvider(resource.GetName(), externalResource);
 }
 
@@ -94,14 +95,104 @@ std::pair<RGBInputResource&, RGBOutputResource&> RenderPassBuilder::AddInOutReso
 	return {input, output};
 }
 
-void RenderGraphBuilder::Build(Renderer& renderer, CommandContext& cmd)
+void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd)
 {
 	/*
-		1. Create all graph resources
-		2. Create descriptors
-		3. Start from the leftmost & start recording passes/barriers
+		1. Create all graph resources && descriptors
+		2. Start from the leftmost & start recording passes/barriers
 	*/
 
+	// 1. Create all graph resources
+	ResourceManager.CreateResourcesAndDescriptors(renderer);
+
+	// 2. Start from the leftmost & start recording passes/barriers
+	std::unordered_set<Ref<RenderPassBuilder>> visitedPasses;
+	std::queue<Ref<RenderPassBuilder>> passQueue;
+	// Start from leftmost paths
+	for (auto& pass : Passes)
+		if (pass.Inputs.empty())
+			passQueue.push(pass);
+
+	while (!passQueue.empty())
+	{
+		RenderPassBuilder& pass = passQueue.front();
+		visitedPasses.insert(pass);
+		passQueue.pop();
+		// Record pass
+		//cmd.BeginPass(pass.Name);
+
+		std::vector<D3D12_RESOURCE_BARRIER> barriers;
+
+		for (auto& input : pass.Inputs)
+		{
+			auto& resInfo = ResourceManager.CreatedGraphResourcesMap[input.Source->ResourceRef];
+			auto& lastState = ResourceManager.GetLastState(input.GetResourceView());
+			if (input.Usage.State != lastState)
+			{
+				D3D12_RESOURCE_BARRIER barrier = {.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+												  .Transition = {.pResource = &input->DXRes,
+																 .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+																 .StateBefore = resInfo.LastState,
+																 .StateAfter = input.Usage.State}};
+				barriers.push_back(barrier);
+				lastState = input.Usage.State;
+			}
+		}
+		cmd->ResourceBarrier(barriers.size(), barriers.data());
+		pass.Execute(cmd);
+		//cmd.EndPass();
+		// Add outputs to queue
+		for (auto& output : pass.Outputs)
+		{
+			bool canVisit = true;
+			for (auto& input : output.ConnectedInputs)
+				if (!visitedPasses.contains(input->OwnerPass))
+				{
+					canVisit = false;
+					break;
+				}
+			if (canVisit)
+				passQueue.push(output.OwnerPass);
+		}
+	}
+}
+
+PoolResourceView& RGResourceManager::AddExternalREsource(PoolResourceView& resource)
+{
+	auto& resPoolRef = ExternalResources.emplace_back(resource);
+	CreatedGraphResourcesMap[resPoolRef];
+	return resPoolRef;
+}
+
+RGGraphResource& RGResourceManager::AddGraphResource(ResourceCreateInfo createInfo, std::string name)
+{
+	auto& res = GraphResources.emplace_back(createInfo, std::move(name));
+	CreatedGraphResourcesMap[res];
+	return res;
+}
+
+RGResourceDescriptor& RGResourceManager::GetDescriptor(RGResourceRef const& resource, DescriptorDesc const& desc)
+{
+	return CreatedGraphResourcesMap[resource].Descriptors.try_emplace(desc, RGResourceDescriptor{}).first->second;
+}
+
+D3D12_RESOURCE_STATES& RGResourceManager::GetLastState(RGResourceRef const& resource)
+{
+	return CreatedGraphResourcesMap[resource].LastState;
+}
+
+void RGResourceManager::CreateResourcesAndDescriptors(Renderer& renderer)
+{
+	// Create all graph resources
+	for (auto& resource : GraphResources)
+		resource.ResourceDecided(renderer.ResourcePool->GetResource(resource.CreateInfo, resource.Name));
+	// Create all descriptors
+	for (auto& [resourceRef, resInfo] : CreatedGraphResourcesMap)
+	{
+		resInfo.LastState = resourceRef.GetResource()->State;
+		for (auto& [desc, rgDesc] : resInfo.Descriptors)
+			rgDesc.ResourceDecided(renderer.ResourcePool->GetDescriptor(resourceRef.GetResource(), desc));
+	}
 }
 
 } // namespace rad

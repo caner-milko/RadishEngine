@@ -193,7 +193,7 @@ struct ResourcePool
 	void FreeResource(OwnedResource& resource);
 	PoolResourceView AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
 										  D3D12_RESOURCE_STATES initialState);
-	ResourceDescriptor& GetDescriptor(PoolResourceView& resource, const DescriptorDesc& desc);
+	ResourceDescriptor& GetDescriptor(const PoolResourceView& resource, const DescriptorDesc& desc);
 private:
 	Renderer& Renderer;
 	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
