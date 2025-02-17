@@ -3,13 +3,12 @@
 #include "DXResource.h"
 #include "RadishCommon.h"
 #include "RendererCommon.h"
-
+#include "ResourcePool.h"
 
 namespace rad
 {
 struct DeferredRenderingPipeline;
 struct BlitPipeline;
-struct ResourcePool;
 
 struct RenderView
 {
@@ -158,7 +157,7 @@ struct Swapchain
 	uint32_t RequestedNumberOfBackBuffers = 3;
 	HANDLE SwapChainWaitableObject = nullptr;
 	ComPtr<IDXGISwapChain3> Swapchain;
-	std::vector<DXTexture> BackBuffers;
+	std::vector<std::pair<DXTexture, Ref<ResourcePool::ExternalResource>>> BackBuffers;
 	DescriptorAllocation BackBufferRTVs;
 	DescriptorAllocation BackBufferRGBRTVs;
 };

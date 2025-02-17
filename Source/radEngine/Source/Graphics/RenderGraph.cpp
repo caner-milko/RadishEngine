@@ -61,13 +61,13 @@ void Test()
 
 RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
 {
-	auto& resource = ResourceManager.AddGraphResource(std::move(createInfo), std::move(name));
+	auto& resource = ResourceManager.AddGraphResource(std::move(createInfo), name);
 	return InitializeResourceProvider(std::move(name), resource);
 }
 
-RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView& resource)
+RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView resource)
 {
-	auto& externalResource = ResourceManager.AddExternalREsource(resource);
+	auto& externalResource = ResourceManager.AddExternalResource(resource);
 	return InitializeResourceProvider(resource.GetName(), externalResource);
 }
 
@@ -138,26 +138,32 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 				lastState = input.Usage.State;
 			}
 		}
-		cmd->ResourceBarrier(barriers.size(), barriers.data());
-		pass.Execute(cmd);
+		if (!barriers.empty())
+			cmd->ResourceBarrier(barriers.size(), barriers.data());
+		if (pass.Execute)
+			pass.Execute(cmd);
 		//cmd.EndPass();
 		// Add outputs to queue
 		for (auto& output : pass.Outputs)
 		{
-			bool canVisit = true;
 			for (auto& input : output.ConnectedInputs)
-				if (!visitedPasses.contains(input->OwnerPass))
-				{
-					canVisit = false;
-					break;
-				}
-			if (canVisit)
-				passQueue.push(output.OwnerPass);
+			{
+				RenderPassBuilder& owner = input->OwnerPass;
+				bool canVisit = true;
+				for (auto& input : owner.Inputs)
+					if (!visitedPasses.contains(input.Source->OwnerPass))
+					{
+						canVisit = false;
+						break;
+					}
+				if (canVisit)
+					passQueue.push(owner);
+			}
 		}
 	}
 }
 
-PoolResourceView& RGResourceManager::AddExternalREsource(PoolResourceView& resource)
+PoolResourceView& RGResourceManager::AddExternalResource(PoolResourceView resource)
 {
 	auto& resPoolRef = ExternalResources.emplace_back(resource);
 	CreatedGraphResourcesMap[resPoolRef];
@@ -193,6 +199,12 @@ void RGResourceManager::CreateResourcesAndDescriptors(Renderer& renderer)
 		for (auto& [desc, rgDesc] : resInfo.Descriptors)
 			rgDesc.ResourceDecided(renderer.ResourcePool->GetDescriptor(resourceRef.GetResource(), desc));
 	}
+}
+
+void RGResourceManager::FreeResources(Renderer& renderer) 
+{
+	for (auto& resource : GraphResources)
+		renderer.ResourcePool->FreeResource(resource.Get());
 }
 
 } // namespace rad

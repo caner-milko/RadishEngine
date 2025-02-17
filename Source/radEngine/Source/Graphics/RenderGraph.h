@@ -45,7 +45,7 @@ struct RGResourceUsage
 	}
 };
 
-struct RGGraphResource : RGFuture<PoolResourceView, false>
+struct RGGraphResource : RGFuture<ResourcePool::OwnedResource, true>
 {
 	RGGraphResource(ResourceCreateInfo createInfo, std::string name) : CreateInfo(createInfo), Name(std::move(name)) {}
 	ResourceCreateInfo CreateInfo;
@@ -64,18 +64,14 @@ struct RGResourceRef : std::variant<Ref<RGGraphResource>, RGExternalResourceRef>
 	RGResourceRef(RGGraphResource& resource) : std::variant<Ref<RGGraphResource>, RGExternalResourceRef>(Ref(resource))
 	{
 	}
-	const PoolResourceView& GetResource() const
+	PoolResourceView GetResource() const
 	{
 		if (auto tempResource = std::get_if<Ref<RGGraphResource>>(this))
 		{
-			return (*tempResource)->Get();
+			return (*tempResource)->Get().AsView();
 		}
 		else
 			return (*std::get_if<RGExternalResourceRef>(this));
-	}
-	PoolResourceView& GetResource()
-	{
-		return const_cast<PoolResourceView&>(const_cast<const RGResourceRef*>(this)->GetResource());
 	}
 
 
@@ -93,13 +89,13 @@ struct RGResourceRef : std::variant<Ref<RGGraphResource>, RGExternalResourceRef>
 			return (*std::get_if<RGExternalResourceRef>(this))->CreateInfo;
 	}
 
-	operator PoolResourceView&()
+	operator PoolResourceView()
 	{
 		return GetResource();
 	}
-	PoolResourceView* operator->()
+	PoolResourceView operator->()
 	{
-		return &GetResource();
+		return GetResource();
 	}
 
 	RGGraphResource* AsGraphResource()
@@ -185,7 +181,7 @@ struct RGBInputResource
 	}
 	ResourcePool::Resource* operator->()
 	{
-		return GetResourceView()->operator->();
+		return GetResourceView().GetResource().operator->();
 	}
 };
 
@@ -213,11 +209,12 @@ struct RGResourceManager
 		D3D12_RESOURCE_STATES LastState;
 	};
 	std::unordered_map<RGResourceRef, ResourceInfo> CreatedGraphResourcesMap;
-	PoolResourceView& AddExternalREsource(PoolResourceView& resource);
+	PoolResourceView& AddExternalResource(PoolResourceView resource);
 	RGGraphResource& AddGraphResource(ResourceCreateInfo createInfo, std::string name);
 	RGResourceDescriptor& GetDescriptor(RGResourceRef const& resource, DescriptorDesc const& desc);
 	D3D12_RESOURCE_STATES& GetLastState(RGResourceRef const& resource);
 	void CreateResourcesAndDescriptors(Renderer& renderer);
+	void FreeResources(Renderer& renderer);
 };
 
 struct RenderGraphBuilder
@@ -230,7 +227,7 @@ struct RenderGraphBuilder
 		return Passes.emplace_back(std::move(name), *this);
 	}
 	RGBOutputResource& AddGraphResource(std::string name, ResourceCreateInfo createInfo);
-	RGBOutputResource& AddExternalResource(PoolResourceView& externalResource);
+	RGBOutputResource& AddExternalResource(PoolResourceView externalResource);
 
 	void BuildAndExecute(Renderer& renderer, CommandContext& cmd);
 

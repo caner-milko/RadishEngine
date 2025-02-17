@@ -307,7 +307,7 @@ size_t ResourceCreateInfo::Hash() const
 }
 ResourcePool::ResourcePool(rad::Renderer& renderer) : Renderer(renderer) {}
 
-PoolResourceView ResourcePool::GetResource(const ResourceCreateInfo& createInfo, std::string acquireName)
+ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo& createInfo, std::string acquireName)
 {
 	if (auto it = FreeResources.find(createInfo); it != FreeResources.end())
 	{
@@ -316,27 +316,33 @@ PoolResourceView ResourcePool::GetResource(const ResourceCreateInfo& createInfo,
 			OwnedResource& resource = it->second.back();
 			FreeResources.erase(it);
 			resource.AcquiredName = std::move(acquireName);
-			return PoolResourceView(resource);
+			return resource;
 		}
 	}
 	// Create ID3D12Resource from CreateInfo
 	ComPtr<ID3D12Resource> resource;
 
+	Renderer.GetDevice().CreateCommittedResource(&createInfo.HeapDesc.Properties, createInfo.HeapFlags,
+												 &createInfo.Desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+												 IID_PPV_ARGS(&resource));
+
 	auto& resInfo = AddResourceInfo(*resource.Get(), createInfo, D3D12_RESOURCE_STATE_COMMON);
 	auto& ownedResource = OwnedResources[createInfo].emplace_back(OwnedResource(std::move(resource), resInfo));
 	ownedResource.AcquiredName = std::move(acquireName);
-	return PoolResourceView(ownedResource);
+	return ownedResource;
 }
 
-PoolResourceView ResourcePool::AddExternalResource(ID3D12Resource& resource, std::string name,
+ResourcePool::ExternalResource& ResourcePool::AddExternalResource(ID3D12Resource& resource, std::string name,
 												   const ResourceCreateInfo& createInfo,
 												   D3D12_RESOURCE_STATES initialState)
 {
 	auto& resInfo = AddResourceInfo(resource, createInfo, initialState);
-	return PoolResourceView(
-		ExternalResources.insert_or_assign(resource, ExternalResource(resource, name, resInfo)).first->second);
+	return ExternalResources.insert_or_assign(resource, ExternalResource(resource, name, resInfo)).first->second;
 }
-
+void ResourcePool::RemoveExternalResource(ResourcePool::ExternalResource& extRes)
+{
+	ExternalResources.erase(extRes.DXRes);
+}
 void ResourcePool::FreeResource(OwnedResource& resource)
 {
 	FreeResources[resource->CreateInfo].emplace_back(resource);
@@ -419,4 +425,14 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 		return descriptors.emplace(desc, ResourceDescriptor{}).first->second;
 	}
 }
+
+PoolResourceView ResourcePool::OwnedResource::AsView()
+{
+	return PoolResourceView(*this);
+}
+PoolResourceView ResourcePool::ExternalResource::AsView()
+{
+	return PoolResourceView(*this);
+}
+
 } // namespace rad

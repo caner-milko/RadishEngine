@@ -144,6 +144,7 @@ struct ResourcePool
 			assert(AcquiredName.has_value());
 			return *AcquiredName;
 		}
+		PoolResourceView AsView();
 		OwnedResource(OwnedResource&&) = default;
 		OwnedResource& operator=(OwnedResource&&) = default;
 	  private:
@@ -177,6 +178,7 @@ struct ResourcePool
 		{
 			return Name;
 		}
+		PoolResourceView AsView();
 		ExternalResource(ExternalResource&&) = default;
 		ExternalResource& operator=(ExternalResource&&) = default;
 	  private:
@@ -189,10 +191,11 @@ struct ResourcePool
 		friend struct ResourcePool;
 	};
 	ResourcePool(Renderer& renderer);
-	PoolResourceView GetResource(const ResourceCreateInfo& createInfo, std::string acquireName);
+	OwnedResource& GetResource(const ResourceCreateInfo& createInfo, std::string acquireName);
 	void FreeResource(OwnedResource& resource);
-	PoolResourceView AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
+	ExternalResource& AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
 										  D3D12_RESOURCE_STATES initialState);
+	void RemoveExternalResource(ExternalResource& resource);
 	ResourceDescriptor& GetDescriptor(const PoolResourceView& resource, const DescriptorDesc& desc);
 private:
 	Renderer& Renderer;
@@ -232,13 +235,13 @@ struct PoolResourceView
 	{
 		return HashCombine(Info, Name, UnderlyingResource);
 	}
-  private:
 	PoolResourceView(std::variant<Ref<ResourcePool::OwnedResource>, Ref<ResourcePool::ExternalResource>> resInfo)
 		: Info(std::visit([](auto&& arg) -> ResourcePool::Resource& { return *arg; }, resInfo)),
 		  Name(std::visit([](auto&& arg) -> std::string const& { return arg->GetName(); }, resInfo)),
 		  UnderlyingResource(resInfo)
 	{
 	}
+  private:
 	Ref<ResourcePool::Resource> Info;
 	Ref<const std::string> Name;
 	std::variant<Ref<ResourcePool::OwnedResource>, Ref<ResourcePool::ExternalResource>> UnderlyingResource;

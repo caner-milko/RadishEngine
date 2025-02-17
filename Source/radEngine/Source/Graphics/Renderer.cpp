@@ -8,6 +8,8 @@
 #include "ResourcePool.h"
 #include "imgui_impl_dx12.h"
 
+#include "RenderGraph.h"
+
 namespace rad
 {
 Renderer::Renderer() = default;
@@ -150,6 +152,8 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 	if (!initial)
 	{
 		WaitAllCommandContexts();
+		for (auto& [dxRes, extRes] : Swapchain.BackBuffers)
+			ResourcePool->RemoveExternalResource(extRes);
 		Swapchain.BackBuffers.clear();
 		DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
 		ThrowIfFailed(Swapchain.Swapchain->GetDesc(&swapChainDesc));
@@ -166,17 +170,19 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 		info.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		info.MipLevels = 1;
 
-		auto& swapchainTex = Swapchain.BackBuffers.emplace_back(
-			DXTexture::FromExisting(GetDevice(), L"Swapchain_" + std::to_wstring(i), res, info));
+		auto dxSwapchainTex = DXTexture::FromExisting(GetDevice(), L"Swapchain_" + std::to_wstring(i), res, info);
 
+		Swapchain.BackBuffers.emplace_back(
+			dxSwapchainTex, ResourcePool->AddExternalResource(*res.Get(), "Swapchain_" + std::to_string(i),
+															  ResourceCreateInfo{}, D3D12_RESOURCE_STATE_PRESENT));
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 		rtvDesc.Texture2D.MipSlice = 0;
-		swapchainTex.CreatePlacedRTV(Swapchain.BackBufferRTVs.GetView(i), &rtvDesc);
+		dxSwapchainTex.CreatePlacedRTV(Swapchain.BackBufferRTVs.GetView(i), &rtvDesc);
 		auto srgbDesc = rtvDesc;
 		srgbDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		swapchainTex.CreatePlacedRTV(Swapchain.BackBufferRGBRTVs.GetView(i), &srgbDesc);
+		dxSwapchainTex.CreatePlacedRTV(Swapchain.BackBufferRGBRTVs.GetView(i), &srgbDesc);
 	}
 	return DeferredPipeline->OnResize(width, height);
 }
@@ -257,16 +263,38 @@ void Renderer::Render(RenderFrameRecord& record)
 	DeferredPipeline->ScreenSpaceRaymarchPass(cmdContext, record);
 	DeferredPipeline->LightingPass(cmdContext, record);
 	DeferredPipeline->ForwardRenderPass(cmdContext, record);
+
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
+	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
+
+	RenderGraphBuilder builder{};
+	builder.AddExternalResource(poolRes->AsView());
+	builder.AddGraphResource("TestTexture", ResourceCreateInfo{.Desc = D3D12_RESOURCE_DESC{.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+																	  .Width = 1024,
+																	  .Height = 1024,
+																	  .DepthOrArraySize = 1,
+																	  .MipLevels = 1,
+																	  .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+																	  .SampleDesc = {1, 0},
+																	  .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+																	  .Flags = D3D12_RESOURCE_FLAG_NONE}});
+	builder.BuildAndExecute(*this, cmdContext);
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
-	BlitPipeline->Blit(cmdContext, Swapchain.BackBuffers[backbufferIndex], viewingTexture,
+	BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
 					   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
-	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
+	TransitionVec(dxRes, D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
 	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
 	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);
 	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), &cmdContext.CommandList);
-	TransitionVec(Swapchain.BackBuffers[backbufferIndex], D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
+	TransitionVec(dxRes, D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
 	ExecuteCommandContext(*activeCmdContext);
+	
+	
+	
+	
+	
+	
+	
 	// Present
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
 	Swapchain.Swapchain->Present(1, 0/*DXGI_PRESENT_ALLOW_TEARING*/);
