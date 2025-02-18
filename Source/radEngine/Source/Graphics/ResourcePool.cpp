@@ -311,18 +311,37 @@ ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo&
 			OwnedResource& resource = it->second.back();
 			FreeResources.erase(it);
 			resource.AcquiredName = std::move(acquireName);
+			;
+			resource->DXRes->SetName(s2ws(*resource.AcquiredName).c_str());
 			return resource;
 		}
 	}
 	// Create ID3D12Resource from CreateInfo
 	ComPtr<ID3D12Resource> resource;
 
+	D3D12_CLEAR_VALUE clearValue = {.Format = createInfo.Desc.Format};
+	switch (createInfo.Desc.Format)
+	{
+	case DXGI_FORMAT_D32_FLOAT:
+	case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+	case DXGI_FORMAT_D24_UNORM_S8_UINT:
+	case DXGI_FORMAT_D16_UNORM:
+		clearValue.DepthStencil.Depth = createInfo.ClearValue[0];
+		clearValue.DepthStencil.Stencil = createInfo.ClearValue[1];
+		break;
+	default:
+		memcpy(clearValue.Color, createInfo.ClearValue.data(), sizeof(clearValue.Color));
+		break;
+	}
+
 	Renderer.GetDevice().CreateCommittedResource(&createInfo.HeapProps, createInfo.HeapFlags, &createInfo.Desc,
-												 D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&resource));
+												 D3D12_RESOURCE_STATE_COMMON, &clearValue,
+												 IID_PPV_ARGS(&resource));
 
 	auto& resInfo = AddResourceInfo(*resource.Get(), createInfo, D3D12_RESOURCE_STATE_COMMON);
 	auto& ownedResource = OwnedResources[createInfo].emplace_back(OwnedResource(std::move(resource), resInfo));
 	ownedResource.AcquiredName = std::move(acquireName);
+	ownedResource.DXRes->SetName(s2ws(*ownedResource.AcquiredName).c_str());
 	return ownedResource;
 }
 
@@ -377,37 +396,37 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 			Renderer.GetDevice().CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle());
-			resoureDesc.ViewDesc = alloc;
+			resoureDesc = alloc;
 		}
 		else if (auto* uavDesc = std::get_if<UnorderedAccessViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 			Renderer.GetDevice().CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc,
 														   alloc.GetCPUHandle());
-			resoureDesc.ViewDesc = alloc;
+			resoureDesc = alloc;
 		}
 		else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 			Renderer.GetDevice().CreateConstantBufferView(cbvDesc, alloc.GetCPUHandle());
-			resoureDesc.ViewDesc = alloc;
+			resoureDesc = alloc;
 		}
 		else if (auto* rtvDesc = std::get_if<RenderTargetViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
 			Renderer.GetDevice().CreateRenderTargetView(&resourceView->DXRes, rtvDesc, alloc.GetCPUHandle());
-			resoureDesc.ViewDesc = alloc;
+			resoureDesc = alloc;
 		}
 		else if (auto* dsvDesc = std::get_if<DepthStencilViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
 			Renderer.GetDevice().CreateDepthStencilView(&resourceView->DXRes, dsvDesc, alloc.GetCPUHandle());
-			resoureDesc.ViewDesc = alloc;
+			resoureDesc = alloc;
 		}
 		else if (auto* vbvDesc = std::get_if<VertexBufferViewDesc>(cpuDesc))
-			resoureDesc.ViewDesc = *vbvDesc;
+			resoureDesc = *vbvDesc;
 		else if (auto* ibvDesc = std::get_if<IndexBufferViewDesc>(cpuDesc))
-			resoureDesc.ViewDesc = *ibvDesc;
+			resoureDesc = *ibvDesc;
 		else
 			assert(false && "Invalid descriptor type");
 
@@ -465,65 +484,64 @@ D3D12_HEAP_PROPERTIES ResourceCreateHelper::ToHeapProps(ResourcePresetFlags flag
 	return heapProps;
 }
 
-ResourceCreateInfo ResourceCreateHelper::Buffer(uint64_t size, ResourcePresetFlags flags,
-												std::optional<D3D12_HEAP_PROPERTIES> heap,
-												D3D12_RESOURCE_FLAGS detailedFlags, D3D12_HEAP_FLAGS heapFlags)
+ResourceCreateInfo ResourceCreateHelper::Buffer(uint64_t size, ResourcePresetFlags flags, BufferDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc = CD3DX12_RESOURCE_DESC::Buffer(size, ToResourceFlags(flags) | detailedFlags);
-	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Buffer) | heapFlags;
-	createInfo.HeapProps = heap ? *heap : ToHeapProps(flags);
+	createInfo.Desc = CD3DX12_RESOURCE_DESC::Buffer(size, ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Buffer) | details.HeapFlags;
+	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 
 ResourceCreateInfo ResourceCreateHelper::Texture2D(uint32_t width, uint32_t height, DXGI_FORMAT format,
-												   ResourcePresetFlags flags, std::optional<D3D12_HEAP_PROPERTIES> heap,
-												   D3D12_RESOURCE_FLAGS detailedFlags, D3D12_HEAP_FLAGS heapFlags)
+												   ResourcePresetFlags flags,
+												   TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, !!(flags & ResourcePresetFlags::MipMaps),
-												   1, 0, ToResourceFlags(flags) | detailedFlags);
-	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2D) | heapFlags;
-	createInfo.HeapProps = heap ? *heap : ToHeapProps(flags);
+	createInfo.Desc =
+		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1, 1, 0,
+									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2D) | details.HeapFlags;
+	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 
 ResourceCreateInfo ResourceCreateHelper::Texture2DArray(uint32_t width, uint32_t height, uint32_t arraySize,
 														DXGI_FORMAT format, ResourcePresetFlags flags,
-														std::optional<D3D12_HEAP_PROPERTIES> heap,
-														D3D12_RESOURCE_FLAGS detailedFlags, D3D12_HEAP_FLAGS heapFlags)
+														TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
 	createInfo.Desc =
-		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, arraySize, !!(flags & ResourcePresetFlags::MipMaps), 1, 0,
-									 ToResourceFlags(flags) | detailedFlags);
-	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DArray) | heapFlags;
-	createInfo.HeapProps = heap ? *heap : ToHeapProps(flags);
+		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, arraySize, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
+									 1, 0, ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DArray) | details.HeapFlags;
+	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 
 ResourceCreateInfo ResourceCreateHelper::Texture2DCube(uint32_t width, uint32_t height, DXGI_FORMAT format,
 													   ResourcePresetFlags flags,
-													   std::optional<D3D12_HEAP_PROPERTIES> heap,
-													   D3D12_RESOURCE_FLAGS detailedFlags, D3D12_HEAP_FLAGS heapFlags)
+													   TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 6, !!(flags & ResourcePresetFlags::MipMaps),
-												   1, 0, ToResourceFlags(flags) | detailedFlags);
-	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DCube) | heapFlags;
-	createInfo.HeapProps = heap ? *heap : ToHeapProps(flags);
+	createInfo.Desc =
+		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 6, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1, 1, 0,
+									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DCube) | details.HeapFlags;
+	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 
 ResourceCreateInfo ResourceCreateHelper::Texture3D(uint32_t width, uint32_t height, uint32_t depth, DXGI_FORMAT format,
-												   ResourcePresetFlags flags, std::optional<D3D12_HEAP_PROPERTIES> heap,
-												   D3D12_RESOURCE_FLAGS detailedFlags, D3D12_HEAP_FLAGS heapFlags)
+												   ResourcePresetFlags flags,
+												   TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc = CD3DX12_RESOURCE_DESC::Tex3D(
-		format, width, height, depth, !!(flags & ResourcePresetFlags::MipMaps), ToResourceFlags(flags) | detailedFlags);
-	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture3D) | heapFlags;
-	createInfo.HeapProps = heap ? *heap : ToHeapProps(flags);
+	createInfo.Desc =
+		CD3DX12_RESOURCE_DESC::Tex3D(format, width, height, depth, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
+									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture3D) | details.HeapFlags;
+	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 

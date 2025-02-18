@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <variant>
 #include <unordered_set>
+#include <array>
 
 #define GLM_FORCE_LEFT_HANDED
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -50,8 +51,7 @@ template <typename T, typename... Rest> void HashCombineRecursive(std::size_t& s
 	(HashCombineRecursive(seed, rest), ...);
 }
 
-template <typename... Rest> 
-size_t HashCombine(const Rest&... rest)
+template <typename... Rest> size_t HashCombine(const Rest&... rest)
 {
 	size_t seed = 0;
 	HashCombineRecursive(seed, rest...);
@@ -143,6 +143,7 @@ template <typename T> struct OptionalRef
 		return Ptr;
 	}
 };
+
 
 } // namespace rad
 

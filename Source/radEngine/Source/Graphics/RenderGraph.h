@@ -37,7 +37,7 @@ template <typename T, bool Ref> struct RGFuture
 struct RGResourceUsage
 {
 	D3D12_RESOURCE_STATES State;
-	DescriptorDesc DescriptorDesc;
+	std::optional<DescriptorDesc> DescriptorDesc = std::nullopt;
 
 	bool IsCompatibleWith(const RGResourceUsage& other) const
 	{
@@ -128,11 +128,34 @@ using RGResourceDescriptor = RGFuture<ResourceDescriptor, true>;
 
 struct RGResourceViewBase : RGResourceRef
 {
-	RGResourceViewBase(RGResourceRef resourceRef, RGResourceDescriptor& descriptor)
-		: RGResourceRef(resourceRef), Descriptor(descriptor)
+	RGResourceViewBase(RGResourceRef resourceRef, OptionalRef<RGResourceDescriptor> descriptor)
+		: RGResourceRef(resourceRef), DescriptorRef(descriptor)
 	{
 	}
-	Ref<RGResourceDescriptor> Descriptor;
+
+	template<typename T>
+		requires std::is_same_v<T, RenderTargetViewDesc> || std::is_same_v<T, DepthStencilViewDesc> ||
+				 std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
+				 std::is_same_v<T, ConstantBufferViewDesc> || std::is_same_v<T, VertexBufferViewDesc> ||
+				 std::is_same_v<T, IndexBufferViewDesc>
+	auto& AsCPUDescriptor()
+	{
+		return Descriptor().AsCPUDescriptor<T>();
+	}
+
+	template <typename T>
+		requires std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
+				 std::is_same_v<T, ConstantBufferViewDesc>
+	auto& AsGPUDescriptor()
+	{
+		return std::get<GPUResourceDescriptor>(*this);
+	}
+
+	ResourceDescriptor& Descriptor()
+	{
+		return (*DescriptorRef).Get();
+	}
+	OptionalRef<RGResourceDescriptor> DescriptorRef;
 };
 
 struct RenderPassBuilder;
@@ -159,7 +182,7 @@ struct RGBOutputResource
 struct RGBInputResource
 {
 	RGBInputResource(std::string name, RenderPassBuilder& ownerPass, RGBOutputResource& source, RGResourceUsage usage,
-					 RGResourceDescriptor& descriptor)
+					 OptionalRef<RGResourceDescriptor> descriptor)
 		: Name(std::move(name)), OwnerPass(ownerPass), Source(source), Usage(std::move(usage)), Descriptor(descriptor)
 	{
 	}
@@ -169,7 +192,7 @@ struct RGBInputResource
 	Ref<RenderPassBuilder> OwnerPass;
 	Ref<RGBOutputResource> Source;
 	RGResourceUsage Usage;
-	Ref<RGResourceDescriptor> Descriptor;
+	OptionalRef<RGResourceDescriptor> Descriptor;
 
 	RGResourceViewBase GetResourceView()
 	{

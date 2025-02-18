@@ -80,8 +80,10 @@ RGBOutputResource& RenderGraphBuilder::InitializeResourceProvider(std::string na
 
 RGBInputResource& RenderPassBuilder::AddInput(std::string name, RGBOutputResource& output, RGResourceUsage usage)
 {
-	auto& rgDesc = RGBuilder->ResourceManager.GetDescriptor(output.ResourceRef, usage.DescriptorDesc);
-	auto& inRef = Inputs.emplace_back(std::move(name), *this, output, std::move(usage), rgDesc);
+	OptionalRef<RGResourceDescriptor> rgDescriptor = nullptr;
+	if(usage.DescriptorDesc)
+		rgDescriptor = RGBuilder->ResourceManager.GetDescriptor(output.ResourceRef, *usage.DescriptorDesc);
+	auto& inRef = Inputs.emplace_back(std::move(name), *this, output, std::move(usage), rgDescriptor);
 	output.ConnectedInputs.push_back(inRef);
 	return inRef;
 }
@@ -202,8 +204,10 @@ void RGResourceManager::CreateResourcesAndDescriptors(Renderer& renderer)
 	}
 }
 
-void RGResourceManager::FreeResources(Renderer& renderer) 
+void RGResourceManager::FreeResources(Renderer& renderer)
 {
+	for (auto [resource, resInfo] : CreatedGraphResourcesMap)
+		resource.GetResource()->State = resInfo.LastState;
 	for (auto& resource : GraphResources)
 		renderer.ResourcePool->FreeResource(resource.Get());
 }

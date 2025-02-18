@@ -54,22 +54,46 @@ using GPUDescriptorDesc = std::variant<ShaderResourceViewDesc, UnorderedAccessVi
 
 using DescriptorDesc = std::variant<CPUDescriptorDesc, GPUDescriptorDesc>;
 
-struct CPUResourceDescriptor
-{
-	std::variant<DescriptorAllocation, D3D12_VERTEX_BUFFER_VIEW,
-				 D3D12_INDEX_BUFFER_VIEW>
-		ViewDesc;
-};
+using CPUResourceDescriptor = std::variant<DescriptorAllocation, D3D12_VERTEX_BUFFER_VIEW, D3D12_INDEX_BUFFER_VIEW>;
 
 using GPUResourceDescriptor = DescriptorAllocation;
 
-using ResourceDescriptor = std::variant<CPUResourceDescriptor, GPUResourceDescriptor>;
+struct ResourceDescriptor : std::variant<CPUResourceDescriptor, GPUResourceDescriptor>
+{
+	using std::variant<CPUResourceDescriptor, GPUResourceDescriptor>::variant;
+	template <typename T>
+		requires std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
+				 std::is_same_v<T, ConstantBufferViewDesc>
+	auto& AsGPUDescriptor()
+	{
+		return std::get<GPUResourceDescriptor>(*this);
+	}
+
+	template<typename T>
+		requires std::is_same_v<T, RenderTargetViewDesc> || std::is_same_v<T, DepthStencilViewDesc> ||
+				 std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
+				 std::is_same_v<T, ConstantBufferViewDesc> ||
+				 std::is_same_v<T, VertexBufferViewDesc> || std::is_same_v<T, IndexBufferViewDesc>
+	auto& AsCPUDescriptor()
+	{
+		auto& cpuDesc = std::get<CPUResourceDescriptor>(*this);
+		if constexpr (std::is_same_v<T, RenderTargetViewDesc> || std::is_same_v<T, DepthStencilViewDesc> ||
+					  std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
+					  std::is_same_v<T, ConstantBufferViewDesc>)
+			return std::get<DescriptorAllocation>(cpuDesc);
+		else if constexpr (std::is_same_v<T, VertexBufferViewDesc>)
+			return std::get<D3D12_VERTEX_BUFFER_VIEW>(cpuDesc);
+		else if constexpr (std::is_same_v<T, IndexBufferViewDesc>)
+			return std::get<D3D12_INDEX_BUFFER_VIEW>(cpuDesc);
+	}
+};
 
 struct ResourceCreateInfo
 {
 	D3D12_RESOURCE_DESC Desc;
 	D3D12_HEAP_PROPERTIES HeapProps;
 	D3D12_HEAP_FLAGS HeapFlags;
+	std::array<float, 4> ClearValue = {0.0f, 0.0f, 0.0f, 0.0f};
 	bool operator==(const ResourceCreateInfo& Other) const;
 	size_t Hash() const;
 };
@@ -275,34 +299,33 @@ struct ResourceCreateHelper
 		Texture2DCube,
 		Texture3D,
 	};
-	
+	struct BufferDetails
+	{
+		std::optional<D3D12_HEAP_PROPERTIES> Heap = std::nullopt;
+		D3D12_RESOURCE_FLAGS DetailedFlags = D3D12_RESOURCE_FLAG_NONE;
+		D3D12_HEAP_FLAGS HeapFlags = D3D12_HEAP_FLAG_NONE;
+	};
+	struct TextureDetails
+	{
+		ResourcePresetFlags Flags;
+		std::optional<D3D12_HEAP_PROPERTIES> Heap = std::nullopt;
+		D3D12_RESOURCE_FLAGS DetailedFlags = D3D12_RESOURCE_FLAG_NONE;
+		D3D12_HEAP_FLAGS HeapFlags = D3D12_HEAP_FLAG_NONE;
+		std::array<float, 4> ClearValue = {0.0f, 0.0f, 0.0f, 0.0f};
+	};
 	static D3D12_RESOURCE_FLAGS ToResourceFlags(ResourcePresetFlags flags);
 	static D3D12_HEAP_FLAGS ToHeapFlags(ResourcePresetFlags flags, PresetType type);
 	static D3D12_HEAP_PROPERTIES ToHeapProps(ResourcePresetFlags flags);
 
-	static ResourceCreateInfo Buffer(uint64_t size, ResourcePresetFlags flags,
-									 std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
-									 D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
-									 D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+	static ResourceCreateInfo Buffer(uint64_t size, ResourcePresetFlags flags, BufferDetails details = {});
 	static ResourceCreateInfo Texture2D(uint32_t width, uint32_t height, DXGI_FORMAT format, ResourcePresetFlags flags,
-										std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
-										D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
-										D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+										TextureDetails details = {});
 	static ResourceCreateInfo Texture2DArray(uint32_t width, uint32_t height, uint32_t arraySize, DXGI_FORMAT format,
-											 ResourcePresetFlags flags,
-											 std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
-											 D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
-											 D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+											 ResourcePresetFlags flags, TextureDetails details = {});
 	static ResourceCreateInfo Texture2DCube(uint32_t width, uint32_t height, DXGI_FORMAT format,
-											ResourcePresetFlags flags,
-											std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
-											D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
-											D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+											ResourcePresetFlags flags, TextureDetails details = {});
 	static ResourceCreateInfo Texture3D(uint32_t width, uint32_t height, uint32_t depth, DXGI_FORMAT format,
-										ResourcePresetFlags flags,
-										std::optional<D3D12_HEAP_PROPERTIES> heap = std::nullopt,
-										D3D12_RESOURCE_FLAGS detailedFlags = D3D12_RESOURCE_FLAG_NONE,
-										D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE);
+										ResourcePresetFlags flags, TextureDetails details = {});
 };
 inline ResourcePresetFlags operator|(ResourcePresetFlags a, ResourcePresetFlags b)
 {

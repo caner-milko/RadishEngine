@@ -174,7 +174,8 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 
 		Swapchain.BackBuffers.emplace_back(
 			dxSwapchainTex, ResourcePool->AddExternalResource(*res.Get(), "Swapchain_" + std::to_string(i),
-															  ResourceCreateInfo{}, D3D12_RESOURCE_STATE_PRESENT));
+								ResourceCreateHelper::Texture2D(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, {}),
+								D3D12_RESOURCE_STATE_PRESENT));
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
@@ -267,12 +268,45 @@ void Renderer::Render(RenderFrameRecord& record)
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
 	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
 
-	RenderGraphBuilder builder{};
-	builder.AddExternalResource(poolRes->AsView());
-	builder.AddGraphResource("TestTexture", ResourceCreateHelper::Texture2D(1024, 1024, DXGI_FORMAT_R8G8B8A8_UNORM,
-																			ResourcePresetFlags::RenderTarget |
-																				ResourcePresetFlags::ShaderResource));
-	builder.BuildAndExecute(*this, cmdContext);
+	{
+
+		RenderGraphBuilder builder{};
+		auto& backbuffer = builder.AddExternalResource(poolRes->AsView());
+		auto& swapchainCreateInfo = poolRes->AsView()->CreateInfo.Desc;
+		Ref<RGBOutputResource> testTex = builder.AddGraphResource(
+			"TestTexture", ResourceCreateHelper::Texture2D(
+							   swapchainCreateInfo.Width, swapchainCreateInfo.Height, swapchainCreateInfo.Format,
+							   ResourcePresetFlags::RenderTarget | ResourcePresetFlags::ShaderResource));
+		{
+			auto& clearPass = builder.AddPass("TestPass");
+			auto [testIn, testOut2] = clearPass.AddInOutResource(
+				"TestIn", testTex,
+				RGResourceUsage{.State = D3D12_RESOURCE_STATE_RENDER_TARGET,
+								.DescriptorDesc = DescriptorDesc{CPUDescriptorDesc{RenderTargetViewDesc{
+									D3D12_RENDER_TARGET_VIEW_DESC{.Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+																  .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
+																  .Texture2D = {0}}}}}});
+			testTex = testOut2;
+			clearPass.Execute = [testIn = testIn.GetResourceView()](CommandContext& cmd) mutable
+			{ 
+				cmd->ClearRenderTargetView(testIn.AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle(),
+										   testIn->CreateInfo.ClearValue.data(), 0, nullptr);
+			};
+		}
+		{
+			// Copy test to back buffer
+			auto& copyPass = builder.AddPass("CopyPass");
+			auto testIn =
+				copyPass.AddInput("TestIn", testTex, RGResourceUsage{.State = D3D12_RESOURCE_STATE_COPY_SOURCE});
+			auto [backBufferIn, backBufferOut] = copyPass.AddInOutResource(
+				"BackBuffer", backbuffer, RGResourceUsage{.State = D3D12_RESOURCE_STATE_COPY_DEST});
+			copyPass.Execute = [testIn = testIn.GetResourceView(), backBufferIn = backBufferIn.GetResourceView()](CommandContext& cmd) mutable
+			{ 
+					cmd->CopyResource(&backBufferIn->DXRes, &testIn->DXRes); 
+			};
+		}
+		builder.BuildAndExecute(*this, cmdContext);
+	}
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
 	BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
 					   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
