@@ -34,17 +34,6 @@ template <typename T, bool Ref> struct RGFuture
 	friend struct RGResourceManager;
 };
 
-struct RGResourceUsage
-{
-	D3D12_RESOURCE_STATES State;
-	std::optional<DescriptorDesc> DescriptorDesc = std::nullopt;
-
-	bool IsCompatibleWith(const RGResourceUsage& other) const
-	{
-		return true;
-	}
-};
-
 struct RGGraphResource : RGFuture<ResourcePool::OwnedResource, true>
 {
 	RGGraphResource(ResourceCreateInfo createInfo, std::string name) : CreateInfo(createInfo), Name(std::move(name)) {}
@@ -81,22 +70,12 @@ struct RGResourceRef : std::variant<Ref<RGGraphResource>, RGExternalResourceRef>
 		{
 			if ((*tempResource)->HasValue())
 				return (*tempResource)->Get()->CreateInfo;
-			// Is this really used?
-			assert(false);
 			return (*tempResource)->CreateInfo;
 		}
 		else
 			return (*std::get_if<RGExternalResourceRef>(this))->CreateInfo;
 	}
 
-	operator PoolResourceView()
-	{
-		return GetResource();
-	}
-	PoolResourceView operator->()
-	{
-		return GetResource();
-	}
 
 	RGGraphResource* AsGraphResource()
 	{
@@ -123,6 +102,44 @@ template <> struct hash<rad::RGResourceRef>
 
 namespace rad
 {
+
+struct RGResourceUsage
+{
+	D3D12_RESOURCE_STATES State;
+	std::optional<DescriptorDesc> DescriptorDesc = std::nullopt;
+
+	bool IsCompatibleWith(const RGResourceUsage& other) const
+	{
+		return true;
+	}
+
+	static RGResourceUsage ShaderResourceView(RGResourceRef resource)
+	{
+		return RGResourceUsage{.State = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+										D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+							   .DescriptorDesc = DescriptorCreateHelper::ShaderResourceView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage UnorderedAccessView(RGResourceRef resource)
+	{
+		return RGResourceUsage{.State = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+							   .DescriptorDesc = DescriptorCreateHelper::UnorderedAccessView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage ConstantBufferView(RGResourceRef resource)
+	{
+		return RGResourceUsage{.State = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+							   .DescriptorDesc = DescriptorCreateHelper::ConstantBufferView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage RenderTargetView(RGResourceRef resource)
+	{
+		return RGResourceUsage{.State = D3D12_RESOURCE_STATE_RENDER_TARGET,
+							   .DescriptorDesc = DescriptorCreateHelper::RenderTargetView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage DepthStencilView(RGResourceRef resource)
+	{
+		return RGResourceUsage{.State = D3D12_RESOURCE_STATE_DEPTH_WRITE,
+							   .DescriptorDesc = DescriptorCreateHelper::DepthStencilView(resource.GetCreateInfo())};
+	}
+};
 
 using RGResourceDescriptor = RGFuture<ResourceDescriptor, true>;
 
@@ -155,6 +172,16 @@ struct RGResourceViewBase : RGResourceRef
 	{
 		return (*DescriptorRef).Get();
 	}
+
+	operator PoolResourceView()
+	{
+		return GetResource();
+	}
+	PoolResourceView operator->()
+	{
+		return GetResource();
+	}
+
 	OptionalRef<RGResourceDescriptor> DescriptorRef;
 };
 
@@ -162,16 +189,15 @@ struct RenderPassBuilder;
 struct RGBInputResource;
 struct RenderGraphBuilder;
 
-struct RGBOutputResource
+struct RGBOutputResource : RGResourceRef
 {
-	RGBOutputResource(std::string name, RenderPassBuilder& ownerPass, RGResourceRef resourceRef)
-		: Name(std::move(name)), OwnerPass(ownerPass), ResourceRef(resourceRef)
+	RGBOutputResource(RGResourceRef resourceRef, std::string name, RenderPassBuilder& ownerPass)
+		: RGResourceRef(resourceRef), Name(std::move(name)), OwnerPass(ownerPass)
 	{
 	}
 
 	std::string Name;
 	Ref<RenderPassBuilder> OwnerPass;
-	RGResourceRef ResourceRef;
 	std::vector<Ref<RGBInputResource>> ConnectedInputs;
 	void AddInput(RGBInputResource& input)
 	{
@@ -196,7 +222,7 @@ struct RGBInputResource
 
 	RGResourceViewBase GetResourceView()
 	{
-		return RGResourceViewBase{Source->ResourceRef, Descriptor};
+		return RGResourceViewBase{Source, Descriptor};
 	}
 	operator RGResourceViewBase()
 	{

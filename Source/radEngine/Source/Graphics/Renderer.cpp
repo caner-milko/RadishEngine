@@ -269,23 +269,18 @@ void Renderer::Render(RenderFrameRecord& record)
 	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
 
 	{
-
+		poolRes->AsView()->State = dxRes.State;
 		RenderGraphBuilder builder{};
 		auto& backbuffer = builder.AddExternalResource(poolRes->AsView());
 		auto& swapchainCreateInfo = poolRes->AsView()->CreateInfo.Desc;
-		Ref<RGBOutputResource> testTex = builder.AddGraphResource(
+		RGBOutputResource& testTex = builder.AddGraphResource(
 			"TestTexture", ResourceCreateHelper::Texture2D(
 							   swapchainCreateInfo.Width, swapchainCreateInfo.Height, swapchainCreateInfo.Format,
-							   ResourcePresetFlags::RenderTarget | ResourcePresetFlags::ShaderResource));
+				ResourcePresetFlags::RenderTarget | ResourcePresetFlags::ShaderResource, {.ClearValue = {1.0f, 0.0f, 0.5f, 1.0f}}));
 		{
 			auto& clearPass = builder.AddPass("TestPass");
-			auto [testIn, testOut2] = clearPass.AddInOutResource(
-				"TestIn", testTex,
-				RGResourceUsage{.State = D3D12_RESOURCE_STATE_RENDER_TARGET,
-								.DescriptorDesc = DescriptorDesc{CPUDescriptorDesc{RenderTargetViewDesc{
-									D3D12_RENDER_TARGET_VIEW_DESC{.Format = DXGI_FORMAT_R8G8B8A8_UNORM,
-																  .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
-																  .Texture2D = {0}}}}}});
+			auto [testIn, testOut2] =
+				clearPass.AddInOutResource("TestIn", testTex, RGResourceUsage::RenderTargetView(static_cast<RGResourceRef&>(testTex)));
 			testTex = testOut2;
 			clearPass.Execute = [testIn = testIn.GetResourceView()](CommandContext& cmd) mutable
 			{ 
@@ -306,10 +301,11 @@ void Renderer::Render(RenderFrameRecord& record)
 			};
 		}
 		builder.BuildAndExecute(*this, cmdContext);
+		dxRes.State = poolRes->AsView()->State;
 	}
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
-	BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
-					   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
+	//BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
+	//				   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
 	TransitionVec(dxRes, D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
 	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
 	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);

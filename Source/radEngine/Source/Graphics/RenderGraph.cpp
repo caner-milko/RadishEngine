@@ -74,7 +74,7 @@ RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView reso
 RGBOutputResource& RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
 {
 	auto& providerPass = AddPass(std::move(name) + " Provider");
-	auto& outRef = providerPass.Outputs.emplace_back(std::move(name), providerPass, resourceRef);
+	auto& outRef = providerPass.Outputs.emplace_back(resourceRef, std::move(name), providerPass);
 	return outRef;
 }
 
@@ -82,7 +82,7 @@ RGBInputResource& RenderPassBuilder::AddInput(std::string name, RGBOutputResourc
 {
 	OptionalRef<RGResourceDescriptor> rgDescriptor = nullptr;
 	if(usage.DescriptorDesc)
-		rgDescriptor = RGBuilder->ResourceManager.GetDescriptor(output.ResourceRef, *usage.DescriptorDesc);
+		rgDescriptor = RGBuilder->ResourceManager.GetDescriptor(output, *usage.DescriptorDesc);
 	auto& inRef = Inputs.emplace_back(std::move(name), *this, output, std::move(usage), rgDescriptor);
 	output.ConnectedInputs.push_back(inRef);
 	return inRef;
@@ -93,7 +93,7 @@ std::pair<RGBInputResource&, RGBOutputResource&> RenderPassBuilder::AddInOutReso
 																					 RGResourceUsage usage)
 {
 	auto& input = AddInput(name, output, std::move(usage));
-	auto& outputRef = Outputs.emplace_back(std::move(name), *this, output.ResourceRef);
+	auto& outputRef = Outputs.emplace_back(output, std::move(name), *this);
 	return {input, output};
 }
 
@@ -127,7 +127,7 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 
 		for (auto& input : pass.Inputs)
 		{
-			auto& resInfo = ResourceManager.CreatedGraphResourcesMap[input.Source->ResourceRef];
+			auto& resInfo = ResourceManager.CreatedGraphResourcesMap[input.Source];
 			auto& lastState = ResourceManager.GetLastState(input.GetResourceView());
 			if (input.Usage.State != lastState)
 			{

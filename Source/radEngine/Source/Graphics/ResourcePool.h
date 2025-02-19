@@ -16,8 +16,10 @@ struct UnorderedAccessViewDesc : D3D12_UNORDERED_ACCESS_VIEW_DESC
 	size_t Hash() const;
 };
 
-struct ConstantBufferViewDesc : D3D12_CONSTANT_BUFFER_VIEW_DESC
+struct ConstantBufferViewDesc
 {
+	uint64_t StartOffset = 0;
+	uint32_t SizeInBytes = 0;
 	bool operator==(const ConstantBufferViewDesc& Other) const;
 	size_t Hash() const;
 };
@@ -34,14 +36,20 @@ struct DepthStencilViewDesc : D3D12_DEPTH_STENCIL_VIEW_DESC
 	size_t Hash() const;
 };
 
-struct VertexBufferViewDesc : D3D12_VERTEX_BUFFER_VIEW
+struct VertexBufferViewDesc
 {
+	uint64_t StartOffset = 0;
+	UINT SizeInBytes;
+	UINT StrideInBytes;
 	bool operator==(const VertexBufferViewDesc& Other) const;
 	size_t Hash() const;
 };
 
-struct IndexBufferViewDesc : D3D12_INDEX_BUFFER_VIEW
+struct IndexBufferViewDesc
 {
+	uint64_t StartOffset = 0;
+	UINT SizeInBytes;
+	DXGI_FORMAT Format;
 	bool operator==(const IndexBufferViewDesc& Other) const;
 	size_t Hash() const;
 };
@@ -69,11 +77,11 @@ struct ResourceDescriptor : std::variant<CPUResourceDescriptor, GPUResourceDescr
 		return std::get<GPUResourceDescriptor>(*this);
 	}
 
-	template<typename T>
+	template <typename T>
 		requires std::is_same_v<T, RenderTargetViewDesc> || std::is_same_v<T, DepthStencilViewDesc> ||
 				 std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
-				 std::is_same_v<T, ConstantBufferViewDesc> ||
-				 std::is_same_v<T, VertexBufferViewDesc> || std::is_same_v<T, IndexBufferViewDesc>
+				 std::is_same_v<T, ConstantBufferViewDesc> || std::is_same_v<T, VertexBufferViewDesc> ||
+				 std::is_same_v<T, IndexBufferViewDesc>
 	auto& AsCPUDescriptor()
 	{
 		auto& cpuDesc = std::get<CPUResourceDescriptor>(*this);
@@ -99,7 +107,7 @@ struct ResourceCreateInfo
 };
 } // namespace rad
 
-#define RAD_DECLARE_HASH(Type)                                                                                             \
+#define RAD_DECLARE_HASH(Type)                                                                                         \
 	namespace std                                                                                                      \
 	{                                                                                                                  \
 	template <> struct hash<Type>                                                                                      \
@@ -169,6 +177,7 @@ struct ResourcePool
 		PoolResourceView AsView();
 		OwnedResource(OwnedResource&&) = default;
 		OwnedResource& operator=(OwnedResource&&) = default;
+
 	  private:
 		friend struct ResourcePool;
 		OwnedResource(ComPtr<ID3D12Resource> resource, Resource& resInfo) : DXRes(resource), Info(resInfo) {}
@@ -203,8 +212,12 @@ struct ResourcePool
 		PoolResourceView AsView();
 		ExternalResource(ExternalResource&&) = default;
 		ExternalResource& operator=(ExternalResource&&) = default;
+
 	  private:
-		ExternalResource(ID3D12Resource& resource, std::string name, Resource& resInfo) : DXRes(resource), Name(std::move(name)), Info(resInfo) {}
+		ExternalResource(ID3D12Resource& resource, std::string name, Resource& resInfo)
+			: DXRes(resource), Name(std::move(name)), Info(resInfo)
+		{
+		}
 		ExternalResource(const ExternalResource&) = delete;
 		ExternalResource& operator=(const ExternalResource&) = delete;
 		Ref<ID3D12Resource> DXRes;
@@ -215,13 +228,15 @@ struct ResourcePool
 	ResourcePool(Renderer& renderer);
 	OwnedResource& GetResource(const ResourceCreateInfo& createInfo, std::string acquireName);
 	void FreeResource(OwnedResource& resource);
-	ExternalResource& AddExternalResource(ID3D12Resource& resource, std::string name, const ResourceCreateInfo& createInfo,
-										  D3D12_RESOURCE_STATES initialState);
+	ExternalResource& AddExternalResource(ID3D12Resource& resource, std::string name,
+										  const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
 	void RemoveExternalResource(ExternalResource& resource);
 	ResourceDescriptor& GetDescriptor(const PoolResourceView& resource, const DescriptorDesc& desc);
-private:
+
+  private:
 	Renderer& Renderer;
-	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
+	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo,
+							  D3D12_RESOURCE_STATES initialState);
 	std::unordered_map<ResourceCreateInfo, std::deque<OwnedResource>> OwnedResources;
 	std::unordered_map<Ref<ID3D12Resource>, Resource> Resources;
 	std::unordered_map<Ref<ID3D12Resource>, ExternalResource> ExternalResources;
@@ -263,6 +278,7 @@ struct PoolResourceView
 		  UnderlyingResource(resInfo)
 	{
 	}
+
   private:
 	Ref<ResourcePool::Resource> Info;
 	Ref<const std::string> Name;
@@ -288,6 +304,40 @@ enum class ResourcePresetFlags : uint32_t
 
 	UploadResource = 1 << 8,
 };
+#define RAD_DECLARE_ENUM_BITWISE_OPERATORS(Enum)                                                                       \
+	inline Enum operator|(Enum a, Enum b)                                                                              \
+	{                                                                                                                  \
+		return static_cast<Enum>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));                                 \
+	}                                                                                                                  \
+	inline Enum operator&(Enum a, Enum b)                                                                              \
+	{                                                                                                                  \
+		return static_cast<Enum>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));                                 \
+	}                                                                                                                  \
+	inline Enum operator^(Enum a, Enum b)                                                                              \
+	{                                                                                                                  \
+		return static_cast<Enum>(static_cast<uint32_t>(a) ^ static_cast<uint32_t>(b));                                 \
+	}                                                                                                                  \
+	inline Enum operator~(Enum a)                                                                                      \
+	{                                                                                                                  \
+		return static_cast<Enum>(~static_cast<uint32_t>(a));                                                           \
+	}                                                                                                                  \
+	inline bool operator!(Enum a)                                                                                      \
+	{                                                                                                                  \
+		return static_cast<uint32_t>(a) == 0;                                                                          \
+	}                                                                                                                  \
+	inline Enum& operator|=(Enum& a, Enum b)                                                                           \
+	{                                                                                                                  \
+		return a = a | b;                                                                                              \
+	}                                                                                                                  \
+	inline Enum& operator&=(Enum& a, Enum b)                                                                           \
+	{                                                                                                                  \
+		return a = a & b;                                                                                              \
+	}                                                                                                                  \
+	inline Enum& operator^=(Enum& a, Enum b)                                                                           \
+	{                                                                                                                  \
+		return a = a ^ b;                                                                                              \
+	}
+RAD_DECLARE_ENUM_BITWISE_OPERATORS(ResourcePresetFlags)
 struct ResourceCreateHelper
 {
 	enum class PresetType
@@ -327,24 +377,99 @@ struct ResourceCreateHelper
 	static ResourceCreateInfo Texture3D(uint32_t width, uint32_t height, uint32_t depth, DXGI_FORMAT format,
 										ResourcePresetFlags flags, TextureDetails details = {});
 };
-inline ResourcePresetFlags operator|(ResourcePresetFlags a, ResourcePresetFlags b)
+enum class DescriptorCreateFlags : uint32_t
 {
-	return static_cast<ResourcePresetFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-}
-inline ResourcePresetFlags operator&(ResourcePresetFlags a, ResourcePresetFlags b)
+	None = 0,
+	SRGB = 1 << 0,
+	NO_SRGB = 1 << 1,
+	MipMaps = 1 << 1,
+};
+enum class DescriptorCreateType
 {
-	return static_cast<ResourcePresetFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-}
-inline ResourcePresetFlags& operator|=(ResourcePresetFlags& a, ResourcePresetFlags b)
+	CPU,
+	GPU,
+};
+RAD_DECLARE_ENUM_BITWISE_OPERATORS(DescriptorCreateFlags)
+struct DescriptorCreateHelper
 {
-	return a = a | b;
-}
-inline ResourcePresetFlags& operator&=(ResourcePresetFlags& a, ResourcePresetFlags b)
-{
-	return a = a & b;
-}
-inline bool operator!(ResourcePresetFlags a)
-{
-	return static_cast<uint32_t>(a) == 0;
-}
+	template <typename T> struct Details
+	{
+		T Desc = {};
+		DescriptorCreateFlags Flags;
+		union
+		{
+			struct
+			{
+				uint64_t StartOffset = 0;
+				uint32_t StrideInBytes = 0;
+			} Buffer, VertexBuffer;
+			struct
+			{
+				uint64_t StartOffset = 0;
+				DXGI_FORMAT Format = DXGI_FORMAT_UNKNOWN;
+			} IndexBuffer;
+			struct
+			{
+				bool Array = false;
+				bool Cube = false;
+				bool MultiSample = false;
+			} Texture;
+		};
+	};
+	static DescriptorDesc ShaderResourceView(D3D12_SHADER_RESOURCE_VIEW_DESC desc, DescriptorCreateType type)
+	{
+		if (type == DescriptorCreateType::CPU)
+			return DescriptorDesc(CPUDescriptorDesc{ShaderResourceViewDesc{desc}});
+		else
+			return DescriptorDesc(GPUDescriptorDesc{ShaderResourceViewDesc{desc}});
+	}
+	static DescriptorDesc UnorderedAccessView(D3D12_UNORDERED_ACCESS_VIEW_DESC desc, DescriptorCreateType type)
+	{
+		if (type == DescriptorCreateType::CPU)
+			return DescriptorDesc(CPUDescriptorDesc{UnorderedAccessViewDesc{desc}});
+		else
+			return DescriptorDesc(GPUDescriptorDesc{UnorderedAccessViewDesc{desc}});
+	}
+	static DescriptorDesc ConstantBufferView(ConstantBufferViewDesc desc, DescriptorCreateType type)
+	{
+		if (type == DescriptorCreateType::CPU)
+			return DescriptorDesc(CPUDescriptorDesc{desc});
+		else
+			return DescriptorDesc(GPUDescriptorDesc{desc});
+	}
+	static DescriptorDesc RenderTargetView(D3D12_RENDER_TARGET_VIEW_DESC desc)
+	{
+		return DescriptorDesc(CPUDescriptorDesc{RenderTargetViewDesc{desc}});
+	}
+	static DescriptorDesc DepthStencilView(D3D12_DEPTH_STENCIL_VIEW_DESC desc)
+	{
+		return DescriptorDesc(CPUDescriptorDesc{DepthStencilViewDesc{desc}});
+	}
+	static DescriptorDesc VertexBufferView(VertexBufferViewDesc desc)
+	{
+		return DescriptorDesc(CPUDescriptorDesc{desc});
+	}
+	static DescriptorDesc IndexBufferView(IndexBufferViewDesc desc)
+	{
+		return DescriptorDesc(CPUDescriptorDesc{desc});
+	}
+
+	static DescriptorDesc ShaderResourceView(ResourceCreateInfo const& createInfo,
+											 Details<D3D12_SHADER_RESOURCE_VIEW_DESC> details = {},
+											 DescriptorCreateType type = DescriptorCreateType::GPU);
+	static DescriptorDesc UnorderedAccessView(ResourceCreateInfo const& createInfo,
+											  Details<D3D12_UNORDERED_ACCESS_VIEW_DESC> details = {},
+											  DescriptorCreateType type = DescriptorCreateType::GPU);
+	static DescriptorDesc ConstantBufferView(ResourceCreateInfo const& resource,
+											 Details<ConstantBufferViewDesc> details = {},
+											 DescriptorCreateType type = DescriptorCreateType::GPU);
+	static DescriptorDesc RenderTargetView(ResourceCreateInfo const& createInfo,
+										   Details<D3D12_RENDER_TARGET_VIEW_DESC> details = {});
+	static DescriptorDesc DepthStencilView(ResourceCreateInfo const& createInfo,
+										   Details<D3D12_DEPTH_STENCIL_VIEW_DESC> details = {});
+	static DescriptorDesc VertexBufferView(ResourceCreateInfo const& resource,
+										   Details<VertexBufferViewDesc> details = {});
+	static DescriptorDesc IndexBufferView(ResourceCreateInfo const& resource,
+										  Details<IndexBufferViewDesc> details = {});
+};
 } // namespace rad

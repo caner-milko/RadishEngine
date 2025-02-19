@@ -137,11 +137,11 @@ size_t UnorderedAccessViewDesc::Hash() const
 
 bool ConstantBufferViewDesc::operator==(const ConstantBufferViewDesc& Other) const
 {
-	return BufferLocation == Other.BufferLocation && SizeInBytes == Other.SizeInBytes;
+	return StartOffset == Other.StartOffset && SizeInBytes == Other.SizeInBytes;
 }
 size_t ConstantBufferViewDesc::Hash() const
 {
-	return HashCombine(BufferLocation, SizeInBytes);
+	return HashCombine(StartOffset, SizeInBytes);
 }
 
 bool RenderTargetViewDesc::operator==(const RenderTargetViewDesc& Other) const
@@ -255,21 +255,21 @@ size_t DepthStencilViewDesc::Hash() const
 
 bool VertexBufferViewDesc::operator==(const VertexBufferViewDesc& Other) const
 {
-	return BufferLocation == Other.BufferLocation && SizeInBytes == Other.SizeInBytes &&
+	return StartOffset == Other.StartOffset && SizeInBytes == Other.SizeInBytes &&
 		   StrideInBytes == Other.StrideInBytes;
 }
 size_t VertexBufferViewDesc::Hash() const
 {
-	return HashCombine(BufferLocation, SizeInBytes, StrideInBytes);
+	return HashCombine(StartOffset, SizeInBytes, StrideInBytes);
 }
 
 bool IndexBufferViewDesc::operator==(const IndexBufferViewDesc& Other) const
 {
-	return BufferLocation == Other.BufferLocation && SizeInBytes == Other.SizeInBytes && Format == Other.Format;
+	return StartOffset == Other.StartOffset && SizeInBytes == Other.SizeInBytes && Format == Other.Format;
 }
 size_t IndexBufferViewDesc::Hash() const
 {
-	return HashCombine(BufferLocation, SizeInBytes, Format);
+	return HashCombine(StartOffset, SizeInBytes, Format);
 }
 
 bool ResourceCreateInfo::operator==(const ResourceCreateInfo& Other) const
@@ -384,7 +384,11 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 			Renderer.GetDevice().CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc,
 														   alloc.GetCPUHandle());
 		else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(gpuDesc))
-			Renderer.GetDevice().CreateConstantBufferView(cbvDesc, alloc.GetCPUHandle());
+		{
+			D3D12_CONSTANT_BUFFER_VIEW_DESC desc{.BufferLocation = resourceView->DXRes->GetGPUVirtualAddress() + cbvDesc->StartOffset,
+												 .SizeInBytes = cbvDesc->SizeInBytes};
+			Renderer.GetDevice().CreateConstantBufferView(&desc, alloc.GetCPUHandle());
+		}
 		else
 			assert(false && "Invalid descriptor type");
 		return descriptors.emplace(desc, ResourceDescriptor{alloc}).first->second;
@@ -408,7 +412,10 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 		else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-			Renderer.GetDevice().CreateConstantBufferView(cbvDesc, alloc.GetCPUHandle());
+			D3D12_CONSTANT_BUFFER_VIEW_DESC desc{.BufferLocation =
+													 resourceView->DXRes->GetGPUVirtualAddress() + cbvDesc->StartOffset,
+												 .SizeInBytes = cbvDesc->SizeInBytes};
+			Renderer.GetDevice().CreateConstantBufferView(&desc, alloc.GetCPUHandle());
 			resoureDesc = alloc;
 		}
 		else if (auto* rtvDesc = std::get_if<RenderTargetViewDesc>(cpuDesc))
@@ -424,9 +431,17 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 			resoureDesc = alloc;
 		}
 		else if (auto* vbvDesc = std::get_if<VertexBufferViewDesc>(cpuDesc))
-			resoureDesc = *vbvDesc;
+		{
+			resoureDesc = D3D12_VERTEX_BUFFER_VIEW{.BufferLocation = resourceView->DXRes->GetGPUVirtualAddress() +
+																	 vbvDesc->StartOffset,
+												   .SizeInBytes = vbvDesc->SizeInBytes,
+												   .StrideInBytes = vbvDesc->StrideInBytes};
+		}
 		else if (auto* ibvDesc = std::get_if<IndexBufferViewDesc>(cpuDesc))
-			resoureDesc = *ibvDesc;
+			resoureDesc = D3D12_INDEX_BUFFER_VIEW{.BufferLocation = resourceView->DXRes->GetGPUVirtualAddress() +
+																	ibvDesc->StartOffset,
+												  .SizeInBytes = ibvDesc->SizeInBytes,
+												  .Format = ibvDesc->Format};
 		else
 			assert(false && "Invalid descriptor type");
 
@@ -501,6 +516,7 @@ ResourceCreateInfo ResourceCreateHelper::Texture2D(uint32_t width, uint32_t heig
 	createInfo.Desc =
 		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1, 1, 0,
 									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2D) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
@@ -514,6 +530,7 @@ ResourceCreateInfo ResourceCreateHelper::Texture2DArray(uint32_t width, uint32_t
 	createInfo.Desc =
 		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, arraySize, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
 									 1, 0, ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DArray) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
@@ -527,6 +544,7 @@ ResourceCreateInfo ResourceCreateHelper::Texture2DCube(uint32_t width, uint32_t 
 	createInfo.Desc =
 		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 6, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1, 1, 0,
 									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DCube) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
@@ -540,9 +558,424 @@ ResourceCreateInfo ResourceCreateHelper::Texture3D(uint32_t width, uint32_t heig
 	createInfo.Desc =
 		CD3DX12_RESOURCE_DESC::Tex3D(format, width, height, depth, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
 									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture3D) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
+}
+
+DXGI_FORMAT DecideFormat(DXGI_FORMAT format, DescriptorCreateFlags flags)
+{
+	if (!!(flags & DescriptorCreateFlags::SRGB))
+	{
+		if (format == DXGI_FORMAT_R8G8B8A8_UNORM)
+			format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+		else if (format == DXGI_FORMAT_B8G8R8A8_UNORM)
+			format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+		else
+		{
+			assert(false);
+		}
+	}
+	else if (!!(flags & DescriptorCreateFlags::NO_SRGB))
+	{
+		if (format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+			format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		else if (format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
+			format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		else
+		{
+			assert(false);
+		}
+	}
+	return format;
+}
+
+int DecideMipLevelCount(DescriptorCreateFlags flags)
+{
+	return !!(flags & DescriptorCreateFlags::MipMaps) ? 0 : 1;
+}
+
+
+DescriptorDesc DescriptorCreateHelper::ShaderResourceView(ResourceCreateInfo const& createInfo,
+														  Details<D3D12_SHADER_RESOURCE_VIEW_DESC> details,
+														  DescriptorCreateType type)
+{
+	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	details.Desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	switch (createInfo.Desc.Dimension)
+	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER:
+	{
+		uint32_t stride = details.Buffer.StrideInBytes ? details.Buffer.StrideInBytes : 1;
+		details.Desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		details.Desc.Buffer.NumElements = createInfo.Desc.Width / stride;
+		details.Desc.Buffer.StructureByteStride = stride;
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+	{
+		if (details.Texture.Array)
+		{
+			details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1DARRAY;
+			details.Desc.Texture1DArray.MostDetailedMip = 0;
+			details.Desc.Texture1DArray.MipLevels = DecideMipLevelCount(details.Flags);
+			details.Desc.Texture1DArray.FirstArraySlice = 0;
+			details.Desc.Texture1DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1D;
+			details.Desc.Texture1D.MostDetailedMip = 0;
+			details.Desc.Texture1D.MipLevels = DecideMipLevelCount(details.Flags);
+			details.Desc.Texture1D.ResourceMinLODClamp = 0.0f;
+		}
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+	{
+		if (details.Texture.Array)
+		{
+			if (details.Texture.MultiSample)
+			{
+				details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY;
+				details.Desc.Texture2DMSArray.FirstArraySlice = 0;
+				details.Desc.Texture2DMSArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+			}
+			else if (details.Texture.Cube)
+			{
+				details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+				details.Desc.TextureCube.MostDetailedMip = 0;
+				details.Desc.TextureCube.MipLevels = DecideMipLevelCount(details.Flags);
+				details.Desc.TextureCube.ResourceMinLODClamp = 0.0f;
+			}
+			else
+			 {
+				details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+				details.Desc.Texture2DArray.MostDetailedMip = 0;
+				details.Desc.Texture2DArray.MipLevels = DecideMipLevelCount(details.Flags);
+				details.Desc.Texture2DArray.FirstArraySlice = 0;
+				details.Desc.Texture2DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+				details.Desc.Texture2DArray.PlaneSlice = 0;
+			}
+		}
+		else if (details.Texture.Cube)
+		{
+			details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBEARRAY;
+			details.Desc.TextureCubeArray.MostDetailedMip = 0;
+			details.Desc.TextureCubeArray.MipLevels = DecideMipLevelCount(details.Flags);
+			details.Desc.TextureCubeArray.First2DArrayFace = 0;
+			details.Desc.TextureCubeArray.NumCubes = createInfo.Desc.DepthOrArraySize / 6;
+			details.Desc.TextureCubeArray.ResourceMinLODClamp = 0.0f;
+		}
+		else if (details.Texture.MultiSample)
+		{
+			details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			details.Desc.Texture2D.MostDetailedMip = 0;
+			details.Desc.Texture2D.MipLevels = DecideMipLevelCount(details.Flags);
+			details.Desc.Texture2D.PlaneSlice = 0;
+			details.Desc.Texture2D.ResourceMinLODClamp = 0.0f;
+		}
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+	{
+		details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
+		details.Desc.Texture3D.MostDetailedMip = 0;
+		details.Desc.Texture3D.MipLevels = DecideMipLevelCount(details.Flags);
+		details.Desc.Texture3D.ResourceMinLODClamp = 0.0f;
+		break;
+	}
+	}
+	if (type == DescriptorCreateType::CPU)
+		return DescriptorDesc(CPUDescriptorDesc{ShaderResourceViewDesc{details.Desc}});
+	else
+		return DescriptorDesc(GPUDescriptorDesc{ShaderResourceViewDesc{details.Desc}});
+}
+
+DescriptorDesc DescriptorCreateHelper::UnorderedAccessView(ResourceCreateInfo const& createInfo,
+														   Details<D3D12_UNORDERED_ACCESS_VIEW_DESC> details,
+														   DescriptorCreateType type)
+{
+	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	switch (createInfo.Desc.Dimension)
+	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER:
+	{
+		uint32_t stride = details.Buffer.StrideInBytes ? details.Buffer.StrideInBytes : 1;
+		details.Desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+		details.Desc.Buffer.NumElements = createInfo.Desc.Width / stride;
+		details.Desc.Buffer.StructureByteStride = stride;
+		details.Desc.Buffer.CounterOffsetInBytes = 0;
+		details.Desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+	{
+		if (details.Texture.Array)
+		{
+			details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1DARRAY;
+			details.Desc.Texture1DArray.MipSlice = 0;
+			details.Desc.Texture1DArray.FirstArraySlice = 0;
+			details.Desc.Texture1DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1D;
+			details.Desc.Texture1D.MipSlice = 0;
+		}
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+	{
+		if (details.Texture.Array)
+		{
+			if (details.Texture.MultiSample)
+			{
+				details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DMSARRAY;
+				details.Desc.Texture2DMSArray.FirstArraySlice = 0;
+				details.Desc.Texture2DMSArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+			}
+			else
+			{
+				details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+				details.Desc.Texture2DArray.MipSlice = 0;
+				details.Desc.Texture2DArray.FirstArraySlice = 0;
+				details.Desc.Texture2DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+				details.Desc.Texture2DArray.PlaneSlice = 0;
+			}
+		}
+		else if (details.Texture.Cube)
+		{
+			details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+			details.Desc.Texture2DArray.MipSlice = 0;
+			details.Desc.Texture2DArray.FirstArraySlice = 0;
+			details.Desc.Texture2DArray.ArraySize = createInfo.Desc.DepthOrArraySize / 6;
+			details.Desc.Texture2DArray.PlaneSlice = 0;
+		}
+		else if (details.Texture.MultiSample)
+		{
+			details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DMS;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+			details.Desc.Texture2D.MipSlice = 0;
+			details.Desc.Texture2D.PlaneSlice = 0;
+		}
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+	{
+		details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
+		details.Desc.Texture3D.MipSlice = 0;
+		details.Desc.Texture3D.FirstWSlice = 0;
+		details.Desc.Texture3D.WSize = createInfo.Desc.DepthOrArraySize;
+		break;
+	}
+	}
+	if (type == DescriptorCreateType::CPU)
+		return DescriptorDesc(CPUDescriptorDesc{UnorderedAccessViewDesc{details.Desc}});
+	else
+		return DescriptorDesc(GPUDescriptorDesc{UnorderedAccessViewDesc{details.Desc}});
+}
+DescriptorDesc DescriptorCreateHelper::ConstantBufferView(ResourceCreateInfo const& createInfo,
+														  Details<ConstantBufferViewDesc> details,
+														  DescriptorCreateType type)
+{
+	switch (createInfo.Desc.Dimension)
+	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER:
+	{
+		details.Desc.StartOffset = details.Buffer.StartOffset;
+		details.Desc.SizeInBytes = createInfo.Desc.Width;
+		break;
+	}
+	default:
+		assert(false);
+		break;
+	}
+	if (type == DescriptorCreateType::CPU)
+		return DescriptorDesc(CPUDescriptorDesc{ConstantBufferViewDesc{details.Desc}});
+	else
+		return DescriptorDesc(GPUDescriptorDesc{ConstantBufferViewDesc{details.Desc}});
+}
+
+DescriptorDesc DescriptorCreateHelper::RenderTargetView(ResourceCreateInfo const& createInfo,
+														Details<D3D12_RENDER_TARGET_VIEW_DESC> details)
+{
+	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	switch (createInfo.Desc.Dimension)
+	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER:
+	{
+		details.Desc.ViewDimension = D3D12_RTV_DIMENSION_BUFFER;
+		details.Desc.Buffer.FirstElement = 0;
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+	{
+		if (details.Texture.Array)
+		{
+			details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1DARRAY;
+			details.Desc.Texture1DArray.MipSlice = 0;
+			details.Desc.Texture1DArray.FirstArraySlice = 0;
+			details.Desc.Texture1DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1D;
+			details.Desc.Texture1D.MipSlice = 0;
+		}
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+	{
+		if (details.Texture.Array)
+		{
+			if (details.Texture.MultiSample)
+			{
+				details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMSARRAY;
+				details.Desc.Texture2DMSArray.FirstArraySlice = 0;
+				details.Desc.Texture2DMSArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+			}
+			else
+			{
+				details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+				details.Desc.Texture2DArray.MipSlice = 0;
+				details.Desc.Texture2DArray.FirstArraySlice = 0;
+				details.Desc.Texture2DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+				details.Desc.Texture2DArray.PlaneSlice = 0;
+			}
+		}
+		else if (details.Texture.Cube)
+		{
+			details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+			details.Desc.Texture2DArray.MipSlice = 0;
+			details.Desc.Texture2DArray.FirstArraySlice = 0;
+			details.Desc.Texture2DArray.ArraySize = createInfo.Desc.DepthOrArraySize / 6;
+			details.Desc.Texture2DArray.PlaneSlice = 0;
+		}
+		else if (details.Texture.MultiSample)
+		{
+			details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+			details.Desc.Texture2D.MipSlice = 0;
+			details.Desc.Texture2D.PlaneSlice = 0;
+		}
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+	{
+		details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
+		details.Desc.Texture3D.MipSlice = 0;
+		details.Desc.Texture3D.FirstWSlice = 0;
+		details.Desc.Texture3D.WSize = createInfo.Desc.DepthOrArraySize;
+		break;
+	}
+	}
+	return DescriptorDesc(CPUDescriptorDesc{RenderTargetViewDesc{details.Desc}});
+}
+
+DescriptorDesc DescriptorCreateHelper::DepthStencilView(ResourceCreateInfo const& createInfo,
+														Details<D3D12_DEPTH_STENCIL_VIEW_DESC> details)
+{
+	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	switch (createInfo.Desc.Dimension)
+	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+	{
+		if (details.Texture.Array)
+		{
+			details.Desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1DARRAY;
+			details.Desc.Texture1DArray.MipSlice = 0;
+			details.Desc.Texture1DArray.FirstArraySlice = 0;
+			details.Desc.Texture1DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1D;
+			details.Desc.Texture1D.MipSlice = 0;
+		}
+		break;
+	}
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+	{
+		if (details.Texture.Array)
+		{
+			if (details.Texture.MultiSample)
+			{
+				details.Desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY;
+				details.Desc.Texture2DMSArray.FirstArraySlice = 0;
+				details.Desc.Texture2DMSArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+			}
+			else
+			{
+				details.Desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+				details.Desc.Texture2DArray.MipSlice = 0;
+				details.Desc.Texture2DArray.FirstArraySlice = 0;
+				details.Desc.Texture2DArray.ArraySize = createInfo.Desc.DepthOrArraySize;
+			}
+		}
+		else if (details.Texture.MultiSample)
+		{
+			details.Desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
+		}
+		else
+		{
+			details.Desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+			details.Desc.Texture2D.MipSlice = 0;
+		}
+		break;
+	}
+	}
+	return DescriptorDesc(CPUDescriptorDesc{DepthStencilViewDesc{details.Desc}});
+}
+
+DescriptorDesc DescriptorCreateHelper::VertexBufferView(ResourceCreateInfo const& createInfo,
+														Details<VertexBufferViewDesc> details)
+{
+	switch (createInfo.Desc.Dimension)
+	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER:
+	{
+		details.Desc.StartOffset = details.Buffer.StartOffset;
+		details.Desc.SizeInBytes = createInfo.Desc.Width;
+		assert(details.VertexBuffer.StrideInBytes);
+		details.Desc.StrideInBytes = details.VertexBuffer.StrideInBytes;
+		break;
+	}
+	default:
+		assert(false);
+		break;
+	}
+	return DescriptorDesc(CPUDescriptorDesc{VertexBufferViewDesc{details.Desc}});
+}
+
+DescriptorDesc DescriptorCreateHelper::IndexBufferView(ResourceCreateInfo const& createInfo,
+													   Details<IndexBufferViewDesc> details)
+{
+	switch (createInfo.Desc.Dimension)
+	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER:
+	{
+		details.Desc.StartOffset = details.IndexBuffer.Format;
+		details.Desc.SizeInBytes = createInfo.Desc.Width;
+		details.Desc.Format = details.IndexBuffer.Format;
+		break;
+	}
+	default:
+		assert(false);
+		break;
+	}
+	return DescriptorDesc(CPUDescriptorDesc{IndexBufferViewDesc{details.Desc}});
 }
 
 } // namespace rad
