@@ -99,6 +99,7 @@ struct PipelineData
 
 struct PipelineUserBase
 {
+	~PipelineUserBase();
 	std::vector<Ref<struct PipelinePassBase>> RegisteredPasses;
 	// No need to store it here, it's stored in the PipelineDataHolder, but its a stack & finding the data would be harder, so this is ok too
 	PipelineData* Data = nullptr;
@@ -144,8 +145,16 @@ struct PipelineDataHolder
 
 struct PipelinePassBase
 {
+	virtual ~PipelinePassBase() = default;
 	std::string Name;
 	std::vector<Ref<PipelineUserBase>> Users;
+
+	virtual void UnregisterUser(PipelineUserBase& user)
+	{
+		Users.erase(std::remove(Users.begin(), Users.end(), user), Users.end());
+		user.RegisteredPasses.erase(std::remove(user.RegisteredPasses.begin(), user.RegisteredPasses.end(), this),
+									user.RegisteredPasses.end());
+	}
 
   protected:
 	void RegisterUser(Ref<PipelineUserBase> user)
@@ -157,32 +166,29 @@ struct PipelinePassBase
 	{
 		return std::distance(Users.begin(), std::find(Users.begin(), Users.end(), user));
 	}
-	void UnregisterUser(PipelineUserBase& user)
-	{
-		Users.erase(std::remove(Users.begin(), Users.end(), user), Users.end());
-		user.RegisteredPasses.erase(std::remove(user.RegisteredPasses.begin(), user.RegisteredPasses.end(), this),
-									 user.RegisteredPasses.end());
-	}
 };
 
 template<typename T> struct PipelinePass : PipelinePassBase
 {
-	std::vector<std::function<void(T& passData, void* userData, CommandContext& cmd)>> Commands;
+	std::vector<std::function<void(T& passData, void* userData, RenderGraphBuilder& rgBuilder)>> Commands;
 	template <typename U>
-	void RegisterUser(PipelineUser<U>& user, std::function<void(T& passData, U& userData, CommandContext& cmd)> command)
+	void RegisterUser(PipelineUser<U>& user,
+					  std::function<void(T& passData, U& userData, RenderGraphBuilder& rgBuilder)> command)
 	{
 		PipelinePassBase::RegisterUser(user);
-		Commands.push_back([command = std::move(command)](T& passData, void* userData, CommandContext& cmd)
-						   { command(passData, *static_cast<U*>(userData), cmd); });
+		Commands.push_back([command = std::move(command)](T& passData, void* userData, RenderGraphBuilder& rgBuilder)
+						   { command(passData, *static_cast<U*>(userData), rgBuilder); });
 	}
-	void UnregisterUser(PipelineUser<T>& user)
+
+	void UnregisterUser(PipelineUserBase& user) override
 	{
 		auto index = GetUserIndex(user);
 		Commands.erase(Commands.begin() + index);
 		PipelinePassBase::UnregisterUser(user);
 	}
 
-	void Run(T& passData, CommandContext& cmd)
+protected:
+	void Run(T& passData, RenderGraphBuilder& rgBuilder)
 	{
 		for (size_t i = 0; i < Users.size(); i++)
 		{
@@ -192,6 +198,15 @@ template<typename T> struct PipelinePass : PipelinePassBase
 		}
 	}
 };
+
+PipelineUserBase::~PipelineUserBase()
+{
+	while (!RegisteredPasses.empty())
+	{
+		auto pass = RegisteredPasses.back();
+		pass->UnregisterUser(*this);
+	}
+}
 
 struct CommandRecord
 {
