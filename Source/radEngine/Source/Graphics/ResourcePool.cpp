@@ -959,16 +959,16 @@ DescriptorDesc DescriptorCreateHelper::VertexBufferView(ResourceCreateInfo const
 	return DescriptorDesc(CPUDescriptorDesc{VertexBufferViewDesc{details.Desc}});
 }
 
-DescriptorDesc DescriptorCreateHelper::IndexBufferView(ResourceCreateInfo const& createInfo,
+DescriptorDesc DescriptorCreateHelper::IndexBufferView(ResourceCreateInfo const& createInfo, DXGI_FORMAT format,
 													   Details<IndexBufferViewDesc> details)
 {
 	switch (createInfo.Desc.Dimension)
 	{
 	case D3D12_RESOURCE_DIMENSION_BUFFER:
 	{
-		details.Desc.StartOffset = details.IndexBuffer.Format;
+		details.Desc.StartOffset = details.IndexBuffer.StartOffset;
 		details.Desc.SizeInBytes = createInfo.Desc.Width;
-		details.Desc.Format = details.IndexBuffer.Format;
+		details.Desc.Format = format;
 		break;
 	}
 	default:

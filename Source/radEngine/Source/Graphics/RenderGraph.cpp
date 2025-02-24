@@ -5,68 +5,16 @@
 
 namespace rad
 {
-void Test()
-{
-	PoolResourceView* vertexBuffer = nullptr;
-	PoolResourceView* indexBuffer = nullptr;
-
-	RenderGraphBuilder builder;
-	auto& shadowMap = builder.AddGraphResource(
-		"Shadow Map",
-		ResourceCreateInfo{.Desc = {.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D, .Width = 1024, .Height = 1024}});
-
-	auto& staticVertexBuffer = builder.AddExternalResource(*vertexBuffer);
-	auto& staticIndexBuffer = builder.AddExternalResource(*indexBuffer);
-
-	auto& shadowPass = builder.AddPass("Static Mesh Shadow Pass");
-	auto [depthBufShadowMapIn, depthBufShadowMapOut] = shadowPass.AddInOutResource(
-		"Shadow Map", shadowMap,
-		RGResourceUsage{.State = D3D12_RESOURCE_STATE_DEPTH_WRITE,
-						.DescriptorDesc = CPUDescriptorDesc{DepthStencilViewDesc{D3D12_DEPTH_STENCIL_VIEW_DESC{
-							.Format = DXGI_FORMAT_D32_FLOAT, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D}}}});
-
-	shadowPass.Execute =
-		[shadowMap = RGResourceViewBase(depthBufShadowMapIn),
-		 vertexBuf =
-			 RGResourceViewBase(shadowPass.AddInput("Vertex Buffer", staticVertexBuffer,
-													RGResourceUsage{D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-																	CPUDescriptorDesc{VertexBufferViewDesc{}}})),
-		 indexBuf = RGResourceViewBase(shadowPass.AddInput(
-			 "Index Buffer", staticIndexBuffer,
-			 RGResourceUsage{D3D12_RESOURCE_STATE_INDEX_BUFFER, CPUDescriptorDesc{IndexBufferViewDesc{}}}))](
-			CommandContext& cmd)
-	{
-		// Draw static meshes to shadow map
-		D3D12_VIEWPORT vp = {};
-		// cmd->RSSetViewports(1, shadowMap->GetCreateInfo()
-	};
-
-	auto& gbufferDepth = builder.AddGraphResource("GBuffer Depth", ResourceCreateInfo{});
-	auto& gbufferAlbedo = builder.AddGraphResource("GBuffer Albedo", ResourceCreateInfo{});
-	auto& gbufferNormal = builder.AddGraphResource("GBuffer Normal", ResourceCreateInfo{});
-
-	auto& mainPass = builder.AddPass("Static Mesh Deferred Render Pass");
-	auto& vbBuf = mainPass.AddInput("Vertex Buffer", staticVertexBuffer, RGResourceUsage{});
-	auto& ibBuf = mainPass.AddInput("Index Buffer", staticIndexBuffer, RGResourceUsage{});
-	auto [depthBufIn, depthBufOut] = mainPass.AddInOutResource("GBuffer Depth", gbufferDepth, RGResourceUsage{});
-	auto [albedoBufIn, albedoBufOut] = mainPass.AddInOutResource("GBuffer Albedo", gbufferAlbedo, RGResourceUsage{});
-	auto [normalBufIn, normalBufOut] = mainPass.AddInOutResource("GBuffer Normal", gbufferNormal, RGResourceUsage{});
-	mainPass.Execute = [vbBuf = RGResourceViewBase(vbBuf), ibBuf = RGResourceViewBase(ibBuf),
-						depthBuf = Ref(depthBufIn), albedoBuf = RGResourceViewBase(albedoBufIn),
-						normalBuf = RGResourceViewBase(normalBufIn)](CommandContext& ctx)
-	{
-		// Draw static meshes to GBuffer
-	};
-}
-
 RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
 {
 	auto& resource = ResourceManager.AddGraphResource(std::move(createInfo), name);
 	return InitializeResourceProvider(std::move(name), resource);
 }
 
-RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView resource)
+RGBOutputResource& RenderGraphBuilder::GetOrAddExternalResource(PoolResourceView resource)
 {
+	if (auto it = ResourceToLastOutput.find(resource); it != ResourceToLastOutput.end())
+		return it->second;
 	auto& externalResource = ResourceManager.AddExternalResource(resource);
 	return InitializeResourceProvider(resource.GetName(), externalResource);
 }
@@ -74,27 +22,29 @@ RGBOutputResource& RenderGraphBuilder::AddExternalResource(PoolResourceView reso
 RGBOutputResource& RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
 {
 	auto& providerPass = AddPass(std::move(name) + " Provider");
-	auto& outRef = providerPass.Outputs.emplace_back(resourceRef, std::move(name), providerPass);
-	return outRef;
+	return AddOutputToPass(providerPass, std::move(name), resourceRef);
 }
 
 RGBInputResource& RenderPassBuilder::AddInput(std::string name, RGBOutputResource& output, RGResourceUsage usage)
 {
-	OptionalRef<RGResourceDescriptor> rgDescriptor = nullptr;
-	if(usage.DescriptorDesc)
-		rgDescriptor = RGBuilder->ResourceManager.GetDescriptor(output, *usage.DescriptorDesc);
-	auto& inRef = Inputs.emplace_back(std::move(name), *this, output, std::move(usage), rgDescriptor);
-	output.ConnectedInputs.push_back(inRef);
-	return inRef;
+	return RGBuilder->AddInputToPass(*this, std::move(name), output, std::move(usage));
 }
 
 std::pair<RGBInputResource&, RGBOutputResource&> RenderPassBuilder::AddInOutResource(std::string name,
 																					 RGBOutputResource& output,
 																					 RGResourceUsage usage)
 {
-	auto& input = AddInput(name, output, std::move(usage));
-	auto& outputRef = Outputs.emplace_back(output, std::move(name), *this);
-	return {input, output};
+	return RGBuilder->AddInOutToPass(*this, std::move(name), output, std::move(usage));
+}
+
+RGBInputResource& RenderPassBuilder::AddInResourceSetOut(
+	std::string name,
+																					 Ref<RGBOutputResource>& resource,
+																					 RGResourceUsage usage)
+{
+	auto [in, out] = AddInOutResource(std::move(name), *resource, std::move(usage));
+	resource = out;
+	return in;
 }
 
 void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd)
@@ -129,15 +79,15 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 		{
 			auto& resInfo = ResourceManager.CreatedGraphResourcesMap[input.Source];
 			auto& lastState = ResourceManager.GetLastState(input.GetResourceView());
-			if (input.Usage.State != lastState)
+			if (input.State != lastState)
 			{
 				D3D12_RESOURCE_BARRIER barrier = {.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
 												  .Transition = {.pResource = &input->DXRes,
 																 .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
 																 .StateBefore = resInfo.LastState,
-																 .StateAfter = input.Usage.State}};
+																 .StateAfter = input.State}};
 				barriers.push_back(barrier);
-				lastState = input.Usage.State;
+				lastState = input.State;
 			}
 		}
 		if (!barriers.empty())
@@ -164,6 +114,40 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 		}
 	}
 	ResourceManager.FreeResources(renderer);
+}
+
+RGBInputResource& RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass, std::string name,
+													 RGBOutputResource& fromOut, RGResourceUsage usage)
+{
+	auto& inRef = pass.Inputs.emplace_back(std::move(name), pass, fromOut, usage.State);
+	fromOut.ConnectedInputs.push_back(inRef);
+	for (auto& desc : usage.DescriptorDescs)
+		AddDescriptorToInput(pass, inRef, desc);
+	return inRef;
+}
+
+RGBOutputResource& RenderGraphBuilder::AddOutputToPass(RenderPassBuilder& pass, std::string name, RGResourceRef ref) 
+{
+	auto& outputRef = pass.Outputs.emplace_back(ref, std::move(name), pass);
+	if (auto* poolRes = ref.AsExternalResource())
+		ResourceToLastOutput.insert_or_assign(*poolRes, outputRef);
+	return outputRef;
+}
+
+std::pair<RGBInputResource&, RGBOutputResource&> RenderGraphBuilder::AddInOutToPass(RenderPassBuilder& pass,
+																					std::string name,
+																					RGBOutputResource& fromOut,
+																					RGResourceUsage usage)
+{
+	auto& input = AddInputToPass(pass, name, fromOut, std::move(usage));
+	auto& output = AddOutputToPass(pass, name, fromOut.GetResource());
+	return {input, output};
+}
+
+RGResourceDescriptor& RenderGraphBuilder::AddDescriptorToInput(RenderPassBuilder& pass, RGBInputResource& input,
+															   DescriptorDesc desc)
+{
+	return input.Descriptors.emplace_back(ResourceManager.GetDescriptor(input.Source, std::move(desc)));
 }
 
 PoolResourceView& RGResourceManager::AddExternalResource(PoolResourceView resource)

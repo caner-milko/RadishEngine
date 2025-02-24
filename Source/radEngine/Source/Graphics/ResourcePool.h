@@ -155,19 +155,19 @@ struct ResourcePool
 	{
 		operator Resource&()
 		{
-			return *Info;
+			return *InfoRef;
 		}
 		operator const Resource&() const
 		{
-			return *Info;
+			return *InfoRef;
 		}
 		Resource* operator->()
 		{
-			return &Info;
+			return &InfoRef;
 		}
 		const Resource* operator->() const
 		{
-			return &Info;
+			return &InfoRef;
 		}
 		std::string const& GetName() const
 		{
@@ -175,16 +175,20 @@ struct ResourcePool
 			return *AcquiredName;
 		}
 		PoolResourceView AsView();
+		Resource& Info() const
+		{
+			return *InfoRef;
+		}
 		OwnedResource(OwnedResource&&) = default;
 		OwnedResource& operator=(OwnedResource&&) = default;
 
 	  private:
 		friend struct ResourcePool;
-		OwnedResource(ComPtr<ID3D12Resource> resource, Resource& resInfo) : DXRes(resource), Info(resInfo) {}
+		OwnedResource(ComPtr<ID3D12Resource> resource, Resource& resInfo) : DXRes(resource), InfoRef(resInfo) {}
 		OwnedResource(const OwnedResource&) = delete;
 		OwnedResource& operator=(const OwnedResource&) = delete;
 		ComPtr<ID3D12Resource> DXRes;
-		Ref<Resource> Info;
+		Ref<Resource> InfoRef;
 		std::optional<std::string> AcquiredName;
 	};
 	struct ExternalResource
@@ -357,7 +361,6 @@ struct ResourceCreateHelper
 	};
 	struct TextureDetails
 	{
-		ResourcePresetFlags Flags;
 		std::optional<D3D12_HEAP_PROPERTIES> Heap = std::nullopt;
 		D3D12_RESOURCE_FLAGS DetailedFlags = D3D12_RESOURCE_FLAG_NONE;
 		D3D12_HEAP_FLAGS HeapFlags = D3D12_HEAP_FLAG_NONE;
@@ -406,7 +409,6 @@ struct DescriptorCreateHelper
 			struct
 			{
 				uint64_t StartOffset = 0;
-				DXGI_FORMAT Format = DXGI_FORMAT_UNKNOWN;
 			} IndexBuffer;
 			struct
 			{
@@ -469,7 +471,7 @@ struct DescriptorCreateHelper
 										   Details<D3D12_DEPTH_STENCIL_VIEW_DESC> details = {});
 	static DescriptorDesc VertexBufferView(ResourceCreateInfo const& resource,
 										   Details<VertexBufferViewDesc> details = {});
-	static DescriptorDesc IndexBufferView(ResourceCreateInfo const& resource,
+	static DescriptorDesc IndexBufferView(ResourceCreateInfo const& resource, DXGI_FORMAT format,
 										  Details<IndexBufferViewDesc> details = {});
 };
 } // namespace rad

@@ -91,11 +91,107 @@ template <typename T> struct TypedRenderCommand
 	std::function<void(std::span<T> data, const RenderView& view, ForwardPassData& passData)> ForwardPass = nullptr;
 };
 
-/*
-Create a FrameResource struct that is used by pipeline commands to pass resources between each other. It is unique per
-frame so multiple frames can be processed in parallel.
-*/
-// using FramePipelineCommand = std::function<void(CommandContext, RenderFrameRecord&)>;
+struct PipelineData
+{
+	std::string Name;
+	std::function<void*()> GetData;
+};
+
+struct PipelineUserBase
+{
+	std::vector<Ref<struct PipelinePassBase>> RegisteredPasses;
+	// No need to store it here, it's stored in the PipelineDataHolder, but its a stack & finding the data would be harder, so this is ok too
+	PipelineData* Data = nullptr;
+};
+
+template<typename T>
+struct PipelineUser : PipelineUserBase
+{
+	PipelineDataTyped<T>& Get()
+	{
+		return static_cast<PipelineDataTyped<T>&>(*Data);
+	}
+};
+
+struct PipelineDataHolder
+{
+	std::unordered_map<Ref<PipelineUserBase>, PipelineData> Data;
+	bool Recording = false;
+
+	void EndRecording()
+	{
+		Recording = false;
+	}
+
+	void EndPipeline()
+	{
+		Data.clear();
+		Recording = true;
+	}
+
+	PipelineData& Push(PipelineUserBase& user, PipelineData&& data)
+	{
+		assert(Recording);
+		return Data.insert_or_assign(user, std::move(data)).first->second;
+	}
+
+	template<typename T> 
+	PipelineData& Push(PipelineUser<T>& user, std::string name, T data)
+	{
+		return Push(user, {name, [data = std::move(data)]() { return &data; }});
+	}
+};
+
+struct PipelinePassBase
+{
+	std::string Name;
+	std::vector<Ref<PipelineUserBase>> Users;
+
+  protected:
+	void RegisterUser(Ref<PipelineUserBase> user)
+	{
+		Users.push_back(user);
+		user->RegisteredPasses.push_back(*this);
+	}
+	size_t GetUserIndex(PipelineUserBase& user)
+	{
+		return std::distance(Users.begin(), std::find(Users.begin(), Users.end(), user));
+	}
+	void UnregisterUser(PipelineUserBase& user)
+	{
+		Users.erase(std::remove(Users.begin(), Users.end(), user), Users.end());
+		user.RegisteredPasses.erase(std::remove(user.RegisteredPasses.begin(), user.RegisteredPasses.end(), this),
+									 user.RegisteredPasses.end());
+	}
+};
+
+template<typename T> struct PipelinePass : PipelinePassBase
+{
+	std::vector<std::function<void(T& passData, void* userData, CommandContext& cmd)>> Commands;
+	template <typename U>
+	void RegisterUser(PipelineUser<U>& user, std::function<void(T& passData, U& userData, CommandContext& cmd)> command)
+	{
+		PipelinePassBase::RegisterUser(user);
+		Commands.push_back([command = std::move(command)](T& passData, void* userData, CommandContext& cmd)
+						   { command(passData, *static_cast<U*>(userData), cmd); });
+	}
+	void UnregisterUser(PipelineUser<T>& user)
+	{
+		auto index = GetUserIndex(user);
+		Commands.erase(Commands.begin() + index);
+		PipelinePassBase::UnregisterUser(user);
+	}
+
+	void Run(T& passData, CommandContext& cmd)
+	{
+		for (size_t i = 0; i < Users.size(); i++)
+		{
+			auto& user = *Users[i];
+			auto& userData = user.Get<T>();
+			Commands[i](passData, &userData, cmd);
+		}
+	}
+};
 
 struct CommandRecord
 {
