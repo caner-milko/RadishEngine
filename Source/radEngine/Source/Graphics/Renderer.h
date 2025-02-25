@@ -9,6 +9,7 @@ namespace rad
 {
 struct DeferredRenderingPipeline;
 struct BlitPipeline;
+struct RenderGraphBuilder;
 
 struct RenderView
 {
@@ -108,52 +109,79 @@ struct PipelineUserBase
 template<typename T>
 struct PipelineUser : PipelineUserBase
 {
-	PipelineDataTyped<T>& Get()
+	auto GetData()
 	{
-		return static_cast<PipelineDataTyped<T>&>(*Data);
+		if constexpr (std::is_same_v<T, void>)
+			return Data->GetData();
+		else
+			return *static_cast<T*>(Data->GetData());
 	}
 };
 
-struct PipelineDataHolder
+struct PipelineBase
 {
+	PipelineBase(std::string name) : Name(std::move(name)) {}
+	virtual ~PipelineBase() = default;
+	std::string Name;
 	std::unordered_map<Ref<PipelineUserBase>, PipelineData> Data;
+	std::vector<Ref<PipelineBase>> SubPipelines;
 	bool Recording = false;
+	std::vector<Ref<PipelineUserBase>> Users;
 
-	void EndRecording()
+	virtual void BeginRecording() {}
+	virtual void EndRecording() {}
+
+	virtual PipelineData GetPassData(std::stack<PipelineData>& pipelineDataStack) = 0;
+	virtual void Run(std::stack<PipelineData>& pipelineDataStack, std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
+
+	void DoBeginRecording()
 	{
+		Recording = true;
+		BeginRecording();
+	}
+
+	void DoEndRecording()
+	{
+		EndRecording();
 		Recording = false;
 	}
 
-	void EndPipeline()
+	// Maybe return a stack?
+	std::unordered_map<Ref<PipelineBase>, decltype(Data)> PopPipelineUserDataStack()
 	{
+		Recording = false;
+		std::unordered_map<Ref<PipelineBase>, decltype(Data)> result;
+		for (PipelineBase& subPipeline : SubPipelines)
+		{
+			auto subRes = subPipeline.PopPipelineUserDataStack();
+			result.insert(subRes.begin(), subRes.end());
+		}
+		result[*this] = std::move(Data);
 		Data.clear();
-		Recording = true;
+		return result;
 	}
 
-	PipelineData& Push(PipelineUserBase& user, PipelineData&& data)
+	PipelineData& PushPipelineData(PipelineUserBase& user, PipelineData&& data)
 	{
 		assert(Recording);
 		return Data.insert_or_assign(user, std::move(data)).first->second;
 	}
 
 	template<typename T> 
-	PipelineData& Push(PipelineUser<T>& user, std::string name, T data)
+	PipelineData& PushPipelineData(PipelineUser<T>& user, std::string name, T data)
 	{
 		return Push(user, {name, [data = std::move(data)]() { return &data; }});
 	}
-};
 
-struct PipelinePassBase
-{
-	virtual ~PipelinePassBase() = default;
-	std::string Name;
-	std::vector<Ref<PipelineUserBase>> Users;
+	void AddSubPipeline(PipelineBase& subPipeline)
+	{
+		SubPipelines.push_back(subPipeline);
+	}
 
 	virtual void UnregisterUser(PipelineUserBase& user)
 	{
-		Users.erase(std::remove(Users.begin(), Users.end(), user), Users.end());
-		user.RegisteredPasses.erase(std::remove(user.RegisteredPasses.begin(), user.RegisteredPasses.end(), this),
-									user.RegisteredPasses.end());
+		std::erase_if(Users, [&user](const Ref<PipelineUserBase>& u) { return &u == &user; });
+		std::erase_if(user.RegisteredPasses, [this](const Ref<PipelinePassBase>& pass) { return &pass == this; });
 	}
 
   protected:
@@ -164,19 +192,39 @@ struct PipelinePassBase
 	}
 	size_t GetUserIndex(PipelineUserBase& user)
 	{
-		return std::distance(Users.begin(), std::find(Users.begin(), Users.end(), user));
+		return std::distance(Users.begin(), std::find(Users.begin(), Users.end(), Ref(user)));
 	}
 };
 
-template<typename T> struct PipelinePass : PipelinePassBase
+template<typename T>
+struct PipelinePass : PipelinePassBase
 {
-	std::vector<std::function<void(T& passData, void* userData, RenderGraphBuilder& rgBuilder)>> Commands;
+	template <typename U, bool = std::is_void_v<U>> 
+	struct VoidPtrOrRef
+	{
+		using type = U&;
+	};
+	template <typename U> 
+	struct VoidPtrOrRef<U, true>
+	{
+		using type = void*;
+	};
+
+	template<typename U>
+	using CommandT = std::conditional_t<std::is_same_v<T, void>, std::function<void(VoidPtrOrRef<U> userData, RenderGraphBuilder& rgBuilder)>,
+		std::function<void(VoidPtrOrRef<T> passData,  VoidPtrOrRef<U> userData, RenderGraphBuilder& rgBuilder)>>;
+
+	std::vector<CommandT<void>> Commands;
 	template <typename U>
-	void RegisterUser(PipelineUser<U>& user,
-					  std::function<void(T& passData, U& userData, RenderGraphBuilder& rgBuilder)> command)
+	void RegisterUser(PipelineUser<U>& user, CommandT<U> command)
 	{
 		PipelinePassBase::RegisterUser(user);
-		Commands.push_back([command = std::move(command)](T& passData, void* userData, RenderGraphBuilder& rgBuilder)
+		if constexpr (std::is_same_v<T, void>)
+			Commands.push_back(
+				[command = std::move(command)](void* userData, RenderGraphBuilder& rgBuilder)
+				{ command(userData, rgBuilder); });
+		else
+			Commands.push_back([command = std::move(command)](T& passData, void* userData, RenderGraphBuilder& rgBuilder)
 						   { command(passData, *static_cast<U*>(userData), rgBuilder); });
 	}
 
@@ -188,13 +236,28 @@ template<typename T> struct PipelinePass : PipelinePassBase
 	}
 
 protected:
-	void Run(T& passData, RenderGraphBuilder& rgBuilder)
+
+	template<typename TT = T>
+		requires std::is_same_v<TT, void>
+	void Run(RenderGraphBuilder& rgBuilder)
+	{
+	  for (size_t i = 0; i < Users.size(); i++)
+	  {
+		  auto& user = *Users[i];
+		  void* userData = user.Data->GetData();
+		  Commands[i](userData, rgBuilder);
+	  }
+	}
+
+	template<typename TT = T>
+		requires !std::is_same_v<T, void>
+	void Run(VoidPtrOrRef<TT> passData, RenderGraphBuilder& rgBuilder)
 	{
 		for (size_t i = 0; i < Users.size(); i++)
 		{
 			auto& user = *Users[i];
-			auto& userData = user.Get<T>();
-			Commands[i](passData, &userData, cmd);
+			void* userData = user.Data->GetData();
+			Commands[i](passData, &userData, rgBuilder);
 		}
 	}
 };
@@ -230,7 +293,7 @@ struct RenderFrameRecord
 	RenderView View;
 	RenderLightInfo LightInfo;
 	std::deque<RenderCommand> Commands;
-	// std::deque<FramePipelineCommand> FramePipelineCommands;
+	std::unordered_map<Ref<PipelineDataHolder>, decltype(PipelineDataHolder::Data)> PipelineDatas;
 
 	template <typename T> void Push(TypedRenderCommand<T> command)
 	{
@@ -273,10 +336,40 @@ struct Swapchain
 	DescriptorAllocation BackBufferRGBRTVs;
 };
 
+struct ComputePipeline : PipelinePass<void>
+{
+
+};
+
+struct GraphicsPipeline : PipelinePass<void>
+{
+	void Run(RenderFrameRecord& frameRec, RenderGraphBuilder& rgBuilder)
+	{
+
+	}
+};
+
+struct FramePipeline : PipelinePass<void>
+{
+	ComputePipeline ComputePipeline;
+	GraphicsPipeline GraphicsPipeline;
+
+	FramePipeline()
+	{
+		AddSubPipeline(ComputePipeline);
+		AddSubPipeline(GraphicsPipeline);
+	}
+
+	void Run(RenderFrameRecord& frameRec, RenderGraphBuilder& rgBuilder)
+	{
+		PipelinePass::Run(RenderFrameRecord & frameRec, rgBuilder);
+	}
+};
+
 /*
 Ideally, seperate device creation, command queue/list creation, and swapchain creation into seperate structs.
 */
-struct Renderer
+struct Renderer : PipelineDataHolder
 {
 	Renderer();
 	~Renderer();

@@ -238,6 +238,7 @@ RenderFrameRecord Renderer::BeginFrame()
 
 void Renderer::EnqueueFrame(RenderFrameRecord record)
 {
+	record.EndRecording();
 	PendingFrameRecords.push(std::move(record));
 }
 
@@ -267,45 +268,9 @@ void Renderer::Render(RenderFrameRecord& record)
 
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
 	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
-
-	{
-		poolRes->AsView()->State = dxRes.State;
-		RenderGraphBuilder builder{};
-		auto& backbuffer = builder.AddExternalResource(poolRes->AsView());
-		auto& swapchainCreateInfo = poolRes->AsView()->CreateInfo.Desc;
-		RGBOutputResource& testTex = builder.AddGraphResource(
-			"TestTexture", ResourceCreateHelper::Texture2D(
-							   swapchainCreateInfo.Width, swapchainCreateInfo.Height, swapchainCreateInfo.Format,
-				ResourcePresetFlags::RenderTarget | ResourcePresetFlags::ShaderResource, {.ClearValue = {1.0f, 0.0f, 0.5f, 1.0f}}));
-		{
-			auto& clearPass = builder.AddPass("TestPass");
-			auto [testIn, testOut2] =
-				clearPass.AddInOutResource("TestIn", testTex, RGResourceUsage::RenderTargetView(static_cast<RGResourceRef&>(testTex)));
-			testTex = testOut2;
-			clearPass.Execute = [testIn = testIn.GetResourceView()](CommandContext& cmd) mutable
-			{ 
-				cmd->ClearRenderTargetView(testIn.AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle(),
-										   testIn->CreateInfo.ClearValue.data(), 0, nullptr);
-			};
-		}
-		{
-			// Copy test to back buffer
-			auto& copyPass = builder.AddPass("CopyPass");
-			auto testIn =
-				copyPass.AddInput("TestIn", testTex, RGResourceUsage{.State = D3D12_RESOURCE_STATE_COPY_SOURCE});
-			auto [backBufferIn, backBufferOut] = copyPass.AddInOutResource(
-				"BackBuffer", backbuffer, RGResourceUsage{.State = D3D12_RESOURCE_STATE_COPY_DEST});
-			copyPass.Execute = [testIn = testIn.GetResourceView(), backBufferIn = backBufferIn.GetResourceView()](CommandContext& cmd) mutable
-			{ 
-					cmd->CopyResource(&backBufferIn->DXRes, &testIn->DXRes); 
-			};
-		}
-		builder.BuildAndExecute(*this, cmdContext);
-		dxRes.State = poolRes->AsView()->State;
-	}
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
-	//BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
-	//				   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
+	BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
+					   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
 	TransitionVec(dxRes, D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
 	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
 	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);
@@ -314,15 +279,13 @@ void Renderer::Render(RenderFrameRecord& record)
 	ExecuteCommandContext(*activeCmdContext);
 	
 	
-	
-	
-	
-	
-	
 	// Present
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
 	Swapchain.Swapchain->Present(1, 0/*DXGI_PRESENT_ALLOW_TEARING*/);
 	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
+
+
+	record.EndPipeline();
 }
 
 void Renderer::FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command)
