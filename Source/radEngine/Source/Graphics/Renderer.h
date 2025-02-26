@@ -101,7 +101,7 @@ struct PipelineData
 struct PipelineUserBase
 {
 	~PipelineUserBase();
-	std::vector<Ref<struct PipelinePassBase>> RegisteredPasses;
+	std::vector<Ref<struct PipelineBase>> RegisteredPasses;
 	// No need to store it here, it's stored in the PipelineDataHolder, but its a stack & finding the data would be harder, so this is ok too
 	PipelineData* Data = nullptr;
 };
@@ -120,6 +120,15 @@ struct PipelineUser : PipelineUserBase
 
 struct PipelineBase
 {
+	template <typename U, bool = std::is_void_v<U>> struct VoidPtrOrRef
+	{
+		using type = U&;
+	};
+	template <typename U> struct VoidPtrOrRef<U, true>
+	{
+		using type = void*;
+	};
+
 	PipelineBase(std::string name) : Name(std::move(name)) {}
 	virtual ~PipelineBase() = default;
 	std::string Name;
@@ -127,12 +136,18 @@ struct PipelineBase
 	std::vector<Ref<PipelineBase>> SubPipelines;
 	bool Recording = false;
 	std::vector<Ref<PipelineUserBase>> Users;
+	std::vector<std::function<void(void* passData, void* userData)>> Commands;
 
-	virtual void BeginRecording() {}
-	virtual void EndRecording() {}
 
 	virtual PipelineData GetPassData(std::stack<PipelineData>& pipelineDataStack) = 0;
 	virtual void Run(std::stack<PipelineData>& pipelineDataStack, std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
+
+	template <typename U> 
+	void RegisterUser(PipelineUser<U>& user, std::function<void(void* passData, VoidPtrOrRef<U> userData)> command)
+	{
+		PipelinePassBase::RegisterUser(user, [command = std::move(command)](void* passData, void* userData)
+				{ command(passData, *static_cast<U*>(userData)); });
+	}
 
 	void DoBeginRecording()
 	{
@@ -180,87 +195,68 @@ struct PipelineBase
 
 	virtual void UnregisterUser(PipelineUserBase& user)
 	{
-		std::erase_if(Users, [&user](const Ref<PipelineUserBase>& u) { return &u == &user; });
-		std::erase_if(user.RegisteredPasses, [this](const Ref<PipelinePassBase>& pass) { return &pass == this; });
+		auto it = std::find(Users.begin(), Users.end(), user);
+		if (it == Users.end())
+			return;
+		Commands.erase(Commands.begin() + std::distance(Users.begin(), it));
+		Users.erase(it);
+		std::erase_if(user.RegisteredPasses, [this](const Ref<PipelineBase>& pass) { return &pass == this; });
 	}
 
   protected:
-	void RegisterUser(Ref<PipelineUserBase> user)
+	virtual void BeginRecording() {}
+	virtual void EndRecording() {}
+	void RegisterUser(PipelineUserBase& user, std::function<void(void* passData, void* userData)> command)
 	{
 		Users.push_back(user);
-		user->RegisteredPasses.push_back(*this);
-	}
-	size_t GetUserIndex(PipelineUserBase& user)
-	{
-		return std::distance(Users.begin(), std::find(Users.begin(), Users.end(), Ref(user)));
+		Commands.push_back(std::move(command));
+		user.RegisteredPasses.push_back(*this);
 	}
 };
 
-template<typename T>
-struct PipelinePass : PipelinePassBase
+template<typename T, typename... ParentPipelines> 
+struct Pipeline : PipelineBase
 {
-	template <typename U, bool = std::is_void_v<U>> 
-	struct VoidPtrOrRef
-	{
-		using type = U&;
-	};
-	template <typename U> 
-	struct VoidPtrOrRef<U, true>
-	{
-		using type = void*;
-	};
+	using ValueType = T;
 
-	template<typename U>
-	using CommandT = std::conditional_t<std::is_same_v<T, void>, std::function<void(VoidPtrOrRef<U> userData, RenderGraphBuilder& rgBuilder)>,
-		std::function<void(VoidPtrOrRef<T> passData,  VoidPtrOrRef<U> userData, RenderGraphBuilder& rgBuilder)>>;
-
-	std::vector<CommandT<void>> Commands;
-	template <typename U>
-	void RegisterUser(PipelineUser<U>& user, CommandT<U> command)
+	Pipeline(std::string name, ParentPipelines&... parentPipelines)
+		: PipelineBase(std::move(name)), ParentPipelines{parentPipelines...}
 	{
-		PipelinePassBase::RegisterUser(user);
-		if constexpr (std::is_same_v<T, void>)
-			Commands.push_back(
-				[command = std::move(command)](void* userData, RenderGraphBuilder& rgBuilder)
-				{ command(userData, rgBuilder); });
-		else
-			Commands.push_back([command = std::move(command)](T& passData, void* userData, RenderGraphBuilder& rgBuilder)
-						   { command(passData, *static_cast<U*>(userData), rgBuilder); });
 	}
-
-	void UnregisterUser(PipelineUserBase& user) override
+	PipelineData GetPassData(std::stack<PipelineData>& pipelineDataStack) override
 	{
-		auto index = GetUserIndex(user);
-		Commands.erase(Commands.begin() + index);
-		PipelinePassBase::UnregisterUser(user);
-	}
-
-protected:
-
-	template<typename TT = T>
-		requires std::is_same_v<TT, void>
-	void Run(RenderGraphBuilder& rgBuilder)
-	{
-	  for (size_t i = 0; i < Users.size(); i++)
-	  {
-		  auto& user = *Users[i];
-		  void* userData = user.Data->GetData();
-		  Commands[i](userData, rgBuilder);
-	  }
-	}
-
-	template<typename TT = T>
-		requires !std::is_same_v<T, void>
-	void Run(VoidPtrOrRef<TT> passData, RenderGraphBuilder& rgBuilder)
-	{
-		for (size_t i = 0; i < Users.size(); i++)
+		PipelineData result;
+		result.Name = Name;
+		result.GetData = [this, &pipelineDataStack]() -> void*
 		{
-			auto& user = *Users[i];
-			void* userData = user.Data->GetData();
-			Commands[i](passData, &userData, rgBuilder);
-		}
+			T data;
+			for (auto& parentPipeline : ParentPipelines)
+			{
+				auto parentData = parentPipeline.GetPassData(pipelineDataStack);
+				data.ParentData.push_back(parentData);
+			}
+			return &data;
+		};
+		return result;
 	}
-};
+
+	virtual void Run(ParentPipelines::ValueType&... parentData,
+					 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
+
+	void Run(std::stack<PipelineData>& pipelineDataStack,
+			 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) override
+	{
+		T data;
+
+		for (auto& parentPipeline : ParentPipelines)
+		{
+			auto parentData = parentPipeline.GetPassData(pipelineDataStack);
+			data.ParentData.push_back(parentData);
+		}
+		Run(data, pipelineUserDatas);
+	}
+	std::tuple<ParentPipelines&...> ParentPipelines;
+}
 
 PipelineUserBase::~PipelineUserBase()
 {
@@ -293,7 +289,7 @@ struct RenderFrameRecord
 	RenderView View;
 	RenderLightInfo LightInfo;
 	std::deque<RenderCommand> Commands;
-	std::unordered_map<Ref<PipelineDataHolder>, decltype(PipelineDataHolder::Data)> PipelineDatas;
+	std::unordered_map<Ref<PipelineBase>, decltype(PipelineBase::Data)> PipelineDatas;
 
 	template <typename T> void Push(TypedRenderCommand<T> command)
 	{
