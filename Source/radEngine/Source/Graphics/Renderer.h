@@ -139,8 +139,9 @@ struct PipelineBase
 	std::vector<std::function<void(void* passData, void* userData)>> Commands;
 
 
-	virtual PipelineData GetPassData(std::stack<PipelineData>& pipelineDataStack) = 0;
-	virtual void Run(std::stack<PipelineData>& pipelineDataStack, std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
+	virtual PipelineData GetPassData(std::deque<PipelineData>& pipelineDataStack) = 0;
+	virtual void Run(std::deque<PipelineData>& pipelineDataStack,
+					 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
 
 	template <typename U> 
 	void RegisterUser(PipelineUser<U>& user, std::function<void(void* passData, VoidPtrOrRef<U> userData)> command)
@@ -223,48 +224,46 @@ struct Pipeline : PipelineBase
 		: PipelineBase(std::move(name)), ParentPipelines{parentPipelines...}
 	{
 	}
-	PipelineData GetPassData(std::stack<PipelineData>& pipelineDataStack) override
+	PipelineData GetPassData(std::deque<PipelineData>& pipelineDataStack) override
 	{
-		PipelineData result;
-		result.Name = Name;
-		result.GetData = [this, &pipelineDataStack]() -> void*
-		{
-			T data;
-			for (auto& parentPipeline : ParentPipelines)
-			{
-				auto parentData = parentPipeline.GetPassData(pipelineDataStack);
-				data.ParentData.push_back(parentData);
-			}
-			return &data;
-		};
-		return result;
+		constexpr size_t parentCount = sizeof...(ParentPipelines);
+
+		assert(pipelineDataStack.size() >= parentCount);
+
+		auto val = GetPipelineDataImpl(pipelineDataStack, std::index_sequence_for<ParentPipelines...>{});
+	
+		return {Name, [val = std::move(val)]() { return &val; }};
+	}
+
+	void Run(std::deque<PipelineData>& pipelineDataStack,
+			 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) override
+	{
+		RunImpl(pipelineDataStack, std::index_sequence_for<ParentPipelines...>{});
 	}
 
 	virtual void Run(ParentPipelines::ValueType&... parentData,
 					 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
 
-	void Run(std::stack<PipelineData>& pipelineDataStack,
-			 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) override
-	{
-		T data;
+	virtual T GetPassData(ParentPipelines::ValueType&... parentData) = 0;
 
-		for (auto& parentPipeline : ParentPipelines)
-		{
-			auto parentData = parentPipeline.GetPassData(pipelineDataStack);
-			data.ParentData.push_back(parentData);
-		}
-		Run(data, pipelineUserDatas);
-	}
 	std::tuple<ParentPipelines&...> ParentPipelines;
-}
+
+  private:
+	template<size_t... Is> T GetPipelineDataImpl(std::deque<PipelineData>& parentDataStack, std::index_sequence<Is...>)
+	{
+		return GetPassData(*static_cast<typename ParentPipelines::ValueType*>(parentDataStack[parentDataStack.size() - 1 - Is].GetData())...);
+	}
+	template <size_t... Is> void RunImpl(std::deque<PipelineData>& parentDataStack, std::index_sequence<Is...>)
+	{
+		Run(*static_cast<typename ParentPipelines::ValueType*>(
+			parentDataStack[parentDataStack.size() - 1 - Is].GetData())...);
+	}
+};
 
 PipelineUserBase::~PipelineUserBase()
 {
 	while (!RegisteredPasses.empty())
-	{
-		auto pass = RegisteredPasses.back();
-		pass->UnregisterUser(*this);
-	}
+		RegisteredPasses.back()->UnregisterUser(*this);
 }
 
 struct CommandRecord
@@ -332,12 +331,12 @@ struct Swapchain
 	DescriptorAllocation BackBufferRGBRTVs;
 };
 
-struct ComputePipeline : PipelinePass<void>
+struct ComputePipeline : Pipeline<void>
 {
-
+	
 };
 
-struct GraphicsPipeline : PipelinePass<void>
+struct GraphicsPipeline : Pipeline<void>
 {
 	void Run(RenderFrameRecord& frameRec, RenderGraphBuilder& rgBuilder)
 	{
@@ -345,7 +344,7 @@ struct GraphicsPipeline : PipelinePass<void>
 	}
 };
 
-struct FramePipeline : PipelinePass<void>
+struct FramePipeline : Pipeline<void>
 {
 	ComputePipeline ComputePipeline;
 	GraphicsPipeline GraphicsPipeline;
