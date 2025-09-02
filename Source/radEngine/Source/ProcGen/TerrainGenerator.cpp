@@ -18,14 +18,12 @@ size_t GetIndex(size_t x, size_t y, size_t width)
 	return x + y * width;
 }
 
-template <typename T> struct MapVector : std::vector<T>
+template <typename T>
+struct MapVector : std::vector<T>
 {
 	size_t X, Y;
 	MapVector(size_t x, size_t y) : std::vector<T>(x * y), X(x), Y(y) {}
-	T& operator()(size_t x, size_t y)
-	{
-		return this->at(GetIndex(x, y, X));
-	}
+	T& operator()(size_t x, size_t y) { return this->at(GetIndex(x, y, X)); }
 };
 
 static std::mt19937 generator = std::mt19937();
@@ -128,7 +126,8 @@ void diamondSquare(MapVector<float>& map, int size, float roughness)
 bool TerrainErosionSystem::Setup()
 {
 	HeightMapToTerrainMaterialPSO = PipelineState::CreateBindlessComputePipeline(
-		"HeightToTerrainMaterialPipeline", Renderer,
+		"HeightToTerrainMaterialPipeline",
+		Renderer,
 		RAD_SHADERS_DIR L"Compute/Terrain/HeightMapToTerrainMaterial.hlsl");
 	HeightMapToWaterMaterialPSO = PipelineState::CreateBindlessComputePipeline(
 		"HeightToWaterMaterialPipeline", Renderer, RAD_SHADERS_DIR L"Compute/Terrain/HeightMapToWaterMaterial.hlsl");
@@ -147,7 +146,8 @@ bool TerrainErosionSystem::Setup()
 	HydrolicErosionAndDepositionPSO = PipelineState::CreateBindlessComputePipeline(
 		"HydrolicErosionAndDeposition", Renderer, RAD_SHADERS_DIR L"Compute/Terrain/H4ErosionAndDeposition.hlsl");
 	HydrolicSedimentTransportationAndEvaporationPSO = PipelineState::CreateBindlessComputePipeline(
-		"HydrolicSedimentTransportationAndEvaporation", Renderer,
+		"HydrolicSedimentTransportationAndEvaporation",
+		Renderer,
 		RAD_SHADERS_DIR L"Compute/Terrain/H5SedimentTransportationAndEvaporation.hlsl");
 
 	{
@@ -178,8 +178,8 @@ bool TerrainErosionSystem::Setup()
 
 		deferredPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-		TerrainDeferredPSO = PipelineState::Create("TerrainRender", Renderer.GetDevice(), deferredPSStream,
-												   &Renderer.ShaderManager->BindlessRootSignature);
+		TerrainDeferredPSO = PipelineState::Create(
+			"TerrainRender", Renderer.GetDevice(), deferredPSStream, &Renderer.ShaderManager->BindlessRootSignature);
 		struct TerraionDepthOnlyPipelineStateStream : PipelineStateStreamBase
 		{
 			CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
@@ -196,7 +196,9 @@ bool TerrainErosionSystem::Setup()
 
 		depthOnlyPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-		TerrainDepthOnlyPSO = PipelineState::Create("TerrainDepthOnly", Renderer.GetDevice(), depthOnlyPSStream,
+		TerrainDepthOnlyPSO = PipelineState::Create("TerrainDepthOnly",
+													Renderer.GetDevice(),
+													depthOnlyPSStream,
 													&Renderer.ShaderManager->BindlessRootSignature);
 	}
 
@@ -214,7 +216,7 @@ bool TerrainErosionSystem::Setup()
 		} waterPSStream;
 
 		waterPSStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		
+
 		waterPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 		auto depthStencilDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 		depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
@@ -239,8 +241,8 @@ bool TerrainErosionSystem::Setup()
 		rtvFormats.RTFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 		waterPSStream.RTVFormats = rtvFormats;
 
-		WaterForwardPSO = PipelineState::Create("WaterRender", Renderer.GetDevice(), waterPSStream,
-												&Renderer.ShaderManager->BindlessRootSignature);
+		WaterForwardPSO = PipelineState::Create(
+			"WaterRender", Renderer.GetDevice(), waterPSStream, &Renderer.ShaderManager->BindlessRootSignature);
 	}
 	{
 		struct WaterPrepassPipelineStateStream : PipelineStateStreamBase
@@ -273,8 +275,8 @@ bool TerrainErosionSystem::Setup()
 
 		waterPrepassPSStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-		WaterPrePassPSO = PipelineState::Create("WaterPrepass", Renderer.GetDevice(), waterPrepassPSStream,
-													&Renderer.ShaderManager->BindlessRootSignature);
+		WaterPrePassPSO = PipelineState::Create(
+			"WaterPrepass", Renderer.GetDevice(), waterPrepassPSStream, &Renderer.ShaderManager->BindlessRootSignature);
 	}
 
 	return true;
@@ -306,13 +308,12 @@ std::vector<float> TerrainErosionSystem::CreateDiamondSquareHeightMap(uint32_t w
 CTerrain TerrainErosionSystem::CreateTerrain(uint32_t heightMapWidth)
 {
 	generator = std::mt19937(time(0));
-	auto createInfo = 
-		ResourceCreateHelper::Texture2D(heightMapWidth, heightMapWidth, DXGI_FORMAT_R32_FLOAT,
-													  ResourcePresetFlags::UnorderedAccess);
+	auto createInfo = ResourceCreateHelper::Texture2D(
+		heightMapWidth, heightMapWidth, DXGI_FORMAT_R32_FLOAT, ResourcePresetFlags::UnorderedAccess);
 	auto rgbaCreateInfo = ResourceCreateHelper::Texture2D(
 		heightMapWidth, heightMapWidth, DXGI_FORMAT_R32G32B32A32_FLOAT, ResourcePresetFlags::UnorderedAccess);
-	auto rgCreateInfo = ResourceCreateHelper::Texture2D(heightMapWidth, heightMapWidth, DXGI_FORMAT_R32G32_FLOAT,
-														ResourcePresetFlags::UnorderedAccess);
+	auto rgCreateInfo = ResourceCreateHelper::Texture2D(
+		heightMapWidth, heightMapWidth, DXGI_FORMAT_R32G32_FLOAT, ResourcePresetFlags::UnorderedAccess);
 	return CTerrain{
 		.HeightMap = Renderer.ResourcePool->GetResource(createInfo, "HeightMap"),
 		.WaterHeightMap = Renderer.ResourcePool->GetResource(createInfo, "WaterHeightMap"),
@@ -325,14 +326,14 @@ CTerrain TerrainErosionSystem::CreateTerrain(uint32_t heightMapWidth)
 	};
 }
 
-void TerrainErosionSystem::GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder, CTerrain& terrain,
+void TerrainErosionSystem::GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder,
+												 CTerrain& terrain,
 												 CErosionParameters const& parameters,
 												 OptionalRef<CTerrainRenderable> terrainRenderable,
 												 OptionalRef<CWaterRenderable> waterRenderable)
 {
 	// create heightmap
-	constexpr auto scaleHeightMaps = [](float* data, size_t size, float min, float max)
-	{
+	constexpr auto scaleHeightMaps = [](float* data, size_t size, float min, float max) {
 		float valsMin = FLT_MAX, valsMax = FLT_MIN;
 		for (size_t i = 0; i < size; i++)
 		{
@@ -350,8 +351,8 @@ void TerrainErosionSystem::GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder, 
 		scaleHeightMaps(heightMapVals, width * height, parameters.MinHeight, parameters.MaxHeight);
 		std::vector<float> heightMapValsVec(heightMapVals, heightMapVals + width * height);
 		stbi_image_free(heightMapVals);
-		rghelpers::UploadTextureData(rgBuilder, rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView()),
-									 std::move(heightMapValsVec));
+		rghelpers::UploadTextureData(
+			rgBuilder, rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView()), std::move(heightMapValsVec));
 	}
 	else
 	{
@@ -362,10 +363,9 @@ void TerrainErosionSystem::GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder, 
 		auto heightMapVals =
 			CreateDiamondSquareHeightMap(terrain.HeightMap->Info().CreateInfo.Desc.Width, parameters.InitialRoughness);
 		scaleHeightMaps(heightMapVals.data(), heightMapVals.size(), parameters.MinHeight, parameters.MaxHeight);
-		rghelpers::UploadTextureData(rgBuilder, rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView()),
-									   std::move(heightMapVals));
+		rghelpers::UploadTextureData(
+			rgBuilder, rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView()), std::move(heightMapVals));
 	}
-
 
 	rghelpers::ClearUnorderedAccessViewFloat(
 		rgBuilder, rgBuilder.GetOrAddExternalResource(terrain.WaterHeightMap->AsView()), {0.f, 0.f, 0.f, 0.f});
@@ -383,7 +383,8 @@ void TerrainErosionSystem::GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder, 
 		GenerateWaterMaterial(rgBuilder, terrain, parameters, *waterRenderable);
 }
 
-void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain& terrain,
+void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder,
+										CTerrain& terrain,
 										CErosionParameters const& parameters,
 										OptionalRef<CTerrainRenderable> terrainRenderable,
 										OptionalRef<CWaterRenderable> waterRenderable)
@@ -409,10 +410,10 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 		float crossSection = parameters.PipeCrossSection * pipeLength * pipeLength;
 		{
 			auto& addWaterPass = rgBuilder.AddPass("AddWater");
-			auto& inWater = addWaterPass.AddInResourceSetOut(terrain.WaterHeightMap->GetName(), waterHeightMap,
+			auto& inWater = addWaterPass.AddInResourceSetOut(terrain.WaterHeightMap->GetName(),
+															 waterHeightMap,
 															 RGResourceUsage::UnorderedAccessView(waterHeightMap));
-			addWaterPass.Execute = [&](CommandContext& cmd)
-			{
+			addWaterPass.Execute = [&](CommandContext& cmd) {
 				hlsl::HydrolicAddWaterResources addWaterResources{
 					.WaterMapIndex = inWater.GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
 					.RainRate = parameters.RainRate,
@@ -425,14 +426,13 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 		}
 		{
 			auto& calculateOutfluxPass = rgBuilder.AddPass("CalculateOutflux");
-			auto& inHeight = calculateOutfluxPass.AddInResourceSetOut(terrain.HeightMap->GetName(), heightMap,
-																	  RGResourceUsage::ShaderResourceView(heightMap));
+			auto& inHeight = calculateOutfluxPass.AddInResourceSetOut(
+				terrain.HeightMap->GetName(), heightMap, RGResourceUsage::ShaderResourceView(heightMap));
 			auto& inWater = calculateOutfluxPass.AddInResourceSetOut(
 				terrain.WaterHeightMap->GetName(), waterHeightMap, RGResourceUsage::ShaderResourceView(waterHeightMap));
 			auto& outFlux = calculateOutfluxPass.AddInResourceSetOut(
 				terrain.WaterOutflux->GetName(), waterOutflux, RGResourceUsage::UnorderedAccessView(waterOutflux));
-			calculateOutfluxPass.Execute = [&](CommandContext& cmd)
-			{
+			calculateOutfluxPass.Execute = [&](CommandContext& cmd) {
 				hlsl::HydrolicCalculateOutfluxResources calculateOutfluxResources{
 					.InHeightMapIndex = inHeight.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
 					.InWaterMapIndex = inWater.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
@@ -448,12 +448,12 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 			auto& inFlux = updateWaterVelocityPass.AddInResourceSetOut(
 				terrain.WaterOutflux->GetName(), waterOutflux, RGResourceUsage::ShaderResourceView(waterOutflux));
 			auto& outWater =
-				updateWaterVelocityPass.AddInResourceSetOut(terrain.WaterHeightMap->GetName(), waterHeightMap,
+				updateWaterVelocityPass.AddInResourceSetOut(terrain.WaterHeightMap->GetName(),
+															waterHeightMap,
 															RGResourceUsage::UnorderedAccessView(waterHeightMap));
 			auto& outVelocity = updateWaterVelocityPass.AddInResourceSetOut(
 				terrain.VelocityMap->GetName(), velocityMap, RGResourceUsage::UnorderedAccessView(velocityMap));
-			updateWaterVelocityPass.Execute = [&](CommandContext& cmd)
-			{
+			updateWaterVelocityPass.Execute = [&](CommandContext& cmd) {
 				hlsl::HydrolicUpdateWaterVelocityResources updateWaterVelocityResources{
 					.InFluxTextureIndex = inFlux.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
 					.OutWaterMapIndex = outWater.GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
@@ -461,8 +461,8 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 						outVelocity.GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
 					.PipeLength = pipeLength,
 					.DeltaTime = parameters.DeltaTime};
-				HydrolicUpdateWaterVelocityPSO.ExecuteCompute(cmd, updateWaterVelocityResources, width / 8, height / 8,
-															  1);
+				HydrolicUpdateWaterVelocityPSO.ExecuteCompute(
+					cmd, updateWaterVelocityResources, width / 8, height / 8, 1);
 			};
 		}
 		{
@@ -480,8 +480,7 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 				tempHeightMap->Name, tempHeightMap, RGResourceUsage::UnorderedAccessView(tempHeightMap));
 			auto& outSediment = erosionAndDepositionPass.AddInResourceSetOut(
 				terrain.SedimentMap->GetName(), sedimentMap, RGResourceUsage::UnorderedAccessView(sedimentMap));
-			erosionAndDepositionPass.Execute = [&](CommandContext& cmd)
-			{
+			erosionAndDepositionPass.Execute = [&](CommandContext& cmd) {
 				hlsl::HydrolicErosionAndDepositionResources erosionAndDepositionResources{
 					.InVelocityMapIndex = inVelocity.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
 					.InOldHeightMapIndex = inHeight.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
@@ -500,8 +499,8 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 					.MaximumHardness = parameters.MaximumSoilHardness,
 					.MaximalErosionDepth = parameters.MaximalErosionDepth,
 					.DeltaTime = parameters.DeltaTime};
-				HydrolicErosionAndDepositionPSO.ExecuteCompute(cmd, erosionAndDepositionResources, width / 8,
-															   height / 8, 1);
+				HydrolicErosionAndDepositionPSO.ExecuteCompute(
+					cmd, erosionAndDepositionResources, width / 8, height / 8, 1);
 			};
 			rghelpers::CopyResource(rgBuilder, tempHeightMap, heightMap);
 		}
@@ -514,10 +513,10 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 			auto& passTempSediment = sedimentTransportationAndEvaporationPass.AddInResourceSetOut(
 				tempSedimentMap->Name, tempSedimentMap, RGResourceUsage::UnorderedAccessView(tempSedimentMap));
 			auto& inWater = sedimentTransportationAndEvaporationPass.AddInResourceSetOut(
-				terrain.WaterHeightMap->GetName(), waterHeightMap,
+				terrain.WaterHeightMap->GetName(),
+				waterHeightMap,
 				RGResourceUsage::UnorderedAccessView(waterHeightMap));
-			sedimentTransportationAndEvaporationPass.Execute = [&](CommandContext& cmd)
-			{
+			sedimentTransportationAndEvaporationPass.Execute = [&](CommandContext& cmd) {
 				hlsl::HydrolicSedimentTransportationAndEvaporationResources
 					sedimentTransportationAndEvaporationResources{
 						.InVelocityMapIndex =
@@ -538,16 +537,15 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 		}
 		{
 			auto& thermalOutfluxPass = rgBuilder.AddPass("ThermalOutflux");
-			auto& inHeight = thermalOutfluxPass.AddInResourceSetOut(terrain.HeightMap->GetName(), heightMap,
-																	RGResourceUsage::ShaderResourceView(heightMap));
-			auto& inHardness = thermalOutfluxPass.AddInResourceSetOut(terrain.HardnessMap->GetName(), hardnessMap,
-																	  RGResourceUsage::ShaderResourceView(hardnessMap));
-			auto& outFlux1 = thermalOutfluxPass.AddInResourceSetOut(terrain.ThermalPipe1->GetName(), thermalPipe1,
-																	RGResourceUsage::UnorderedAccessView(thermalPipe1));
-			auto& outFlux2 = thermalOutfluxPass.AddInResourceSetOut(terrain.ThermalPipe2->GetName(), thermalPipe2,
-																	RGResourceUsage::UnorderedAccessView(thermalPipe2));
-			thermalOutfluxPass.Execute = [&](CommandContext& cmd)
-			{
+			auto& inHeight = thermalOutfluxPass.AddInResourceSetOut(
+				terrain.HeightMap->GetName(), heightMap, RGResourceUsage::ShaderResourceView(heightMap));
+			auto& inHardness = thermalOutfluxPass.AddInResourceSetOut(
+				terrain.HardnessMap->GetName(), hardnessMap, RGResourceUsage::ShaderResourceView(hardnessMap));
+			auto& outFlux1 = thermalOutfluxPass.AddInResourceSetOut(
+				terrain.ThermalPipe1->GetName(), thermalPipe1, RGResourceUsage::UnorderedAccessView(thermalPipe1));
+			auto& outFlux2 = thermalOutfluxPass.AddInResourceSetOut(
+				terrain.ThermalPipe2->GetName(), thermalPipe2, RGResourceUsage::UnorderedAccessView(thermalPipe2));
+			thermalOutfluxPass.Execute = [&](CommandContext& cmd) {
 				hlsl::ThermalOutfluxResources outfluxResources{
 					.InHeightMapIndex = inHeight.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
 					.InHardnessMapIndex = inHardness.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
@@ -563,14 +561,13 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain&
 		}
 		{
 			auto& thermalDepositPass = rgBuilder.AddPass("ThermalDeposit");
-			auto& inFlux1 = thermalDepositPass.AddInResourceSetOut(terrain.ThermalPipe1->GetName(), thermalPipe1,
-																   RGResourceUsage::ShaderResourceView(thermalPipe1));
-			auto& inFlux2 = thermalDepositPass.AddInResourceSetOut(terrain.ThermalPipe2->GetName(), thermalPipe2,
-																   RGResourceUsage::ShaderResourceView(thermalPipe2));
-			auto& outHeight = thermalDepositPass.AddInResourceSetOut(terrain.HeightMap->GetName(), heightMap,
-																	 RGResourceUsage::UnorderedAccessView(heightMap));
-			thermalDepositPass.Execute = [&](CommandContext& cmd)
-			{
+			auto& inFlux1 = thermalDepositPass.AddInResourceSetOut(
+				terrain.ThermalPipe1->GetName(), thermalPipe1, RGResourceUsage::ShaderResourceView(thermalPipe1));
+			auto& inFlux2 = thermalDepositPass.AddInResourceSetOut(
+				terrain.ThermalPipe2->GetName(), thermalPipe2, RGResourceUsage::ShaderResourceView(thermalPipe2));
+			auto& outHeight = thermalDepositPass.AddInResourceSetOut(
+				terrain.HeightMap->GetName(), heightMap, RGResourceUsage::UnorderedAccessView(heightMap));
+			thermalDepositPass.Execute = [&](CommandContext& cmd) {
 				hlsl::ThermalDepositResources depositResources{
 					.InFluxTextureIndex1 = inFlux1.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
 					.InFluxTextureIndex2 = inFlux2.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
@@ -609,7 +606,8 @@ CIndexedPlane TerrainErosionSystem::CreatePlane(RenderGraphBuilder& rgBuilder, u
 	auto& indicesRes = Renderer.ResourcePool->GetResource(
 		ResourceCreateHelper::Buffer(indices.size() * sizeof(uint32_t), ResourcePresetFlags::IndexBuffer),
 		"PlaneIdxBuffer");
-	auto& indicesDescriptor = Renderer.ResourcePool->GetDescriptor(indicesRes.AsView(), DescriptorCreateHelper::IndexBufferView(indicesRes->CreateInfo, DXGI_FORMAT_R32_UINT));
+	auto& indicesDescriptor = Renderer.ResourcePool->GetDescriptor(
+		indicesRes.AsView(), DescriptorCreateHelper::IndexBufferView(indicesRes->CreateInfo, DXGI_FORMAT_R32_UINT));
 	CIndexedPlane plane{.ResX = resX, .ResY = resY, .Indices = indicesRes, .IndexBufferView = indicesDescriptor};
 
 	rghelpers::UploadBufferData(rgBuilder, rgBuilder.GetOrAddExternalResource(plane.Indices->AsView()), indices);
@@ -618,15 +616,19 @@ CIndexedPlane TerrainErosionSystem::CreatePlane(RenderGraphBuilder& rgBuilder, u
 
 CTerrainRenderable TerrainErosionSystem::CreateTerrainRenderable(CTerrain& terrain)
 {
-	CTerrainRenderable renderable
-	{
+	CTerrainRenderable renderable{
 		.HeightMap = terrain.HeightMap->AsView(),
 		.TerrainAlbedoTex = Renderer.ResourcePool->GetResource(
-			ResourceCreateHelper::Texture2D(1024, 1024, DXGI_FORMAT_R16G16B16A16_UNORM,
-											ResourcePresetFlags::UnorderedAccess | ResourcePresetFlags::MipMappedTexture),
+			ResourceCreateHelper::Texture2D(1024,
+											1024,
+											DXGI_FORMAT_R16G16B16A16_UNORM,
+											ResourcePresetFlags::UnorderedAccess |
+												ResourcePresetFlags::MipMappedTexture),
 			"TerrainAlbedo"),
 		.TerrainNormalMap = Renderer.ResourcePool->GetResource(
-			ResourceCreateHelper::Texture2D(1024, 1024, DXGI_FORMAT_R16G16B16A16_UNORM,
+			ResourceCreateHelper::Texture2D(1024,
+											1024,
+											DXGI_FORMAT_R16G16B16A16_UNORM,
 											ResourcePresetFlags::UnorderedAccess |
 												ResourcePresetFlags::MipMappedTexture),
 			"TerrainNormal"),
@@ -636,36 +638,43 @@ CTerrainRenderable TerrainErosionSystem::CreateTerrainRenderable(CTerrain& terra
 
 CWaterRenderable TerrainErosionSystem::CreateWaterRenderable(CTerrain& terrain)
 {
-	CWaterRenderable renderable
-	{
+	CWaterRenderable renderable{
 		.HeightMap = terrain.HeightMap->AsView(),
 		.WaterHeightMap = terrain.WaterHeightMap->AsView(),
 		.WaterAlbedoMap = Renderer.ResourcePool->GetResource(
-			ResourceCreateHelper::Texture2D(1024, 1024, DXGI_FORMAT_R16G16B16A16_UNORM,
+			ResourceCreateHelper::Texture2D(1024,
+											1024,
+											DXGI_FORMAT_R16G16B16A16_UNORM,
 											ResourcePresetFlags::UnorderedAccess |
 												ResourcePresetFlags::MipMappedTexture),
 			"WaterAlbedo"),
 		.WaterNormalMap = Renderer.ResourcePool->GetResource(
-			ResourceCreateHelper::Texture2D(1024, 1024, DXGI_FORMAT_R16G16B16A16_UNORM,
+			ResourceCreateHelper::Texture2D(1024,
+											1024,
+											DXGI_FORMAT_R16G16B16A16_UNORM,
 											ResourcePresetFlags::UnorderedAccess |
 												ResourcePresetFlags::MipMappedTexture),
 			"WaterNormal"),
-	
+
 	};
 	return renderable;
 }
 
-void TerrainErosionSystem::GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder, CTerrain& terrain,
-												   CErosionParameters const& parameters, CTerrainRenderable& renderable)
+void TerrainErosionSystem::GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder,
+												   CTerrain& terrain,
+												   CErosionParameters const& parameters,
+												   CTerrainRenderable& renderable)
 {
 	renderable.TotalLength = parameters.TotalLength;
 	cmdRecord.Push("GenerateTerrainMaterial",
-				   [terrainAlbedo = renderable.TerrainAlbedoTex, terrainNormal = renderable.TerrainNormalMap,
-					heightMap = terrain.HeightMap, totalLength = parameters.TotalLength,
+				   [terrainAlbedo = renderable.TerrainAlbedoTex,
+					terrainNormal = renderable.TerrainNormalMap,
+					heightMap = terrain.HeightMap,
+					totalLength = parameters.TotalLength,
 					dispatchSize = std::pair<uint32_t, uint32_t>(renderable.TerrainNormalMap->Info.Width / 8,
 																 renderable.TerrainNormalMap->Info.Height / 8),
-					pso = Ref(HeightMapToTerrainMaterialPSO), renderer = Ref(Renderer)](CommandContext& commandCtx)
-				   {
+					pso = Ref(HeightMapToTerrainMaterialPSO),
+					renderer = Ref(Renderer)](CommandContext& commandCtx) {
 					   TransitionVec()
 						   .Add(*terrainAlbedo, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 						   .Add(*terrainNormal, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
@@ -690,19 +699,23 @@ void TerrainErosionSystem::GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder
 				   });
 }
 
-void TerrainErosionSystem::GenerateWaterMaterial(CommandRecord& cmdRecord, CTerrain& terrain,
-												 CErosionParameters const& parameters, CWaterRenderable& renderable)
+void TerrainErosionSystem::GenerateWaterMaterial(CommandRecord& cmdRecord,
+												 CTerrain& terrain,
+												 CErosionParameters const& parameters,
+												 CWaterRenderable& renderable)
 {
 	renderable.TotalLength = parameters.TotalLength;
 	cmdRecord.Push("GenerateWaterMaterial",
-				   [waterAlbedo = renderable.WaterAlbedoMap, waterNormal = renderable.WaterNormalMap,
-					heightMap = terrain.HeightMap, waterHeightMap = terrain.WaterHeightMap,
+				   [waterAlbedo = renderable.WaterAlbedoMap,
+					waterNormal = renderable.WaterNormalMap,
+					heightMap = terrain.HeightMap,
+					waterHeightMap = terrain.WaterHeightMap,
 					sedimentMap = terrain.SedimentMap,
 					totalLength = parameters.TotalLength,
 					dispatchSize = std::pair<uint32_t, uint32_t>(renderable.WaterNormalMap->Info.Width / 8,
 																 renderable.WaterNormalMap->Info.Height / 8),
-					pso = Ref(HeightMapToWaterMaterialPSO), renderer = Ref(Renderer)](CommandContext& commandCtx)
-				   {
+					pso = Ref(HeightMapToWaterMaterialPSO),
+					renderer = Ref(Renderer)](CommandContext& commandCtx) {
 					   TransitionVec()
 						   .Add(*waterAlbedo, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 						   .Add(*waterNormal, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
@@ -732,7 +745,8 @@ void TerrainErosionSystem::GenerateWaterMaterial(CommandRecord& cmdRecord, CTerr
 
 void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputMan, RenderGraphBuilder& rgBuilder)
 {
-	auto erosionView = registry.view<ecs::CSceneTransform, CIndexedPlane, CTerrainRenderable, CTerrain, CErosionParameters>();
+	auto erosionView =
+		registry.view<ecs::CSceneTransform, CIndexedPlane, CTerrainRenderable, CTerrain, CErosionParameters>();
 	for (auto entity : erosionView)
 	{
 		auto& terrain = erosionView.get<CTerrain>(entity);
@@ -770,11 +784,16 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 		terrainRenderDataVec.push_back(terrainRenderData);
 	}
 
-	frameRecord.Push(TypedRenderCommand<TerrainRenderData>{
-		.Name = "TerrainRender",
-		.Data = std::move(terrainRenderDataVec),
-		.DepthOnlyPass = [this](auto span, auto view, auto passData) { TerrainDepthOnlyPass(span, view, passData); },
-		.DeferredPass = [this](auto span, auto view, auto passData) { TerrainDeferredPass(span, view, passData); }});
+	frameRecord.Push(TypedRenderCommand<TerrainRenderData>{.Name = "TerrainRender",
+														   .Data = std::move(terrainRenderDataVec),
+														   .DepthOnlyPass =
+															   [this](auto span, auto view, auto passData) {
+																   TerrainDepthOnlyPass(span, view, passData);
+															   },
+														   .DeferredPass =
+															   [this](auto span, auto view, auto passData) {
+																   TerrainDeferredPass(span, view, passData);
+															   }});
 
 	auto waterRenderableView = registry.view<ecs::CSceneTransform, CIndexedPlane, CWaterRenderable>();
 
@@ -804,12 +823,18 @@ void TerrainErosionSystem::Update(entt::registry& registry, InputManager& inputM
 
 	frameRecord.Push(TypedRenderCommand<WaterRenderData>{.Name = "WaterRender",
 														 .Data = std::move(waterRenderDataVec),
-														 .WaterPass = [this](auto span, auto view, auto passData) { WaterPrepass(span, view, passData); },
-														 .ForwardPass = [this](auto span, auto view, auto passData)
-														 { WaterForwardPass(span, view, passData); }});
+														 .WaterPass =
+															 [this](auto span, auto view, auto passData) {
+																 WaterPrepass(span, view, passData);
+															 },
+														 .ForwardPass =
+															 [this](auto span, auto view, auto passData) {
+																 WaterForwardPass(span, view, passData);
+															 }});
 }
 
-void TerrainErosionSystem::TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
+void TerrainErosionSystem::TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects,
+												const RenderView& view,
 												DepthOnlyPassData& passData)
 {
 	auto& cmd = passData.CmdContext;
@@ -832,7 +857,8 @@ void TerrainErosionSystem::TerrainDepthOnlyPass(std::span<TerrainRenderData> ren
 	}
 }
 
-void TerrainErosionSystem::TerrainDeferredPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
+void TerrainErosionSystem::TerrainDeferredPass(std::span<TerrainRenderData> renderObjects,
+											   const RenderView& view,
 											   DeferredPassData& passData)
 {
 	auto& cmd = passData.CmdContext;
@@ -855,7 +881,8 @@ void TerrainErosionSystem::TerrainDeferredPass(std::span<TerrainRenderData> rend
 	}
 }
 
-void TerrainErosionSystem::WaterPrepass(std::span<WaterRenderData> renderObjects, const RenderView& view,
+void TerrainErosionSystem::WaterPrepass(std::span<WaterRenderData> renderObjects,
+										const RenderView& view,
 										WaterPassData& passData)
 {
 	auto& cmd = passData.CmdContext;
@@ -880,7 +907,8 @@ void TerrainErosionSystem::WaterPrepass(std::span<WaterRenderData> renderObjects
 	}
 }
 
-void TerrainErosionSystem::WaterForwardPass(std::span<WaterRenderData> renderObjects, const RenderView& view,
+void TerrainErosionSystem::WaterForwardPass(std::span<WaterRenderData> renderObjects,
+											const RenderView& view,
 											ForwardPassData& passData)
 {
 	auto& cmd = passData.CmdContext;

@@ -54,9 +54,13 @@ struct IndexBufferViewDesc
 	size_t Hash() const;
 };
 
-using CPUDescriptorDesc =
-	std::variant<ShaderResourceViewDesc, UnorderedAccessViewDesc, ConstantBufferViewDesc, RenderTargetViewDesc,
-				 DepthStencilViewDesc, VertexBufferViewDesc, IndexBufferViewDesc>;
+using CPUDescriptorDesc = std::variant<ShaderResourceViewDesc,
+									   UnorderedAccessViewDesc,
+									   ConstantBufferViewDesc,
+									   RenderTargetViewDesc,
+									   DepthStencilViewDesc,
+									   VertexBufferViewDesc,
+									   IndexBufferViewDesc>;
 
 using GPUDescriptorDesc = std::variant<ShaderResourceViewDesc, UnorderedAccessViewDesc, ConstantBufferViewDesc>;
 
@@ -110,7 +114,8 @@ struct ResourceCreateInfo
 #define RAD_DECLARE_HASH(Type)                                                                                         \
 	namespace std                                                                                                      \
 	{                                                                                                                  \
-	template <> struct hash<Type>                                                                                      \
+	template <>                                                                                                        \
+	struct hash<Type>                                                                                                  \
 	{                                                                                                                  \
 		size_t operator()(const Type& val) const                                                                       \
 		{                                                                                                              \
@@ -142,7 +147,7 @@ struct ResourcePool
 		Resource(Resource&&) = default;
 		Resource& operator=(Resource&&) = default;
 
-	  private:
+	private:
 		friend struct ResourcePool;
 		Resource(ResourceCreateInfo createInfo, ID3D12Resource& resource, D3D12_RESOURCE_STATES initialState)
 			: CreateInfo(createInfo), DXRes(resource), State(initialState)
@@ -153,36 +158,21 @@ struct ResourcePool
 	};
 	struct OwnedResource
 	{
-		operator Resource&()
-		{
-			return *InfoRef;
-		}
-		operator const Resource&() const
-		{
-			return *InfoRef;
-		}
-		Resource* operator->()
-		{
-			return &InfoRef;
-		}
-		const Resource* operator->() const
-		{
-			return &InfoRef;
-		}
+		operator Resource&() { return *InfoRef; }
+		operator const Resource&() const { return *InfoRef; }
+		Resource* operator->() { return &InfoRef; }
+		const Resource* operator->() const { return &InfoRef; }
 		std::string const& GetName() const
 		{
 			assert(AcquiredName.has_value());
 			return *AcquiredName;
 		}
 		PoolResourceView AsView();
-		Resource& Info() const
-		{
-			return *InfoRef;
-		}
+		Resource& Info() const { return *InfoRef; }
 		OwnedResource(OwnedResource&&) = default;
 		OwnedResource& operator=(OwnedResource&&) = default;
 
-	  private:
+	private:
 		friend struct ResourcePool;
 		OwnedResource(ComPtr<ID3D12Resource> resource, Resource& resInfo) : DXRes(resource), InfoRef(resInfo) {}
 		OwnedResource(const OwnedResource&) = delete;
@@ -193,31 +183,16 @@ struct ResourcePool
 	};
 	struct ExternalResource
 	{
-		operator Resource&()
-		{
-			return *Info;
-		}
-		operator const Resource&() const
-		{
-			return *Info;
-		}
-		Resource* operator->()
-		{
-			return &Info;
-		}
-		const Resource* operator->() const
-		{
-			return &Info;
-		}
-		std::string const& GetName() const
-		{
-			return Name;
-		}
+		operator Resource&() { return *Info; }
+		operator const Resource&() const { return *Info; }
+		Resource* operator->() { return &Info; }
+		const Resource* operator->() const { return &Info; }
+		std::string const& GetName() const { return Name; }
 		PoolResourceView AsView();
 		ExternalResource(ExternalResource&&) = default;
 		ExternalResource& operator=(ExternalResource&&) = default;
 
-	  private:
+	private:
 		ExternalResource(ID3D12Resource& resource, std::string name, Resource& resInfo)
 			: DXRes(resource), Name(std::move(name)), Info(resInfo)
 		{
@@ -229,17 +204,20 @@ struct ResourcePool
 		Ref<Resource> Info;
 		friend struct ResourcePool;
 	};
-	ResourcePool(Renderer& renderer);
+	ResourcePool(RadDevice& device);
 	OwnedResource& GetResource(const ResourceCreateInfo& createInfo, std::string acquireName);
 	void FreeResource(OwnedResource& resource);
-	ExternalResource& AddExternalResource(ID3D12Resource& resource, std::string name,
-										  const ResourceCreateInfo& createInfo, D3D12_RESOURCE_STATES initialState);
+	ExternalResource& AddExternalResource(ID3D12Resource& resource,
+										  std::string name,
+										  const ResourceCreateInfo& createInfo,
+										  D3D12_RESOURCE_STATES initialState);
 	void RemoveExternalResource(ExternalResource& resource);
 	ResourceDescriptor& GetDescriptor(const PoolResourceView& resource, const DescriptorDesc& desc);
 
-  private:
-	Renderer& Renderer;
-	Resource& AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo,
+private:
+	RadDevice& Device;
+	Resource& AddResourceInfo(ID3D12Resource& resource,
+							  const ResourceCreateInfo& createInfo,
 							  D3D12_RESOURCE_STATES initialState);
 	std::unordered_map<ResourceCreateInfo, std::deque<OwnedResource>> OwnedResources;
 	std::unordered_map<Ref<ID3D12Resource>, Resource> Resources;
@@ -248,42 +226,32 @@ struct ResourcePool
 };
 struct PoolResourceView
 {
-	operator ResourcePool::Resource&()
-	{
-		return *Info;
-	}
-	operator const ResourcePool::Resource&() const
-	{
-		return *Info;
-	}
-	ResourcePool::Resource* operator->()
-	{
-		return &Info;
-	}
-	const ResourcePool::Resource* operator->() const
-	{
-		return &Info;
-	}
-	std::string const& GetName() const
-	{
-		return Name;
-	}
+	operator ResourcePool::Resource&() { return *Info; }
+	operator const ResourcePool::Resource&() const { return *Info; }
+	ResourcePool::Resource* operator->() { return &Info; }
+	const ResourcePool::Resource* operator->() const { return &Info; }
+	std::string const& GetName() const { return Name; }
 	bool operator==(const PoolResourceView& Other) const
 	{
 		return &Info == &Other.Info && &Name == &Other.Name && UnderlyingResource == Other.UnderlyingResource;
 	}
-	size_t Hash() const
-	{
-		return HashCombine(Info, Name, UnderlyingResource);
-	}
+	size_t Hash() const { return HashCombine(Info, Name, UnderlyingResource); }
 	PoolResourceView(std::variant<Ref<ResourcePool::OwnedResource>, Ref<ResourcePool::ExternalResource>> resInfo)
-		: Info(std::visit([](auto&& arg) -> ResourcePool::Resource& { return *arg; }, resInfo)),
-		  Name(std::visit([](auto&& arg) -> std::string const& { return arg->GetName(); }, resInfo)),
+		: Info(std::visit(
+			  [](auto&& arg) -> ResourcePool::Resource& {
+				  return *arg;
+			  },
+			  resInfo)),
+		  Name(std::visit(
+			  [](auto&& arg) -> std::string const& {
+				  return arg->GetName();
+			  },
+			  resInfo)),
 		  UnderlyingResource(resInfo)
 	{
 	}
 
-  private:
+private:
 	Ref<ResourcePool::Resource> Info;
 	Ref<const std::string> Name;
 	std::variant<Ref<ResourcePool::OwnedResource>, Ref<ResourcePool::ExternalResource>> UnderlyingResource;
@@ -371,14 +339,22 @@ struct ResourceCreateHelper
 	static D3D12_HEAP_PROPERTIES ToHeapProps(ResourcePresetFlags flags);
 
 	static ResourceCreateInfo Buffer(uint64_t size, ResourcePresetFlags flags, BufferDetails details = {});
-	static ResourceCreateInfo Texture2D(uint32_t width, uint32_t height, DXGI_FORMAT format, ResourcePresetFlags flags,
+	static ResourceCreateInfo Texture2D(
+		uint32_t width, uint32_t height, DXGI_FORMAT format, ResourcePresetFlags flags, TextureDetails details = {});
+	static ResourceCreateInfo Texture2DArray(uint32_t width,
+											 uint32_t height,
+											 uint32_t arraySize,
+											 DXGI_FORMAT format,
+											 ResourcePresetFlags flags,
+											 TextureDetails details = {});
+	static ResourceCreateInfo Texture2DCube(
+		uint32_t width, uint32_t height, DXGI_FORMAT format, ResourcePresetFlags flags, TextureDetails details = {});
+	static ResourceCreateInfo Texture3D(uint32_t width,
+										uint32_t height,
+										uint32_t depth,
+										DXGI_FORMAT format,
+										ResourcePresetFlags flags,
 										TextureDetails details = {});
-	static ResourceCreateInfo Texture2DArray(uint32_t width, uint32_t height, uint32_t arraySize, DXGI_FORMAT format,
-											 ResourcePresetFlags flags, TextureDetails details = {});
-	static ResourceCreateInfo Texture2DCube(uint32_t width, uint32_t height, DXGI_FORMAT format,
-											ResourcePresetFlags flags, TextureDetails details = {});
-	static ResourceCreateInfo Texture3D(uint32_t width, uint32_t height, uint32_t depth, DXGI_FORMAT format,
-										ResourcePresetFlags flags, TextureDetails details = {});
 };
 enum class DescriptorCreateFlags : uint32_t
 {
@@ -395,12 +371,12 @@ enum class DescriptorCreateType
 RAD_DECLARE_ENUM_BITWISE_OPERATORS(DescriptorCreateFlags)
 struct DescriptorCreateHelper
 {
-	template <typename T> struct Details
+	template <typename T>
+	struct Details
 	{
 		T Desc = {};
 		DescriptorCreateFlags Flags;
-		union
-		{
+		union {
 			struct
 			{
 				uint64_t StartOffset = 0;
@@ -451,10 +427,7 @@ struct DescriptorCreateHelper
 	{
 		return DescriptorDesc(CPUDescriptorDesc{desc});
 	}
-	static DescriptorDesc IndexBufferView(IndexBufferViewDesc desc)
-	{
-		return DescriptorDesc(CPUDescriptorDesc{desc});
-	}
+	static DescriptorDesc IndexBufferView(IndexBufferViewDesc desc) { return DescriptorDesc(CPUDescriptorDesc{desc}); }
 
 	static DescriptorDesc ShaderResourceView(ResourceCreateInfo const& createInfo,
 											 Details<D3D12_SHADER_RESOURCE_VIEW_DESC> details = {},
@@ -471,7 +444,8 @@ struct DescriptorCreateHelper
 										   Details<D3D12_DEPTH_STENCIL_VIEW_DESC> details = {});
 	static DescriptorDesc VertexBufferView(ResourceCreateInfo const& resource,
 										   Details<VertexBufferViewDesc> details = {});
-	static DescriptorDesc IndexBufferView(ResourceCreateInfo const& resource, DXGI_FORMAT format,
+	static DescriptorDesc IndexBufferView(ResourceCreateInfo const& resource,
+										  DXGI_FORMAT format,
 										  Details<IndexBufferViewDesc> details = {});
 };
 } // namespace rad

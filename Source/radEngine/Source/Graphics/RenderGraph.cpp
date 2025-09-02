@@ -1,17 +1,16 @@
 #include "RenderGraph.h"
 #include "DXResource.h"
 #include "ResourcePool.h"
-#include "Renderer.h"
 
 namespace rad
 {
-RGBOutputResource& RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
+Ref<RGBOutputResource> RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
 {
 	auto& resource = ResourceManager.AddGraphResource(std::move(createInfo), name);
 	return InitializeResourceProvider(std::move(name), resource);
 }
 
-RGBOutputResource& RenderGraphBuilder::GetOrAddExternalResource(PoolResourceView resource)
+Ref<RGBOutputResource> RenderGraphBuilder::GetOrAddExternalResource(PoolResourceView resource)
 {
 	if (auto it = ResourceToLastOutput.find(resource); it != ResourceToLastOutput.end())
 		return it->second;
@@ -19,7 +18,7 @@ RGBOutputResource& RenderGraphBuilder::GetOrAddExternalResource(PoolResourceView
 	return InitializeResourceProvider(resource.GetName(), externalResource);
 }
 
-RGBOutputResource& RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
+Ref<RGBOutputResource> RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
 {
 	auto& providerPass = AddPass(std::move(name) + " Provider");
 	return AddOutputToPass(providerPass, std::move(name), resourceRef);
@@ -30,24 +29,23 @@ RGBInputResource& RenderPassBuilder::AddInput(std::string name, RGBOutputResourc
 	return RGBuilder->AddInputToPass(*this, std::move(name), output, std::move(usage));
 }
 
-std::pair<RGBInputResource&, RGBOutputResource&> RenderPassBuilder::AddInOutResource(std::string name,
-																					 RGBOutputResource& output,
-																					 RGResourceUsage usage)
+std::pair<RGBInputResource&, Ref<RGBOutputResource>> RenderPassBuilder::AddInOutResource(std::string name,
+																						 RGBOutputResource& output,
+																						 RGResourceUsage usage)
 {
 	return RGBuilder->AddInOutToPass(*this, std::move(name), output, std::move(usage));
 }
 
-RGBInputResource& RenderPassBuilder::AddInResourceSetOut(
-	std::string name,
-																					 Ref<RGBOutputResource>& resource,
-																					 RGResourceUsage usage)
+RGBInputResource& RenderPassBuilder::AddInResourceSetOut(std::string name,
+														 Ref<RGBOutputResource>& resource,
+														 RGResourceUsage usage)
 {
 	auto [in, out] = AddInOutResource(std::move(name), *resource, std::move(usage));
 	resource = out;
 	return in;
 }
 
-void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd)
+void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandContext& cmd)
 {
 	/*
 		1. Create all graph resources && descriptors
@@ -55,7 +53,7 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 	*/
 
 	// 1. Create all graph resources
-	ResourceManager.CreateResourcesAndDescriptors(renderer);
+	ResourceManager.CreateResourcesAndDescriptors(resourcePool);
 
 	// 2. Start from the leftmost & start recording passes/barriers
 	std::unordered_set<Ref<RenderPassBuilder>> visitedPasses;
@@ -71,7 +69,7 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 		visitedPasses.insert(pass);
 		passQueue.pop();
 		// Record pass
-		//cmd.BeginPass(pass.Name);
+		// cmd.BeginPass(pass.Name);
 
 		std::vector<D3D12_RESOURCE_BARRIER> barriers;
 
@@ -94,8 +92,8 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 			cmd->ResourceBarrier(barriers.size(), barriers.data());
 		if (pass.Execute)
 			pass.Execute(cmd);
-		//cmd.EndPass();
-		// Add outputs to queue
+		// cmd.EndPass();
+		//  Add outputs to queue
 		for (auto& output : pass.Outputs)
 		{
 			for (auto& input : output.ConnectedInputs)
@@ -113,11 +111,13 @@ void RenderGraphBuilder::BuildAndExecute(Renderer& renderer, CommandContext& cmd
 			}
 		}
 	}
-	ResourceManager.FreeResources(renderer);
+	ResourceManager.FreeResources(resourcePool);
 }
 
-RGBInputResource& RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass, std::string name,
-													 RGBOutputResource& fromOut, RGResourceUsage usage)
+RGBInputResource& RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass,
+													 std::string name,
+													 RGBOutputResource& fromOut,
+													 RGResourceUsage usage)
 {
 	auto& inRef = pass.Inputs.emplace_back(std::move(name), pass, fromOut, usage.State);
 	fromOut.ConnectedInputs.push_back(inRef);
@@ -126,7 +126,7 @@ RGBInputResource& RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass, st
 	return inRef;
 }
 
-RGBOutputResource& RenderGraphBuilder::AddOutputToPass(RenderPassBuilder& pass, std::string name, RGResourceRef ref) 
+Ref<RGBOutputResource> RenderGraphBuilder::AddOutputToPass(RenderPassBuilder& pass, std::string name, RGResourceRef ref)
 {
 	auto& outputRef = pass.Outputs.emplace_back(ref, std::move(name), pass);
 	if (auto* poolRes = ref.AsExternalResource())
@@ -134,17 +134,18 @@ RGBOutputResource& RenderGraphBuilder::AddOutputToPass(RenderPassBuilder& pass, 
 	return outputRef;
 }
 
-std::pair<RGBInputResource&, RGBOutputResource&> RenderGraphBuilder::AddInOutToPass(RenderPassBuilder& pass,
-																					std::string name,
-																					RGBOutputResource& fromOut,
-																					RGResourceUsage usage)
+std::pair<RGBInputResource&, Ref<RGBOutputResource>> RenderGraphBuilder::AddInOutToPass(RenderPassBuilder& pass,
+																						std::string name,
+																						RGBOutputResource& fromOut,
+																						RGResourceUsage usage)
 {
 	auto& input = AddInputToPass(pass, name, fromOut, std::move(usage));
-	auto& output = AddOutputToPass(pass, name, fromOut.GetResource());
+	auto output = AddOutputToPass(pass, name, fromOut.GetResource());
 	return {input, output};
 }
 
-RGResourceDescriptor& RenderGraphBuilder::AddDescriptorToInput(RenderPassBuilder& pass, RGBInputResource& input,
+RGResourceDescriptor& RenderGraphBuilder::AddDescriptorToInput(RenderPassBuilder& pass,
+															   RGBInputResource& input,
 															   DescriptorDesc desc)
 {
 	return input.Descriptors.emplace_back(ResourceManager.GetDescriptor(input.Source, std::move(desc)));
@@ -174,26 +175,66 @@ D3D12_RESOURCE_STATES& RGResourceManager::GetLastState(RGResourceRef const& reso
 	return CreatedGraphResourcesMap[resource].LastState;
 }
 
-void RGResourceManager::CreateResourcesAndDescriptors(Renderer& renderer)
+void RGResourceManager::CreateResourcesAndDescriptors(ResourcePool& resourcePool)
 {
 	// Create all graph resources
 	for (auto& resource : GraphResources)
-		resource.ResourceDecided(renderer.ResourcePool->GetResource(resource.CreateInfo, resource.Name));
+		resource.ResourceDecided(resourcePool.GetResource(resource.CreateInfo, resource.Name));
 	// Create all descriptors
 	for (auto& [resourceRef, resInfo] : CreatedGraphResourcesMap)
 	{
 		resInfo.LastState = resourceRef.GetResource()->State;
 		for (auto& [desc, rgDesc] : resInfo.Descriptors)
-			rgDesc.ResourceDecided(renderer.ResourcePool->GetDescriptor(resourceRef.GetResource(), desc));
+			rgDesc.ResourceDecided(resourcePool.GetDescriptor(resourceRef.GetResource(), desc));
 	}
 }
 
-void RGResourceManager::FreeResources(Renderer& renderer)
+void RGResourceManager::FreeResources(ResourcePool& resourcePool)
 {
 	for (auto [resource, resInfo] : CreatedGraphResourcesMap)
 		resource.GetResource()->State = resInfo.LastState;
 	for (auto& resource : GraphResources)
-		renderer.ResourcePool->FreeResource(resource.Get());
+		resourcePool.FreeResource(resource.Get());
+}
+
+void TestGraph()
+{
+	rad::RadDevice* device = nullptr;
+	ResourcePool resourcePool(*device);
+	RenderGraphBuilder graphBuilder{};
+	auto testTex = graphBuilder.AddGraphResource(
+		"TestTex",
+		ResourceCreateHelper::Texture2D(
+			1024,
+			1024,
+			DXGI_FORMAT_R8G8B8A8_UNORM,
+			ResourcePresetFlags::RenderTarget,
+			ResourceCreateHelper::TextureDetails{.DetailedFlags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET}));
+
+	auto& indicesRes = resourcePool.GetResource(
+		ResourceCreateHelper::Buffer(256 * sizeof(uint32_t), ResourcePresetFlags::IndexBuffer), "TestBuffer");
+
+	auto& readTex =
+		resourcePool.GetResource(ResourceCreateHelper::Texture2D(
+									 512,
+									 512,
+									 DXGI_FORMAT_R8G8B8A8_UNORM,
+									 ResourcePresetFlags::ShaderResource,
+									 ResourceCreateHelper::TextureDetails{.DetailedFlags = D3D12_RESOURCE_FLAG_NONE}),
+								 "ReadTex");
+
+	auto externalReadTex = graphBuilder.GetOrAddExternalResource(readTex.AsView());
+	auto externalBuf = graphBuilder.GetOrAddExternalResource(indicesRes.AsView());
+	auto& pass1 = graphBuilder.AddPass("TestPass1");
+	auto inTestTex = pass1.AddInResourceSetOut("InOutTestTex", testTex, RGResourceUsage::RenderTargetView(*testTex));
+	auto inReadTex =
+		pass1.AddInput("InReadTex", *externalReadTex, RGResourceUsage::ShaderResourceView(*externalReadTex));
+	auto inBuf = pass1.AddInput("InBuf", *externalBuf, RGResourceUsage::ShaderResourceView(*externalBuf));
+	pass1.Execute = [&inTestTex, &inBuf, &inReadTex](CommandContext& cmd) {
+		auto rtv = inTestTex.GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>();
+		auto srvTex = inReadTex.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
+		auto srvBuf = inBuf.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
+	};
 }
 
 } // namespace rad

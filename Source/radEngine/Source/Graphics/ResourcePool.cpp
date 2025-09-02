@@ -1,9 +1,9 @@
 #include "ResourcePool.h"
-#include "Renderer.h"
 
 namespace rad
 {
-template <typename T, auto... Desc> bool CompareDesc(const T& Desc1, const T& Desc2)
+template <typename T, auto... Desc>
+bool CompareDesc(const T& Desc1, const T& Desc2)
 {
 	return ((Desc1.*Desc == Desc2.*Desc) && ...);
 }
@@ -17,8 +17,7 @@ bool ShaderResourceViewDesc::operator==(const ShaderResourceViewDesc& Other) con
 	switch (ViewDimension)
 	{
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
-	case D3D12_SRV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_SRV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
@@ -26,22 +25,40 @@ bool ShaderResourceViewDesc::operator==(const ShaderResourceViewDesc& Other) con
 	}
 		COMPARE_VIEW(BUFFER, Buffer, &Desc::FirstElement, &Desc::NumElements, &Desc::StructureByteStride, &Desc::Flags)
 		COMPARE_VIEW(TEXTURE1D, Texture1D, &Desc::MostDetailedMip, &Desc::MipLevels, &Desc::ResourceMinLODClamp)
-		COMPARE_VIEW(TEXTURE1DARRAY, Texture1DArray, &Desc::MostDetailedMip, &Desc::MipLevels, &Desc::FirstArraySlice,
-					 &Desc::ArraySize, &Desc::ResourceMinLODClamp)
-		COMPARE_VIEW(TEXTURE2D, Texture2D, &Desc::MostDetailedMip, &Desc::MipLevels, &Desc::PlaneSlice,
+		COMPARE_VIEW(TEXTURE1DARRAY,
+					 Texture1DArray,
+					 &Desc::MostDetailedMip,
+					 &Desc::MipLevels,
+					 &Desc::FirstArraySlice,
+					 &Desc::ArraySize,
 					 &Desc::ResourceMinLODClamp)
-		COMPARE_VIEW(TEXTURE2DARRAY, Texture2DArray, &Desc::MostDetailedMip, &Desc::MipLevels, &Desc::FirstArraySlice,
-					 &Desc::ArraySize, &Desc::PlaneSlice, &Desc::ResourceMinLODClamp)
+		COMPARE_VIEW(TEXTURE2D,
+					 Texture2D,
+					 &Desc::MostDetailedMip,
+					 &Desc::MipLevels,
+					 &Desc::PlaneSlice,
+					 &Desc::ResourceMinLODClamp)
+		COMPARE_VIEW(TEXTURE2DARRAY,
+					 Texture2DArray,
+					 &Desc::MostDetailedMip,
+					 &Desc::MipLevels,
+					 &Desc::FirstArraySlice,
+					 &Desc::ArraySize,
+					 &Desc::PlaneSlice,
+					 &Desc::ResourceMinLODClamp)
 		COMPARE_VIEW(TEXTURE2DMS, Texture2DMS, &Desc::UnusedField_NothingToDefine)
 		COMPARE_VIEW(TEXTURE2DMSARRAY, Texture2DMSArray, &Desc::FirstArraySlice, &Desc::ArraySize)
 		COMPARE_VIEW(TEXTURE3D, Texture3D, &Desc::MostDetailedMip, &Desc::MipLevels, &Desc::ResourceMinLODClamp)
 		COMPARE_VIEW(TEXTURECUBE, TextureCube, &Desc::MostDetailedMip, &Desc::MipLevels, &Desc::ResourceMinLODClamp)
-		COMPARE_VIEW(TEXTURECUBEARRAY, TextureCubeArray, &Desc::MostDetailedMip, &Desc::MipLevels,
-					 &Desc::First2DArrayFace, &Desc::NumCubes, &Desc::ResourceMinLODClamp)
+		COMPARE_VIEW(TEXTURECUBEARRAY,
+					 TextureCubeArray,
+					 &Desc::MostDetailedMip,
+					 &Desc::MipLevels,
+					 &Desc::First2DArrayFace,
+					 &Desc::NumCubes,
+					 &Desc::ResourceMinLODClamp)
 		COMPARE_VIEW(RAYTRACING_ACCELERATION_STRUCTURE, RaytracingAccelerationStructure, &Desc::Location)
-	default:
-		assert(false);
-		return false;
+	default: assert(false); return false;
 #undef COMPARE_VIEW
 	}
 }
@@ -51,29 +68,42 @@ size_t ShaderResourceViewDesc::Hash() const
 	switch (ViewDimension)
 	{
 #define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
-	case D3D12_SRV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_SRV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
 	}
 		HASH_VIEW(BUFFER, Buffer, desc.FirstElement, desc.NumElements, desc.StructureByteStride, desc.Flags)
 		HASH_VIEW(TEXTURE1D, Texture1D, desc.MostDetailedMip, desc.MipLevels, desc.ResourceMinLODClamp)
-		HASH_VIEW(TEXTURE1DARRAY, Texture1DArray, desc.MostDetailedMip, desc.MipLevels, desc.FirstArraySlice,
-				  desc.ArraySize, desc.ResourceMinLODClamp)
+		HASH_VIEW(TEXTURE1DARRAY,
+				  Texture1DArray,
+				  desc.MostDetailedMip,
+				  desc.MipLevels,
+				  desc.FirstArraySlice,
+				  desc.ArraySize,
+				  desc.ResourceMinLODClamp)
 		HASH_VIEW(TEXTURE2D, Texture2D, desc.MostDetailedMip, desc.MipLevels, desc.PlaneSlice, desc.ResourceMinLODClamp)
-		HASH_VIEW(TEXTURE2DARRAY, Texture2DArray, desc.MostDetailedMip, desc.MipLevels, desc.FirstArraySlice,
-				  desc.ArraySize, desc.PlaneSlice, desc.ResourceMinLODClamp)
+		HASH_VIEW(TEXTURE2DARRAY,
+				  Texture2DArray,
+				  desc.MostDetailedMip,
+				  desc.MipLevels,
+				  desc.FirstArraySlice,
+				  desc.ArraySize,
+				  desc.PlaneSlice,
+				  desc.ResourceMinLODClamp)
 		HASH_VIEW(TEXTURE2DMS, Texture2DMS, desc.UnusedField_NothingToDefine)
 		HASH_VIEW(TEXTURE2DMSARRAY, Texture2DMSArray, desc.FirstArraySlice, desc.ArraySize)
 		HASH_VIEW(TEXTURE3D, Texture3D, desc.MostDetailedMip, desc.MipLevels, desc.ResourceMinLODClamp)
 		HASH_VIEW(TEXTURECUBE, TextureCube, desc.MostDetailedMip, desc.MipLevels, desc.ResourceMinLODClamp)
-		HASH_VIEW(TEXTURECUBEARRAY, TextureCubeArray, desc.MostDetailedMip, desc.MipLevels, desc.First2DArrayFace,
-				  desc.NumCubes, desc.ResourceMinLODClamp)
+		HASH_VIEW(TEXTURECUBEARRAY,
+				  TextureCubeArray,
+				  desc.MostDetailedMip,
+				  desc.MipLevels,
+				  desc.First2DArrayFace,
+				  desc.NumCubes,
+				  desc.ResourceMinLODClamp)
 		HASH_VIEW(RAYTRACING_ACCELERATION_STRUCTURE, RaytracingAccelerationStructure, desc.Location)
-	default:
-		assert(false);
-		break;
+	default: assert(false); break;
 #undef HASH_VIEW
 	}
 	return hash;
@@ -86,24 +116,30 @@ bool UnorderedAccessViewDesc::operator==(const UnorderedAccessViewDesc& Other) c
 	switch (ViewDimension)
 	{
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
-	case D3D12_UAV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_UAV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
 		return CompareDesc<Desc, __VA_ARGS__>(desc, otherDesc);                                                        \
 	}
-		COMPARE_VIEW(BUFFER, Buffer, &Desc::FirstElement, &Desc::NumElements, &Desc::StructureByteStride,
-					 &Desc::CounterOffsetInBytes, &Desc::Flags)
+		COMPARE_VIEW(BUFFER,
+					 Buffer,
+					 &Desc::FirstElement,
+					 &Desc::NumElements,
+					 &Desc::StructureByteStride,
+					 &Desc::CounterOffsetInBytes,
+					 &Desc::Flags)
 		COMPARE_VIEW(TEXTURE1D, Texture1D, &Desc::MipSlice)
 		COMPARE_VIEW(TEXTURE1DARRAY, Texture1DArray, &Desc::MipSlice, &Desc::FirstArraySlice, &Desc::ArraySize)
 		COMPARE_VIEW(TEXTURE2D, Texture2D, &Desc::MipSlice, &Desc::PlaneSlice)
-		COMPARE_VIEW(TEXTURE2DARRAY, Texture2DArray, &Desc::MipSlice, &Desc::FirstArraySlice, &Desc::ArraySize,
+		COMPARE_VIEW(TEXTURE2DARRAY,
+					 Texture2DArray,
+					 &Desc::MipSlice,
+					 &Desc::FirstArraySlice,
+					 &Desc::ArraySize,
 					 &Desc::PlaneSlice)
 		COMPARE_VIEW(TEXTURE3D, Texture3D, &Desc::MipSlice, &Desc::FirstWSlice, &Desc::WSize)
-	default:
-		assert(false);
-		return false;
+	default: assert(false); return false;
 #undef COMPARE_VIEW
 	}
 }
@@ -113,23 +149,25 @@ size_t UnorderedAccessViewDesc::Hash() const
 	switch (ViewDimension)
 	{
 #define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
-	case D3D12_UAV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_UAV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
 	}
-		HASH_VIEW(BUFFER, Buffer, desc.FirstElement, desc.NumElements, desc.StructureByteStride,
-				  desc.CounterOffsetInBytes, desc.Flags)
+		HASH_VIEW(BUFFER,
+				  Buffer,
+				  desc.FirstElement,
+				  desc.NumElements,
+				  desc.StructureByteStride,
+				  desc.CounterOffsetInBytes,
+				  desc.Flags)
 		HASH_VIEW(TEXTURE1D, Texture1D, desc.MipSlice)
 		HASH_VIEW(TEXTURE1DARRAY, Texture1DArray, desc.MipSlice, desc.FirstArraySlice, desc.ArraySize)
 		HASH_VIEW(TEXTURE2D, Texture2D, desc.MipSlice, desc.PlaneSlice)
 		HASH_VIEW(TEXTURE2DARRAY, Texture2DArray, desc.MipSlice, desc.FirstArraySlice, desc.ArraySize, desc.PlaneSlice)
 		HASH_VIEW(TEXTURE2DMS, Texture2DMS, desc.UnusedField_NothingToDefine)
 		HASH_VIEW(TEXTURE3D, Texture3D, desc.MipSlice, desc.FirstWSlice, desc.WSize)
-	default:
-		assert(false);
-		break;
+	default: assert(false); break;
 #undef HASH_VIEW
 	}
 	return hash;
@@ -151,8 +189,7 @@ bool RenderTargetViewDesc::operator==(const RenderTargetViewDesc& Other) const
 	switch (ViewDimension)
 	{
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
-	case D3D12_RTV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_RTV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
@@ -162,14 +199,16 @@ bool RenderTargetViewDesc::operator==(const RenderTargetViewDesc& Other) const
 		COMPARE_VIEW(TEXTURE1D, Texture1D, &Desc::MipSlice)
 		COMPARE_VIEW(TEXTURE1DARRAY, Texture1DArray, &Desc::MipSlice, &Desc::FirstArraySlice, &Desc::ArraySize)
 		COMPARE_VIEW(TEXTURE2D, Texture2D, &Desc::MipSlice, &Desc::PlaneSlice)
-		COMPARE_VIEW(TEXTURE2DARRAY, Texture2DArray, &Desc::MipSlice, &Desc::FirstArraySlice, &Desc::ArraySize,
+		COMPARE_VIEW(TEXTURE2DARRAY,
+					 Texture2DArray,
+					 &Desc::MipSlice,
+					 &Desc::FirstArraySlice,
+					 &Desc::ArraySize,
 					 &Desc::PlaneSlice)
 		COMPARE_VIEW(TEXTURE2DMS, Texture2DMS, &Desc::UnusedField_NothingToDefine)
 		COMPARE_VIEW(TEXTURE2DMSARRAY, Texture2DMSArray, &Desc::FirstArraySlice, &Desc::ArraySize)
 		COMPARE_VIEW(TEXTURE3D, Texture3D, &Desc::MipSlice, &Desc::FirstWSlice, &Desc::WSize)
-	default:
-		assert(false);
-		return false;
+	default: assert(false); return false;
 #undef COMPARE_VIEW
 	}
 }
@@ -179,8 +218,7 @@ size_t RenderTargetViewDesc::Hash() const
 	switch (ViewDimension)
 	{
 #define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
-	case D3D12_RTV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_RTV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
@@ -193,9 +231,7 @@ size_t RenderTargetViewDesc::Hash() const
 		HASH_VIEW(TEXTURE2DMS, Texture2DMS, desc.UnusedField_NothingToDefine)
 		HASH_VIEW(TEXTURE2DMSARRAY, Texture2DMSArray, desc.FirstArraySlice, desc.ArraySize)
 		HASH_VIEW(TEXTURE3D, Texture3D, desc.MipSlice, desc.FirstWSlice, desc.WSize)
-	default:
-		assert(false);
-		break;
+	default: assert(false); break;
 #undef HASH_VIEW
 	}
 	return hash;
@@ -208,8 +244,7 @@ bool DepthStencilViewDesc::operator==(const DepthStencilViewDesc& Other) const
 	switch (ViewDimension)
 	{
 #define COMPARE_VIEW(ViewType, ViewName, ...)                                                                          \
-	case D3D12_DSV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_DSV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		auto& otherDesc = Other.ViewName;                                                                              \
 		using Desc = std::decay_t<decltype(desc)>;                                                                     \
@@ -221,9 +256,7 @@ bool DepthStencilViewDesc::operator==(const DepthStencilViewDesc& Other) const
 		COMPARE_VIEW(TEXTURE2DARRAY, Texture2DArray, &Desc::MipSlice, &Desc::FirstArraySlice, &Desc::ArraySize)
 		COMPARE_VIEW(TEXTURE2DMS, Texture2DMS, &Desc::UnusedField_NothingToDefine)
 		COMPARE_VIEW(TEXTURE2DMSARRAY, Texture2DMSArray, &Desc::FirstArraySlice, &Desc::ArraySize)
-	default:
-		assert(false);
-		return false;
+	default: assert(false); return false;
 #undef COMPARE_VIEW
 	}
 }
@@ -233,8 +266,7 @@ size_t DepthStencilViewDesc::Hash() const
 	switch (ViewDimension)
 	{
 #define HASH_VIEW(ViewType, ViewName, ...)                                                                             \
-	case D3D12_DSV_DIMENSION_##ViewType:                                                                               \
-	{                                                                                                                  \
+	case D3D12_DSV_DIMENSION_##ViewType: {                                                                             \
 		auto& desc = ViewName;                                                                                         \
 		hash = HashCombine(hash, __VA_ARGS__);                                                                         \
 		break;                                                                                                         \
@@ -245,9 +277,7 @@ size_t DepthStencilViewDesc::Hash() const
 		HASH_VIEW(TEXTURE2DARRAY, Texture2DArray, desc.MipSlice, desc.FirstArraySlice, desc.ArraySize)
 		HASH_VIEW(TEXTURE2DMS, Texture2DMS, desc.UnusedField_NothingToDefine)
 		HASH_VIEW(TEXTURE2DMSARRAY, Texture2DMSArray, desc.FirstArraySlice, desc.ArraySize)
-	default:
-		assert(false);
-		break;
+	default: assert(false); break;
 #undef HASH_VIEW
 	}
 	return hash;
@@ -255,8 +285,7 @@ size_t DepthStencilViewDesc::Hash() const
 
 bool VertexBufferViewDesc::operator==(const VertexBufferViewDesc& Other) const
 {
-	return StartOffset == Other.StartOffset && SizeInBytes == Other.SizeInBytes &&
-		   StrideInBytes == Other.StrideInBytes;
+	return StartOffset == Other.StartOffset && SizeInBytes == Other.SizeInBytes && StrideInBytes == Other.StrideInBytes;
 }
 size_t VertexBufferViewDesc::Hash() const
 {
@@ -280,14 +309,22 @@ bool ResourceCreateInfo::operator==(const ResourceCreateInfo& Other) const
 		if (!CompareDesc<T, __VA_ARGS__>(Field, Other.Field))                                                          \
 			return false;                                                                                              \
 	}
-	COMPARE_FIELDS(Desc, &T::Dimension, &T::Alignment, &T::Width, &T::Height, &T::DepthOrArraySize, &T::MipLevels,
-				   &T::Format, &T::Layout, &T::Flags);
+	COMPARE_FIELDS(Desc,
+				   &T::Dimension,
+				   &T::Alignment,
+				   &T::Width,
+				   &T::Height,
+				   &T::DepthOrArraySize,
+				   &T::MipLevels,
+				   &T::Format,
+				   &T::Layout,
+				   &T::Flags);
 	if (Desc.SampleDesc.Count != Other.Desc.SampleDesc.Count ||
 		Desc.SampleDesc.Quality != Other.Desc.SampleDesc.Quality)
 		return false;
 
-	COMPARE_FIELDS(HeapProps, &T::Type, &T::CPUPageProperty, &T::MemoryPoolPreference, &T::CreationNodeMask,
-				   &T::VisibleNodeMask);
+	COMPARE_FIELDS(
+		HeapProps, &T::Type, &T::CPUPageProperty, &T::MemoryPoolPreference, &T::CreationNodeMask, &T::VisibleNodeMask);
 
 	if (HeapFlags != Other.HeapFlags)
 		return false;
@@ -295,12 +332,24 @@ bool ResourceCreateInfo::operator==(const ResourceCreateInfo& Other) const
 }
 size_t ResourceCreateInfo::Hash() const
 {
-	return HashCombine(Desc.Dimension, Desc.Alignment, Desc.Width, Desc.Height, Desc.DepthOrArraySize, Desc.MipLevels,
-					   Desc.Format, Desc.Layout, Desc.Flags, Desc.SampleDesc.Count, Desc.SampleDesc.Quality,
-					   HeapProps.CPUPageProperty, HeapProps.MemoryPoolPreference, HeapProps.CreationNodeMask,
-					   HeapProps.VisibleNodeMask, HeapFlags);
+	return HashCombine(Desc.Dimension,
+					   Desc.Alignment,
+					   Desc.Width,
+					   Desc.Height,
+					   Desc.DepthOrArraySize,
+					   Desc.MipLevels,
+					   Desc.Format,
+					   Desc.Layout,
+					   Desc.Flags,
+					   Desc.SampleDesc.Count,
+					   Desc.SampleDesc.Quality,
+					   HeapProps.CPUPageProperty,
+					   HeapProps.MemoryPoolPreference,
+					   HeapProps.CreationNodeMask,
+					   HeapProps.VisibleNodeMask,
+					   HeapFlags);
 }
-ResourcePool::ResourcePool(rad::Renderer& renderer) : Renderer(renderer) {}
+ResourcePool::ResourcePool(RadDevice& device) : Device(device) {}
 
 ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo& createInfo, std::string acquireName)
 {
@@ -329,14 +378,15 @@ ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo&
 		clearValue.DepthStencil.Depth = createInfo.ClearValue[0];
 		clearValue.DepthStencil.Stencil = createInfo.ClearValue[1];
 		break;
-	default:
-		memcpy(clearValue.Color, createInfo.ClearValue.data(), sizeof(clearValue.Color));
-		break;
+	default: memcpy(clearValue.Color, createInfo.ClearValue.data(), sizeof(clearValue.Color)); break;
 	}
 
-	Renderer.GetDevice().CreateCommittedResource(&createInfo.HeapProps, createInfo.HeapFlags, &createInfo.Desc,
-												 D3D12_RESOURCE_STATE_COMMON, &clearValue,
-												 IID_PPV_ARGS(&resource));
+	Device.CreateCommittedResource(&createInfo.HeapProps,
+								   createInfo.HeapFlags,
+								   &createInfo.Desc,
+								   D3D12_RESOURCE_STATE_COMMON,
+								   &clearValue,
+								   IID_PPV_ARGS(&resource));
 
 	auto& resInfo = AddResourceInfo(*resource.Get(), createInfo, D3D12_RESOURCE_STATE_COMMON);
 	auto& ownedResource = OwnedResources[createInfo].emplace_back(OwnedResource(std::move(resource), resInfo));
@@ -345,7 +395,8 @@ ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo&
 	return ownedResource;
 }
 
-ResourcePool::ExternalResource& ResourcePool::AddExternalResource(ID3D12Resource& resource, std::string name,
+ResourcePool::ExternalResource& ResourcePool::AddExternalResource(ID3D12Resource& resource,
+																  std::string name,
 																  const ResourceCreateInfo& createInfo,
 																  D3D12_RESOURCE_STATES initialState)
 {
@@ -361,7 +412,8 @@ void ResourcePool::FreeResource(OwnedResource& resource)
 	FreeResources[resource->CreateInfo].emplace_back(resource);
 }
 
-ResourcePool::Resource& ResourcePool::AddResourceInfo(ID3D12Resource& resource, const ResourceCreateInfo& createInfo,
+ResourcePool::Resource& ResourcePool::AddResourceInfo(ID3D12Resource& resource,
+													  const ResourceCreateInfo& createInfo,
 													  D3D12_RESOURCE_STATES initialState)
 {
 	return Resources.insert_or_assign(resource, Resource{createInfo, resource, initialState}).first->second;
@@ -379,15 +431,15 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 	{
 		auto alloc = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 		if (auto* srvDesc = std::get_if<ShaderResourceViewDesc>(gpuDesc))
-			Renderer.GetDevice().CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle());
+			Device.CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle());
 		else if (auto* uavDesc = std::get_if<UnorderedAccessViewDesc>(gpuDesc))
-			Renderer.GetDevice().CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc,
-														   alloc.GetCPUHandle());
+			Device.CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc, alloc.GetCPUHandle());
 		else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(gpuDesc))
 		{
-			D3D12_CONSTANT_BUFFER_VIEW_DESC desc{.BufferLocation = resourceView->DXRes->GetGPUVirtualAddress() + cbvDesc->StartOffset,
+			D3D12_CONSTANT_BUFFER_VIEW_DESC desc{.BufferLocation =
+													 resourceView->DXRes->GetGPUVirtualAddress() + cbvDesc->StartOffset,
 												 .SizeInBytes = cbvDesc->SizeInBytes};
-			Renderer.GetDevice().CreateConstantBufferView(&desc, alloc.GetCPUHandle());
+			Device.CreateConstantBufferView(&desc, alloc.GetCPUHandle());
 		}
 		else
 			assert(false && "Invalid descriptor type");
@@ -399,14 +451,13 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 		if (auto* srvDesc = std::get_if<ShaderResourceViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-			Renderer.GetDevice().CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle());
+			Device.CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle());
 			resoureDesc = alloc;
 		}
 		else if (auto* uavDesc = std::get_if<UnorderedAccessViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-			Renderer.GetDevice().CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc,
-														   alloc.GetCPUHandle());
+			Device.CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc, alloc.GetCPUHandle());
 			resoureDesc = alloc;
 		}
 		else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(cpuDesc))
@@ -415,19 +466,19 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 			D3D12_CONSTANT_BUFFER_VIEW_DESC desc{.BufferLocation =
 													 resourceView->DXRes->GetGPUVirtualAddress() + cbvDesc->StartOffset,
 												 .SizeInBytes = cbvDesc->SizeInBytes};
-			Renderer.GetDevice().CreateConstantBufferView(&desc, alloc.GetCPUHandle());
+			Device.CreateConstantBufferView(&desc, alloc.GetCPUHandle());
 			resoureDesc = alloc;
 		}
 		else if (auto* rtvDesc = std::get_if<RenderTargetViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1);
-			Renderer.GetDevice().CreateRenderTargetView(&resourceView->DXRes, rtvDesc, alloc.GetCPUHandle());
+			Device.CreateRenderTargetView(&resourceView->DXRes, rtvDesc, alloc.GetCPUHandle());
 			resoureDesc = alloc;
 		}
 		else if (auto* dsvDesc = std::get_if<DepthStencilViewDesc>(cpuDesc))
 		{
 			auto alloc = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
-			Renderer.GetDevice().CreateDepthStencilView(&resourceView->DXRes, dsvDesc, alloc.GetCPUHandle());
+			Device.CreateDepthStencilView(&resourceView->DXRes, dsvDesc, alloc.GetCPUHandle());
 			resoureDesc = alloc;
 		}
 		else if (auto* vbvDesc = std::get_if<VertexBufferViewDesc>(cpuDesc))
@@ -508,56 +559,78 @@ ResourceCreateInfo ResourceCreateHelper::Buffer(uint64_t size, ResourcePresetFla
 	return createInfo;
 }
 
-ResourceCreateInfo ResourceCreateHelper::Texture2D(uint32_t width, uint32_t height, DXGI_FORMAT format,
-												   ResourcePresetFlags flags,
-												   TextureDetails details)
+ResourceCreateInfo ResourceCreateHelper::Texture2D(
+	uint32_t width, uint32_t height, DXGI_FORMAT format, ResourcePresetFlags flags, TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc =
-		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1, 1, 0,
-									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.Desc = CD3DX12_RESOURCE_DESC::Tex2D(format,
+												   width,
+												   height,
+												   1,
+												   !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
+												   1,
+												   0,
+												   ToResourceFlags(flags) | details.DetailedFlags);
 	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2D) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 
-ResourceCreateInfo ResourceCreateHelper::Texture2DArray(uint32_t width, uint32_t height, uint32_t arraySize,
-														DXGI_FORMAT format, ResourcePresetFlags flags,
+ResourceCreateInfo ResourceCreateHelper::Texture2DArray(uint32_t width,
+														uint32_t height,
+														uint32_t arraySize,
+														DXGI_FORMAT format,
+														ResourcePresetFlags flags,
 														TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc =
-		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, arraySize, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
-									 1, 0, ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.Desc = CD3DX12_RESOURCE_DESC::Tex2D(format,
+												   width,
+												   height,
+												   arraySize,
+												   !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
+												   1,
+												   0,
+												   ToResourceFlags(flags) | details.DetailedFlags);
 	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DArray) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 
-ResourceCreateInfo ResourceCreateHelper::Texture2DCube(uint32_t width, uint32_t height, DXGI_FORMAT format,
-													   ResourcePresetFlags flags,
-													   TextureDetails details)
+ResourceCreateInfo ResourceCreateHelper::Texture2DCube(
+	uint32_t width, uint32_t height, DXGI_FORMAT format, ResourcePresetFlags flags, TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc =
-		CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 6, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1, 1, 0,
-									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.Desc = CD3DX12_RESOURCE_DESC::Tex2D(format,
+												   width,
+												   height,
+												   6,
+												   !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
+												   1,
+												   0,
+												   ToResourceFlags(flags) | details.DetailedFlags);
 	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture2DCube) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
 	return createInfo;
 }
 
-ResourceCreateInfo ResourceCreateHelper::Texture3D(uint32_t width, uint32_t height, uint32_t depth, DXGI_FORMAT format,
+ResourceCreateInfo ResourceCreateHelper::Texture3D(uint32_t width,
+												   uint32_t height,
+												   uint32_t depth,
+												   DXGI_FORMAT format,
 												   ResourcePresetFlags flags,
 												   TextureDetails details)
 {
 	ResourceCreateInfo createInfo{};
-	createInfo.Desc =
-		CD3DX12_RESOURCE_DESC::Tex3D(format, width, height, depth, !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
-									 ToResourceFlags(flags) | details.DetailedFlags);
+	createInfo.Desc = CD3DX12_RESOURCE_DESC::Tex3D(format,
+												   width,
+												   height,
+												   depth,
+												   !!(flags & ResourcePresetFlags::MipMaps) ? 0 : 1,
+												   ToResourceFlags(flags) | details.DetailedFlags);
 	createInfo.ClearValue = details.ClearValue;
 	createInfo.HeapFlags = ToHeapFlags(flags, PresetType::Texture3D) | details.HeapFlags;
 	createInfo.HeapProps = details.Heap ? *details.Heap : ToHeapProps(flags);
@@ -596,7 +669,6 @@ int DecideMipLevelCount(DescriptorCreateFlags flags)
 	return !!(flags & DescriptorCreateFlags::MipMaps) ? 0 : 1;
 }
 
-
 DescriptorDesc DescriptorCreateHelper::ShaderResourceView(ResourceCreateInfo const& createInfo,
 														  Details<D3D12_SHADER_RESOURCE_VIEW_DESC> details,
 														  DescriptorCreateType type)
@@ -605,16 +677,14 @@ DescriptorDesc DescriptorCreateHelper::ShaderResourceView(ResourceCreateInfo con
 	details.Desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	switch (createInfo.Desc.Dimension)
 	{
-	case D3D12_RESOURCE_DIMENSION_BUFFER:
-	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER: {
 		uint32_t stride = details.Buffer.StrideInBytes ? details.Buffer.StrideInBytes : 1;
 		details.Desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 		details.Desc.Buffer.NumElements = createInfo.Desc.Width / stride;
 		details.Desc.Buffer.StructureByteStride = stride;
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D: {
 		if (details.Texture.Array)
 		{
 			details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1DARRAY;
@@ -632,8 +702,7 @@ DescriptorDesc DescriptorCreateHelper::ShaderResourceView(ResourceCreateInfo con
 		}
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D: {
 		if (details.Texture.Array)
 		{
 			if (details.Texture.MultiSample)
@@ -650,7 +719,7 @@ DescriptorDesc DescriptorCreateHelper::ShaderResourceView(ResourceCreateInfo con
 				details.Desc.TextureCube.ResourceMinLODClamp = 0.0f;
 			}
 			else
-			 {
+			{
 				details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
 				details.Desc.Texture2DArray.MostDetailedMip = 0;
 				details.Desc.Texture2DArray.MipLevels = DecideMipLevelCount(details.Flags);
@@ -682,8 +751,7 @@ DescriptorDesc DescriptorCreateHelper::ShaderResourceView(ResourceCreateInfo con
 		}
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE3D: {
 		details.Desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
 		details.Desc.Texture3D.MostDetailedMip = 0;
 		details.Desc.Texture3D.MipLevels = DecideMipLevelCount(details.Flags);
@@ -704,8 +772,7 @@ DescriptorDesc DescriptorCreateHelper::UnorderedAccessView(ResourceCreateInfo co
 	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
 	switch (createInfo.Desc.Dimension)
 	{
-	case D3D12_RESOURCE_DIMENSION_BUFFER:
-	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER: {
 		uint32_t stride = details.Buffer.StrideInBytes ? details.Buffer.StrideInBytes : 1;
 		details.Desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 		details.Desc.Buffer.NumElements = createInfo.Desc.Width / stride;
@@ -714,8 +781,7 @@ DescriptorDesc DescriptorCreateHelper::UnorderedAccessView(ResourceCreateInfo co
 		details.Desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D: {
 		if (details.Texture.Array)
 		{
 			details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1DARRAY;
@@ -730,8 +796,7 @@ DescriptorDesc DescriptorCreateHelper::UnorderedAccessView(ResourceCreateInfo co
 		}
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D: {
 		if (details.Texture.Array)
 		{
 			if (details.Texture.MultiSample)
@@ -769,8 +834,7 @@ DescriptorDesc DescriptorCreateHelper::UnorderedAccessView(ResourceCreateInfo co
 		}
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE3D: {
 		details.Desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
 		details.Desc.Texture3D.MipSlice = 0;
 		details.Desc.Texture3D.FirstWSlice = 0;
@@ -789,15 +853,12 @@ DescriptorDesc DescriptorCreateHelper::ConstantBufferView(ResourceCreateInfo con
 {
 	switch (createInfo.Desc.Dimension)
 	{
-	case D3D12_RESOURCE_DIMENSION_BUFFER:
-	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER: {
 		details.Desc.StartOffset = details.Buffer.StartOffset;
 		details.Desc.SizeInBytes = createInfo.Desc.Width;
 		break;
 	}
-	default:
-		assert(false);
-		break;
+	default: assert(false); break;
 	}
 	if (type == DescriptorCreateType::CPU)
 		return DescriptorDesc(CPUDescriptorDesc{ConstantBufferViewDesc{details.Desc}});
@@ -811,14 +872,12 @@ DescriptorDesc DescriptorCreateHelper::RenderTargetView(ResourceCreateInfo const
 	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
 	switch (createInfo.Desc.Dimension)
 	{
-	case D3D12_RESOURCE_DIMENSION_BUFFER:
-	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER: {
 		details.Desc.ViewDimension = D3D12_RTV_DIMENSION_BUFFER;
 		details.Desc.Buffer.FirstElement = 0;
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D: {
 		if (details.Texture.Array)
 		{
 			details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1DARRAY;
@@ -833,8 +892,7 @@ DescriptorDesc DescriptorCreateHelper::RenderTargetView(ResourceCreateInfo const
 		}
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D: {
 		if (details.Texture.Array)
 		{
 			if (details.Texture.MultiSample)
@@ -872,8 +930,7 @@ DescriptorDesc DescriptorCreateHelper::RenderTargetView(ResourceCreateInfo const
 		}
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE3D: {
 		details.Desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
 		details.Desc.Texture3D.MipSlice = 0;
 		details.Desc.Texture3D.FirstWSlice = 0;
@@ -890,8 +947,7 @@ DescriptorDesc DescriptorCreateHelper::DepthStencilView(ResourceCreateInfo const
 	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
 	switch (createInfo.Desc.Dimension)
 	{
-	case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE1D: {
 		if (details.Texture.Array)
 		{
 			details.Desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1DARRAY;
@@ -906,8 +962,7 @@ DescriptorDesc DescriptorCreateHelper::DepthStencilView(ResourceCreateInfo const
 		}
 		break;
 	}
-	case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-	{
+	case D3D12_RESOURCE_DIMENSION_TEXTURE2D: {
 		if (details.Texture.Array)
 		{
 			if (details.Texture.MultiSample)
@@ -944,36 +999,31 @@ DescriptorDesc DescriptorCreateHelper::VertexBufferView(ResourceCreateInfo const
 {
 	switch (createInfo.Desc.Dimension)
 	{
-	case D3D12_RESOURCE_DIMENSION_BUFFER:
-	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER: {
 		details.Desc.StartOffset = details.Buffer.StartOffset;
 		details.Desc.SizeInBytes = createInfo.Desc.Width;
 		assert(details.VertexBuffer.StrideInBytes);
 		details.Desc.StrideInBytes = details.VertexBuffer.StrideInBytes;
 		break;
 	}
-	default:
-		assert(false);
-		break;
+	default: assert(false); break;
 	}
 	return DescriptorDesc(CPUDescriptorDesc{VertexBufferViewDesc{details.Desc}});
 }
 
-DescriptorDesc DescriptorCreateHelper::IndexBufferView(ResourceCreateInfo const& createInfo, DXGI_FORMAT format,
+DescriptorDesc DescriptorCreateHelper::IndexBufferView(ResourceCreateInfo const& createInfo,
+													   DXGI_FORMAT format,
 													   Details<IndexBufferViewDesc> details)
 {
 	switch (createInfo.Desc.Dimension)
 	{
-	case D3D12_RESOURCE_DIMENSION_BUFFER:
-	{
+	case D3D12_RESOURCE_DIMENSION_BUFFER: {
 		details.Desc.StartOffset = details.IndexBuffer.StartOffset;
 		details.Desc.SizeInBytes = createInfo.Desc.Width;
 		details.Desc.Format = format;
 		break;
 	}
-	default:
-		assert(false);
-		break;
+	default: assert(false); break;
 	}
 	return DescriptorDesc(CPUDescriptorDesc{IndexBufferViewDesc{details.Desc}});
 }

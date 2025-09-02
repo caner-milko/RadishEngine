@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DXResource.h"
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 #include "RendererCommon.h"
 #include "ResourcePool.h"
 
@@ -31,296 +31,6 @@ struct RenderLightInfo
 	glm::vec3 AmbientColor{};
 };
 
-struct DepthOnlyPassData
-{
-	CommandContext& CmdContext;
-	const DXTexture* OutDepth;
-};
-
-struct DeferredPassData
-{
-	CommandContext& CmdContext;
-	const DXTexture* OutAlbedo;
-	const DXTexture* OutNormal;
-	const DXTexture* OutDepth;
-};
-
-struct WaterPassData
-{
-	CommandContext& CmdContext;
-	const DXTexture* OutReflectionRefraction;
-	const DXTexture* OutDepth;
-	const DescriptorAllocationView InViewTransformCBV;
-};
-
-struct ForwardPassData
-{
-	CommandContext& CmdContext;
-	const DXTexture* OutColor;
-	const DXTexture* SSDepth;
-	const DescriptorAllocationView InViewTransformCBV;
-	const DescriptorAllocationView InColorSRV;
-	const DescriptorAllocationView InOpaqueDepthSRV;
-	const DescriptorAllocationView InReflectionResultSRV;
-	const DescriptorAllocationView InRefractionResultSRV;
-};
-
-struct RenderCommand
-{
-	std::string Name;
-	void* Data;
-	size_t Size;
-	std::function<void(const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass;
-	std::function<void(const RenderView& view, DeferredPassData& passData)> DeferredPass;
-	std::function<void(const RenderView& view, WaterPassData& passData)> WaterPass;
-	std::function<void(const RenderView& view, ForwardPassData& passData)> ForwardPass;
-	std::move_only_function<void()> Destroy;
-};
-
-struct RenderQueue
-{
-	std::deque<RenderCommand> Commands;
-};
-
-template <typename T> struct TypedRenderCommand
-{
-	std::string Name;
-	std::vector<T> Data;
-	std::function<void(std::span<T> data, const RenderView& view, DepthOnlyPassData& passData)> DepthOnlyPass = nullptr;
-	std::function<void(std::span<T> data, const RenderView& view, DeferredPassData& passData)> DeferredPass = nullptr;
-	std::function<void(std::span<T> data, const RenderView& view, WaterPassData& passData)> WaterPass = nullptr;
-	std::function<void(std::span<T> data, const RenderView& view, ForwardPassData& passData)> ForwardPass = nullptr;
-};
-
-struct PipelineData
-{
-	std::string Name;
-	std::function<void*()> GetData;
-};
-
-struct PipelineUserBase
-{
-	~PipelineUserBase();
-	std::vector<Ref<struct PipelineBase>> RegisteredPasses;
-	// No need to store it here, it's stored in the PipelineDataHolder, but its a stack & finding the data would be harder, so this is ok too
-	PipelineData* Data = nullptr;
-};
-
-template<typename T>
-struct PipelineUser : PipelineUserBase
-{
-	auto GetData()
-	{
-		if constexpr (std::is_same_v<T, void>)
-			return Data->GetData();
-		else
-			return *static_cast<T*>(Data->GetData());
-	}
-};
-
-struct PipelineBase
-{
-	template <typename U, bool = std::is_void_v<U>> struct VoidPtrOrRef
-	{
-		using type = U&;
-	};
-	template <typename U> struct VoidPtrOrRef<U, true>
-	{
-		using type = void*;
-	};
-
-	PipelineBase(std::string name) : Name(std::move(name)) {}
-	virtual ~PipelineBase() = default;
-	std::string Name;
-	std::unordered_map<Ref<PipelineUserBase>, PipelineData> Data;
-	std::vector<Ref<PipelineBase>> SubPipelines;
-	bool Recording = false;
-	std::vector<Ref<PipelineUserBase>> Users;
-	std::vector<std::function<void(void* passData, void* userData)>> Commands;
-
-
-	virtual PipelineData GetPassData(std::deque<PipelineData>& pipelineDataStack) = 0;
-	virtual void Run(std::deque<PipelineData>& pipelineDataStack,
-					 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
-
-	template <typename U> 
-	void RegisterUser(PipelineUser<U>& user, std::function<void(void* passData, VoidPtrOrRef<U> userData)> command)
-	{
-		PipelinePassBase::RegisterUser(user, [command = std::move(command)](void* passData, void* userData)
-				{ command(passData, *static_cast<U*>(userData)); });
-	}
-
-	void DoBeginRecording()
-	{
-		Recording = true;
-		BeginRecording();
-	}
-
-	void DoEndRecording()
-	{
-		EndRecording();
-		Recording = false;
-	}
-
-	// Maybe return a stack?
-	std::unordered_map<Ref<PipelineBase>, decltype(Data)> PopPipelineUserDataStack()
-	{
-		Recording = false;
-		std::unordered_map<Ref<PipelineBase>, decltype(Data)> result;
-		for (PipelineBase& subPipeline : SubPipelines)
-		{
-			auto subRes = subPipeline.PopPipelineUserDataStack();
-			result.insert(subRes.begin(), subRes.end());
-		}
-		result[*this] = std::move(Data);
-		Data.clear();
-		return result;
-	}
-
-	PipelineData& PushPipelineData(PipelineUserBase& user, PipelineData&& data)
-	{
-		assert(Recording);
-		return Data.insert_or_assign(user, std::move(data)).first->second;
-	}
-
-	template<typename T> 
-	PipelineData& PushPipelineData(PipelineUser<T>& user, std::string name, T data)
-	{
-		return Push(user, {name, [data = std::move(data)]() { return &data; }});
-	}
-
-	void AddSubPipeline(PipelineBase& subPipeline)
-	{
-		SubPipelines.push_back(subPipeline);
-	}
-
-	virtual void UnregisterUser(PipelineUserBase& user)
-	{
-		auto it = std::find(Users.begin(), Users.end(), user);
-		if (it == Users.end())
-			return;
-		Commands.erase(Commands.begin() + std::distance(Users.begin(), it));
-		Users.erase(it);
-		std::erase_if(user.RegisteredPasses, [this](const Ref<PipelineBase>& pass) { return &pass == this; });
-	}
-
-  protected:
-	virtual void BeginRecording() {}
-	virtual void EndRecording() {}
-	void RegisterUser(PipelineUserBase& user, std::function<void(void* passData, void* userData)> command)
-	{
-		Users.push_back(user);
-		Commands.push_back(std::move(command));
-		user.RegisteredPasses.push_back(*this);
-	}
-};
-
-template<typename T, typename... ParentPipelines> 
-struct Pipeline : PipelineBase
-{
-	using ValueType = T;
-
-	Pipeline(std::string name, ParentPipelines&... parentPipelines)
-		: PipelineBase(std::move(name)), ParentPipelines{parentPipelines...}
-	{
-	}
-	PipelineData GetPassData(std::deque<PipelineData>& pipelineDataStack) override
-	{
-		constexpr size_t parentCount = sizeof...(ParentPipelines);
-
-		assert(pipelineDataStack.size() >= parentCount);
-
-		auto val = GetPipelineDataImpl(pipelineDataStack, std::index_sequence_for<ParentPipelines...>{});
-	
-		return {Name, [val = std::move(val)]() { return &val; }};
-	}
-
-	void Run(std::deque<PipelineData>& pipelineDataStack,
-			 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) override
-	{
-		RunImpl(pipelineDataStack, std::index_sequence_for<ParentPipelines...>{});
-	}
-
-	virtual void Run(ParentPipelines::ValueType&... parentData,
-					 std::unordered_map<Ref<PipelineUserBase>, PipelineData>& pipelineUserDatas) = 0;
-
-	virtual T GetPassData(ParentPipelines::ValueType&... parentData) = 0;
-
-	std::tuple<ParentPipelines&...> ParentPipelines;
-
-  private:
-	template<size_t... Is> T GetPipelineDataImpl(std::deque<PipelineData>& parentDataStack, std::index_sequence<Is...>)
-	{
-		return GetPassData(*static_cast<typename ParentPipelines::ValueType*>(parentDataStack[parentDataStack.size() - 1 - Is].GetData())...);
-	}
-	template <size_t... Is> void RunImpl(std::deque<PipelineData>& parentDataStack, std::index_sequence<Is...>)
-	{
-		Run(*static_cast<typename ParentPipelines::ValueType*>(
-			parentDataStack[parentDataStack.size() - 1 - Is].GetData())...);
-	}
-};
-
-PipelineUserBase::~PipelineUserBase()
-{
-	while (!RegisteredPasses.empty())
-		RegisteredPasses.back()->UnregisterUser(*this);
-}
-
-struct CommandRecord
-{
-	struct CommandRecordItem
-	{
-		std::string Name;
-		std::function<void(CommandContext&)> Command;
-	};
-	std::queue<CommandRecordItem> Queue;
-
-	void Push(std::string name, std::function<void(CommandContext&)> command)
-	{
-		Queue.push({std::move(name), std::move(command)});
-	}
-};
-
-struct RenderFrameRecord
-{
-	CommandRecord CommandRecord;
-	uint64_t FrameNumber;
-	RenderView View;
-	RenderLightInfo LightInfo;
-	std::deque<RenderCommand> Commands;
-	std::unordered_map<Ref<PipelineBase>, decltype(PipelineBase::Data)> PipelineDatas;
-
-	template <typename T> void Push(TypedRenderCommand<T> command)
-	{
-		std::span<T> span(command.Data);
-		void* dataPtr = command.Data.data();
-		size_t size = command.Data.size() * sizeof(T);
-		RenderCommand renderCommand{
-			.Name = std::move(command.Name),
-			.Data = dataPtr,
-			.Size = size,
-			.Destroy = [vec = std::move(command.Data)]() mutable {},
-		};
-		if (command.DepthOnlyPass)
-			renderCommand.DepthOnlyPass = [span, depthPass = std::move(command.DepthOnlyPass)](
-											  const RenderView& view, DepthOnlyPassData& passData)
-			{ return depthPass(span, view, passData); };
-		if (command.DeferredPass)
-			renderCommand.DeferredPass = [span, deferredPass = std::move(command.DeferredPass)](
-											 const RenderView& view, DeferredPassData& passData)
-			{ return deferredPass(span, view, passData); };
-		if (command.WaterPass)
-			renderCommand.WaterPass =
-				[span, waterPass = std::move(command.WaterPass)](const RenderView& view, WaterPassData& passData)
-			{ return waterPass(span, view, passData); };
-		if (command.ForwardPass)
-			renderCommand.ForwardPass =
-				[span, forwardPass = std::move(command.ForwardPass)](const RenderView& view, ForwardPassData& passData)
-			{ return forwardPass(span, view, passData); };
-		Commands.push_back(std::move(renderCommand));
-	}
-};
-
 struct Swapchain
 {
 	uint32_t RequestedNumberOfBackBuffers = 3;
@@ -331,40 +41,29 @@ struct Swapchain
 	DescriptorAllocation BackBufferRGBRTVs;
 };
 
-struct ComputePipeline : Pipeline<void>
+struct PreRenderingGraphBuilder
 {
-	
+	RenderGraphBuilder& GraphBuilder;
 };
 
-struct GraphicsPipeline : Pipeline<void>
-{
-	void Run(RenderFrameRecord& frameRec, RenderGraphBuilder& rgBuilder)
-	{
-
-	}
-};
-
-struct FramePipeline : Pipeline<void>
-{
-	ComputePipeline ComputePipeline;
-	GraphicsPipeline GraphicsPipeline;
-
-	FramePipeline()
-	{
-		AddSubPipeline(ComputePipeline);
-		AddSubPipeline(GraphicsPipeline);
-	}
-
-	void Run(RenderFrameRecord& frameRec, RenderGraphBuilder& rgBuilder)
-	{
-		PipelinePass::Run(RenderFrameRecord & frameRec, rgBuilder);
-	}
-};
+/*
+Pre Rendering:
+Simulate terrain erosion
+Rendering:
+	ShadowMap Pass
+	G-Buffer Pass
+	Water Pass
+	Screen Space Reflection/Refraction Pass
+	Lighting Pass
+	Forward Rendering Pass
+	Post Processing Pass
+	Present
+*/
 
 /*
 Ideally, seperate device creation, command queue/list creation, and swapchain creation into seperate structs.
 */
-struct Renderer : PipelineDataHolder
+struct Renderer
 {
 	Renderer();
 	~Renderer();
@@ -373,10 +72,7 @@ struct Renderer : PipelineDataHolder
 
 	bool Deinitialize();
 
-	RadDevice& GetDevice()
-	{
-		return *Device.Get();
-	}
+	RadDevice& GetDevice() { return *Device.Get(); }
 
 	struct CommandContextData
 	{
@@ -392,8 +88,8 @@ struct Renderer : PipelineDataHolder
 		bool Executed = false;
 		CommandContext AsCommandContext()
 		{
-			return CommandContext{CmdContext->Device, CommandList, CmdContext->GPUHeapPages,
-								  CmdContext->IntermediateResources};
+			return CommandContext{
+				CmdContext->Device, CommandList, CmdContext->GPUHeapPages, CmdContext->IntermediateResources};
 		}
 	};
 	struct PendingCommandContext
@@ -425,8 +121,10 @@ struct Renderer : PipelineDataHolder
 
 	std::optional<ActiveCommandContext> GetNewCommandContext();
 	void ExecuteCommandContext(ActiveCommandContext& context);
-	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context, Ref<DXFence> fence,
-															  uint64_t signalValue, bool wait = false);
+	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context,
+															  Ref<DXFence> fence,
+															  uint64_t signalValue,
+															  bool wait = false);
 	CommandContextData& WaitAndClearCommandContext(PendingCommandContext&& context);
 	void WaitAllCommandContexts();
 
@@ -462,7 +160,7 @@ struct Renderer : PipelineDataHolder
 	std::optional<std::string> ViewingTexture = std::nullopt;
 	std::pair<Ref<DXTexture>, DescriptorAllocationView> GetViewingTexture();
 
-  private:
+private:
 	std::optional<CommandContextData> CreateCommandContext();
 	Swapchain Swapchain;
 

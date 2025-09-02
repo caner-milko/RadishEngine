@@ -2,52 +2,15 @@ set(CMAKE_CXX_STANDARD 23)
 
 project(radEngine)
 
-set(SOURCE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Source")
-set(SHADER_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders")
-set(INCLUDE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Include;${EXTERNAL_DIR}/stb;${CMAKE_CURRENT_SOURCE_DIR}/Source;${SHADER_DIRECTORY}")
+rad_add_target(radEngine EXECUTABLE DEPENDENCIES radUtil 3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader FidelityFX-SPD EnTT::EnTT glm::glm INCLUDES ${EXTERNAL_DIR}/stb)
 
-file(GLOB_RECURSE SHADER_FILES "${SHADER_DIRECTORY}/*")
-file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "${SOURCE_DIRECTORY}/*")
-file(GLOB_RECURSE INCLUDE_FILES CONFIGURE_DEPENDS "${INCLUDE_DIRECTORY}/*")
-
-add_executable(${PROJECT_NAME} WIN32 ${INCLUDE_FILES} ${SRC_FILES} ${SHADER_FILES})
-
-foreach(SHADER ${SHADER_FILES})
-	set_source_files_properties(SOURCE ${SHADER} PROPERTIES VS_SETTINGS "ExcludedFromBuild=true")
-	set_source_files_properties(SOURCE ${SHADER} PROPERTIES VS_SHADER_MODEL "6.6")
-endforeach()
-
-foreach(source IN LISTS SRC_FILES)
-	get_filename_component(source_path "${source}" PATH)
-	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "" source_path_compact "${source_path}")
-	string(REPLACE "/" "\\" source_path_msvc "${source_path_compact}")
-	source_group("${source_path_msvc}" FILES "${source}")
-endforeach()
-
-foreach(header IN LISTS INCLUDE_FILES)
-	get_filename_component(header_path "${header}" PATH)
-	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "" header_path_compact "${header_path}")
-	string(REPLACE "/" "\\" header_path_msvc "${header_path_compact}")
-	source_group("${header_path_msvc}" FILES "${header}")
-endforeach()
-
-foreach(shader IN LISTS SHADER_FILES)
-	get_filename_component(shader_path "${shader}" PATH)
-	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/Assets" "" shader_path_compact "${shader_path}")
-	string(REPLACE "/" "\\" shader_path_msvc "${shader_path_compact}")
-	source_group("${shader_path_msvc}" FILES "${shader}")
-endforeach()
-
-target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets/")
-target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_SHADERS_DIR="${SHADER_DIRECTORY}/")
+target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_ENGINE_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets/")
+target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_ENGINE_SHADERS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/")
 target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_SPONZA_DIR="${EXTERNAL_DIR}/Sponza/")
 
-target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INCLUDE_DIRECTORY}>)
-
 target_link_libraries(${PROJECT_NAME} PRIVATE 
-    d3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader FidelityFX-SPD EnTT::EnTT glm::glm
+    d
 )
-
 
 function(copy_redist_files target_name redist_src redist_dst)
 	add_custom_command(TARGET ${target_name} POST_BUILD
@@ -59,7 +22,6 @@ endfunction()
 
 copy_redist_files(${PROJECT_NAME} "${EXTERNAL_DIR}/DirectXShaderCompiler/bin/x64/dxcompiler.dll" "dxcompiler.dll")
 copy_redist_files(${PROJECT_NAME} "${EXTERNAL_DIR}/DirectXShaderCompiler/bin/x64/dxil.dll" "dxil.dll")
-
 
 set(AGILITY_SDK_NUGET_ID "Microsoft.Direct3D.D3D12")
 set(AGILITY_SDK_NUGET_VERSION "1.614.1")

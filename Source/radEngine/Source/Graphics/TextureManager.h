@@ -3,13 +3,14 @@
 #include "Pipelines/GenerateMipsPipeline.h"
 #include "RendererCommon.h"
 #include "DXResource.h"
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 #include "filesystem"
-
-RAD_ID_STRUCT_U32(rad, TextureId)
 
 namespace rad
 {
+struct TextureIdType;
+
+using TextureId = Id<TextureIdType>;
 
 struct TextureManager
 {
@@ -23,10 +24,12 @@ struct TextureManager
 	};
 
 	void GenerateMips(CommandContext& commandCtx, DXTexture& texture);
-	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, CommandContext& commandCtx,
+	DXTexture* LoadTexture(std::filesystem::path const& path,
+						   TextureLoadInfo const& info,
+						   CommandContext& commandCtx,
 						   bool generateMips = true);
 
-  private:
+private:
 	std::unordered_map<TextureId, std::unique_ptr<DXTexture>> Textures;
 	std::unordered_map<std::filesystem::path, TextureId> LoadedTextures;
 	Renderer& Renderer;
