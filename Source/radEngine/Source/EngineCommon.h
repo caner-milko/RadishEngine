@@ -20,4 +20,32 @@ struct DXPipelineState;
 struct DXRootSignature;
 struct DXDescriptorHeap;
 
+template <typename T>
+struct Singleton
+{
+	static void Create()
+	{
+		if (Instance == nullptr)
+			Instance = std::make_unique<T>();
+		else
+		{
+			assert(false);
+		}
+	}
+
+	static void Destroy()
+	{
+		if (Instance != nullptr)
+			Instance.reset();
+	}
+
+	static T& Get()
+	{
+		assert(Instance);
+		return *Instance;
+	}
+
+	static std::unique_ptr<T> Instance;
+};
+
 } // namespace rad

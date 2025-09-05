@@ -23,11 +23,11 @@
 
 extern "C"
 {
-	__declspec(dllexport) extern const unsigned int D3D12SDKVersion = DIRECT3D_AGILITY_SDK_VERSION;
+__declspec(dllexport) extern const unsigned int D3D12SDKVersion = DIRECT3D_AGILITY_SDK_VERSION;
 }
 extern "C"
 {
-	__declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\";
+__declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\";
 }
 
 namespace rad
@@ -76,10 +76,20 @@ void CreateConsole()
 	std::cin.clear();
 
 	// std::wcout, std::wclog, std::wcerr, std::wcin
-	HANDLE hConOut = CreateFile(_T("CONOUT$"), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-								OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	HANDLE hConIn = CreateFile(_T("CONIN$"), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-							   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE hConOut = CreateFile(_T("CONOUT$"),
+								GENERIC_READ | GENERIC_WRITE,
+								FILE_SHARE_READ | FILE_SHARE_WRITE,
+								NULL,
+								OPEN_EXISTING,
+								FILE_ATTRIBUTE_NORMAL,
+								NULL);
+	HANDLE hConIn = CreateFile(_T("CONIN$"),
+							   GENERIC_READ | GENERIC_WRITE,
+							   FILE_SHARE_READ | FILE_SHARE_WRITE,
+							   NULL,
+							   OPEN_EXISTING,
+							   FILE_ATTRIBUTE_NORMAL,
+							   NULL);
 	SetStdHandle(STD_OUTPUT_HANDLE, hConOut);
 	SetStdHandle(STD_ERROR_HANDLE, hConOut);
 	SetStdHandle(STD_INPUT_HANDLE, hConIn);
@@ -122,19 +132,20 @@ void InitGame()
 	auto& camSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(camera, camera);
 	g_EnttRegistry.emplace<ecs::CCamera>(camera);
 	auto& viewpoint =
-		g_EnttRegistry.emplace<ecs::CViewpoint>(camera, ecs::CViewpoint{.Projection = ecs::CViewpoint::Perspective{
-																			.Fov = 60.0f,
-																			.Near = 0.1f,
-																			.Far = 1000.0f,
-																			.AspectRatio = 16.0f / 9.0f,
-																		}});
+		g_EnttRegistry.emplace<ecs::CViewpoint>(camera,
+												ecs::CViewpoint{.Projection = ecs::CViewpoint::Perspective{
+																	.Fov = 60.0f,
+																	.Near = 0.1f,
+																	.Far = 1000.0f,
+																	.AspectRatio = 16.0f / 9.0f,
+																}});
 	ecs::Transform camTransform{};
 	camTransform.Position = {5.3f, 10.f, -1.2f};
 	camTransform.Rotation = {0.15f, -1.348f, 0.f};
 	camSceneTransform.SetTransform(camTransform);
 	auto& controller = g_EnttRegistry.emplace<ecs::CViewpointController>(
 		camera, ecs::CViewpointController(camSceneTransform.GetWorldTransform(), viewpoint));
-	//controller.MoveSpeed = 40.0f;
+	// controller.MoveSpeed = 40.0f;
 	auto dirLight = g_EnttRegistry.create();
 	g_EnttRegistry.emplace<ecs::CEntityInfo>(dirLight, "DirectionalLight");
 	auto& lightSceneTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(dirLight, dirLight);
@@ -149,7 +160,7 @@ void InitGame()
 		dirLight, ecs::CViewpointController(lightSceneTransform.GetWorldTransform(), lightViewpoint));
 }
 
-void UpdateGame(float deltaTime, RenderFrameRecord& frameRecord)
+void UpdateGame(float deltaTime, SceneRenderData& sceneRenderData)
 {
 	g_EnttSystems->TerrainErosionSystem.Update(g_EnttRegistry, InputManager::Get(), frameRecord);
 	g_EnttSystems->ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime, g_Renderer);
@@ -167,9 +178,9 @@ bool InitRenderer(HWND window, uint32_t width, uint32_t height)
 void LoadSceneData()
 {
 	OptionalRef<ObjModel> sponzaObj{};
-	g_Renderer.FrameIndependentCommand(
-		[&](CommandContext& commmandCtx)
-		{ sponzaObj = g_Renderer.ModelManager->LoadModel(RAD_SPONZA_DIR "sponza.obj", commmandCtx); });
+	g_Renderer.FrameIndependentCommand([&](CommandContext& commmandCtx) {
+		sponzaObj = g_Renderer.ModelManager->LoadModel(RAD_SPONZA_DIR "sponza.obj", commmandCtx);
+	});
 	if (!sponzaObj)
 	{
 		std::cout << "Failed to load sponza model" << std::endl;
@@ -186,9 +197,10 @@ void LoadSceneData()
 		auto& meshTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh, mesh);
 		meshTransform.SetParent(&rootTransform);
 		assert(meshInfo.Model && meshInfo.Material);
-		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh, ecs::CStaticRenderable{.Vertices = *meshInfo.Model,
-																					.Indices = meshInfo.Indices,
-																					.Material = *meshInfo.Material});
+		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh,
+													   ecs::CStaticRenderable{.Vertices = *meshInfo.Model,
+																			  .Indices = meshInfo.Indices,
+																			  .Material = *meshInfo.Material});
 	}
 
 	{
@@ -208,16 +220,14 @@ void LoadSceneData()
 
 		terrainSystem.GenerateBaseHeightMap(cmdRec, terrain, erosionParams, terrainRenderable, waterRenderable);
 
-		g_Renderer.FrameIndependentCommand(
-			[cmdRec = std::move(cmdRec)](CommandContext& commandCtx) mutable
+		g_Renderer.FrameIndependentCommand([cmdRec = std::move(cmdRec)](CommandContext& commandCtx) mutable {
+			while (!cmdRec.Queue.empty())
 			{
-				while (!cmdRec.Queue.empty())
-				{
-					auto& [name, cmd] = cmdRec.Queue.front();
-					cmd(commandCtx);
-					cmdRec.Queue.pop();
-				}
-			});
+				auto& [name, cmd] = cmdRec.Queue.front();
+				cmd(commandCtx);
+				cmdRec.Queue.pop();
+			}
+		});
 
 		ecs::Transform transform{};
 		transform.Scale *= 0.01f;
@@ -249,18 +259,22 @@ void LoadSceneData()
 		g_Renderer.ViewableTextures.emplace("TerrainThermalPipe2",
 											std::pair<Ref<DXTexture>, DescriptorAllocationView>{
 												*terrain.ThermalPipe2, terrain.ThermalPipe2->SRV.GetView()});
-		g_Renderer.ViewableTextures.emplace("TerrainAlbedoMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-																	*terrainRenderable.TerrainAlbedoTex,
-																	terrainRenderable.TerrainAlbedoTex->SRV.GetView()});
-		g_Renderer.ViewableTextures.emplace("TerrainNormalMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-																	*terrainRenderable.TerrainNormalMap,
-																	terrainRenderable.TerrainNormalMap->SRV.GetView()});
 		g_Renderer.ViewableTextures.emplace(
-			"WaterAlbedoMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-								  *waterRenderable.WaterAlbedoMap, waterRenderable.WaterAlbedoMap->SRV.GetView()});
+			"TerrainAlbedoMap",
+			std::pair<Ref<DXTexture>, DescriptorAllocationView>{*terrainRenderable.TerrainAlbedoTex,
+																terrainRenderable.TerrainAlbedoTex->SRV.GetView()});
 		g_Renderer.ViewableTextures.emplace(
-			"WaterNormalMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-								  *waterRenderable.WaterNormalMap, waterRenderable.WaterNormalMap->SRV.GetView()});
+			"TerrainNormalMap",
+			std::pair<Ref<DXTexture>, DescriptorAllocationView>{*terrainRenderable.TerrainNormalMap,
+																terrainRenderable.TerrainNormalMap->SRV.GetView()});
+		g_Renderer.ViewableTextures.emplace(
+			"WaterAlbedoMap",
+			std::pair<Ref<DXTexture>, DescriptorAllocationView>{*waterRenderable.WaterAlbedoMap,
+																waterRenderable.WaterAlbedoMap->SRV.GetView()});
+		g_Renderer.ViewableTextures.emplace(
+			"WaterNormalMap",
+			std::pair<Ref<DXTexture>, DescriptorAllocationView>{*waterRenderable.WaterNormalMap,
+																waterRenderable.WaterNormalMap->SRV.GetView()});
 	}
 	auto fence = DXFence::Create(L"SceneLoadFence", g_Renderer.GetDevice());
 	g_Renderer.SubmitFrameIndependentCommands(fence, 1, true);
@@ -293,8 +307,8 @@ int main(int argv, char** args)
 
 	// Setup window
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-	g_SDLWindow = SDL_CreateWindow("DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_Width, g_Height,
-								   window_flags);
+	g_SDLWindow = SDL_CreateWindow(
+		"DX12 Playground", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g_Width, g_Height, window_flags);
 	if (g_SDLWindow == nullptr)
 	{
 		printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
@@ -312,7 +326,7 @@ int main(int argv, char** args)
 		return 1;
 	}
 	InitGame();
-	
+
 	LoadSceneData();
 	SDL_SetRelativeMouseMode(SDL_TRUE);
 	// Main loop
@@ -320,6 +334,7 @@ int main(int argv, char** args)
 
 	std::chrono::high_resolution_clock::time_point lastTime = std::chrono::high_resolution_clock::now();
 	auto& inputMan = InputManager::Get();
+	uint64_t frameNumber = 0;
 
 	while (!done)
 	{
@@ -362,11 +377,11 @@ int main(int argv, char** args)
 		auto now = std::chrono::high_resolution_clock::now();
 		auto deltaTime = std::chrono::duration<float>(now - lastTime).count();
 		lastTime = now;
-		auto frameRec = g_Renderer.BeginFrame();
-		UpdateGame(deltaTime, frameRec);
+		SceneRenderData frameSceneData{
+			.FrameNumber = frameNumber++, .DeltaTime = deltaTime, .View = {}, .LightInfo = {}};
+		UpdateGame(deltaTime, frameSceneData);
 
-		g_Renderer.EnqueueFrame(std::move(frameRec));
-		g_Renderer.RenderPendingFrameRecods();
+		g_Renderer.EnqueueFrameSceneData(std::move(frameSceneData));
 
 		for (int i = 0; i < 322; i++)
 		{

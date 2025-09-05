@@ -56,14 +56,11 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	reflectionBufferInfo.ClearValue =
 		D3D12_CLEAR_VALUE{.Format = DXGI_FORMAT_R16G16B16A16_FLOAT, .Color = {0, 0, 0, 0}};
 
-	SSReflectRefractBuffer =
-		DXTexture::Create(Renderer.GetDevice(), L"SSReflectRefractBuffer", reflectionBufferInfo);
+	SSReflectRefractBuffer = DXTexture::Create(Renderer.GetDevice(), L"SSReflectRefractBuffer", reflectionBufferInfo);
 
 	reflectionBufferInfo.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-	ReflectionResultBuffer =
-		DXTexture::Create(Renderer.GetDevice(), L"ReflectionResultBuffer", reflectionBufferInfo);
-	RefractionResultBuffer =
-		DXTexture::Create(Renderer.GetDevice(), L"RefractionResultBuffer", reflectionBufferInfo);
+	ReflectionResultBuffer = DXTexture::Create(Renderer.GetDevice(), L"ReflectionResultBuffer", reflectionBufferInfo);
+	RefractionResultBuffer = DXTexture::Create(Renderer.GetDevice(), L"RefractionResultBuffer", reflectionBufferInfo);
 
 	DXTexture::TextureCreateInfo outputBufferInfo{
 		.Width = width,
@@ -82,7 +79,6 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 	DepthBuffer.CreatePlacedDSV(DepthBufferDSV.GetView(), &dsvDesc);
 	SSDepthBuffer.CreatePlacedDSV(SSDepthBufferDSV.GetView(), &dsvDesc);
-
 
 	D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -127,14 +123,15 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	uavDesc.Texture2D.MipSlice = 0;
 	ReflectionResultBuffer.CreatePlacedUAV(ReflectionResultBufferUAV.GetView(), &uavDesc);
 	RefractionResultBuffer.CreatePlacedUAV(RefractionResultBufferUAV.GetView(), &uavDesc);
-		
+
 	return true;
 }
 
 bool DeferredRenderingPipeline::SetupShadowMapPass()
 {
 	ShadowMap = DXTexture::Create(
-		Renderer.GetDevice(), L"ShadowMap",
+		Renderer.GetDevice(),
+		L"ShadowMap",
 		{.Width = 1024,
 		 .Height = 1024,
 		 .MipLevels = 1,
@@ -182,8 +179,9 @@ bool DeferredRenderingPipeline::SetupShadowMapPass()
 
 	Renderer.GetDevice().CreateSampler(&shadowSampler, ShadowMapSampler.GetCPUHandle());
 
-	Renderer.ViewableTextures.emplace("ShadowMap", std::pair<Ref<DXTexture>, DescriptorAllocationView>(
-													   Ref<DXTexture>(ShadowMap), ShadowMapSRV.GetView()));
+	Renderer.ViewableTextures.emplace(
+		"ShadowMap",
+		std::pair<Ref<DXTexture>, DescriptorAllocationView>(Ref<DXTexture>(ShadowMap), ShadowMapSRV.GetView()));
 
 	return true;
 }
@@ -193,20 +191,16 @@ bool DeferredRenderingPipeline::SetupScreenSpaceRaymarchPass()
 	ScreenSpaceRaymarchPipelineState = PipelineState::CreateBindlessComputePipeline(
 		"LightingPipeline", Renderer, RAD_SHADERS_DIR L"Compute/ScreenSpaceRaymarch.cs.hlsl");
 
-	ReflectionResultBufferSRV =
-		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	ReflectionResultBufferUAV =
-		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	RefractionResultBufferSRV =
-		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	RefractionResultBufferUAV =
-		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	Renderer.ViewableTextures.emplace("ReflectionResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-																		ReflectionResultBuffer,
-																		ReflectionResultBufferSRV.GetView()});
-	Renderer.ViewableTextures.emplace("RefractionResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-																		RefractionResultBuffer,
-																		RefractionResultBufferSRV.GetView()});
+	ReflectionResultBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	ReflectionResultBufferUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	RefractionResultBufferSRV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	RefractionResultBufferUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	Renderer.ViewableTextures.emplace("ReflectionResult",
+									  std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+										  ReflectionResultBuffer, ReflectionResultBufferSRV.GetView()});
+	Renderer.ViewableTextures.emplace("RefractionResult",
+									  std::pair<Ref<DXTexture>, DescriptorAllocationView>{
+										  RefractionResultBuffer, RefractionResultBufferSRV.GetView()});
 	return true;
 }
 
@@ -237,18 +231,17 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 
 	pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-	LightingPipelineState = PipelineState::Create("LightingPipeline", Renderer.GetDevice(), pipelineStateStream,
-												  &Renderer.ShaderManager->BindlessRootSignature);
+	LightingPipelineState = PipelineState::Create(
+		"LightingPipeline", Renderer.GetDevice(), pipelineStateStream, &Renderer.ShaderManager->BindlessRootSignature);
 
-	LightBuffer = DXBuffer::Create(Renderer.GetDevice(), L"LightBuffer", sizeof(rad::hlsl::LightDataBuffer),
-								   D3D12_HEAP_TYPE_DEFAULT);
+	LightBuffer = DXBuffer::Create(
+		Renderer.GetDevice(), L"LightBuffer", sizeof(rad::hlsl::LightDataBuffer), D3D12_HEAP_TYPE_DEFAULT);
 	LightBufferCBV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 	LightBuffer.CreatePlacedCBV(LightBufferCBV.GetView());
 
-	ViewTransformBuffer =
-		DXTypedSingularBuffer<hlsl::ViewTransformBuffer>::Create(Renderer.GetDevice(), L"LightTransformationMatricesBuffer");
-	ViewTransformBufferCBV =
-		g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+	ViewTransformBuffer = DXTypedSingularBuffer<hlsl::ViewTransformBuffer>::Create(
+		Renderer.GetDevice(), L"LightTransformationMatricesBuffer");
+	ViewTransformBufferCBV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 	ViewTransformBuffer.CreatePlacedCBV(ViewTransformBufferCBV.GetView());
 
 	DepthBufferDSV = g_CPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
@@ -272,16 +265,18 @@ bool DeferredRenderingPipeline::SetupLightingPass()
 		"Depth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{DepthBuffer, GBuffersSRV.GetView(2)});
 	Renderer.ViewableTextures.emplace(
 		"Output", std::pair<Ref<DXTexture>, DescriptorAllocationView>{OutputBuffer, OutputBufferSRV.GetView()});
-	Renderer.ViewableTextures.emplace("LightingResult", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-															LightingResultBuffer, LightingResultBufferSRV.GetView()});
-	Renderer.ViewableTextures.emplace("SSReflectRefract", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-														SSReflectRefractBuffer, GBuffersSRV.GetView(3)});
-	Renderer.ViewableTextures.emplace("SSDepth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{
-														SSDepthBuffer, GBuffersSRV.GetView(4)});
+	Renderer.ViewableTextures.emplace(
+		"LightingResult",
+		std::pair<Ref<DXTexture>, DescriptorAllocationView>{LightingResultBuffer, LightingResultBufferSRV.GetView()});
+	Renderer.ViewableTextures.emplace(
+		"SSReflectRefract",
+		std::pair<Ref<DXTexture>, DescriptorAllocationView>{SSReflectRefractBuffer, GBuffersSRV.GetView(3)});
+	Renderer.ViewableTextures.emplace(
+		"SSDepth", std::pair<Ref<DXTexture>, DescriptorAllocationView>{SSDepthBuffer, GBuffersSRV.GetView(4)});
 	return true;
 }
 
-void DeferredRenderingPipeline::BeginFrame(CommandContext& cmdContext, RenderFrameRecord& frameRecord) 
+void DeferredRenderingPipeline::BeginFrame(RenderGraphBuilder& graphBuilder, RenderFrameRecord& frameRecord)
 {
 
 	// Update Light Data
@@ -319,11 +314,9 @@ void DeferredRenderingPipeline::BeginFrame(CommandContext& cmdContext, RenderFra
 
 		// Update Light Buffer
 		ViewTransformBuffer.WriteImmediate(cmdContext, lightTransform);
-		TransitionVec(ViewTransformBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
-			.Execute(cmdContext);
+		TransitionVec(ViewTransformBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER).Execute(cmdContext);
 	}
 }
-
 
 void DeferredRenderingPipeline::ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
@@ -463,7 +456,7 @@ void DeferredRenderingPipeline::LightingPass(CommandContext& cmdContext, RenderF
 	LightingPipelineState.BindWithResources(cmdContext, lightingResources);
 	cmdContext->DrawInstanced(4, 1, 0, 0);
 
-	//Copy lighting result to output buffer
+	// Copy lighting result to output buffer
 	TransitionVec{}
 		.Add(LightingResultBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE)
 		.Add(OutputBuffer, D3D12_RESOURCE_STATE_COPY_DEST)
@@ -507,7 +500,7 @@ void DeferredRenderingPipeline::ForwardRenderPass(CommandContext& cmdContext, Re
 		if (renderCommand.ForwardPass)
 			renderCommand.ForwardPass(frameRecord.View, passData);
 }
-void DeferredRenderingPipeline::ScreenSpaceRaymarchPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord) 
+void DeferredRenderingPipeline::ScreenSpaceRaymarchPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord)
 {
 	TransitionVec{}
 		.Add(SSReflectRefractBuffer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)

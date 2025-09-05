@@ -31,6 +31,14 @@ struct RenderLightInfo
 	glm::vec3 AmbientColor{};
 };
 
+struct SceneRenderData
+{
+	uint64_t FrameNumber;
+	float DeltaTime;
+	RenderView View;
+	RenderLightInfo LightInfo;
+};
+
 struct Swapchain
 {
 	uint32_t RequestedNumberOfBackBuffers = 3;
@@ -54,7 +62,7 @@ Rendering:
 	G-Buffer Pass
 	Water Pass
 	Screen Space Reflection/Refraction Pass
-	Lighting Pass
+	Lighting
 	Forward Rendering Pass
 	Post Processing Pass
 	Present
@@ -100,7 +108,6 @@ struct Renderer
 	};
 
 	uint64_t CurrentFrameNumber = 1;
-	std::optional<RenderFrameRecord> CurrentFrameRecord = std::nullopt;
 
 	RenderFrameRecord BeginFrame();
 	void EnqueueFrame(RenderFrameRecord frame);

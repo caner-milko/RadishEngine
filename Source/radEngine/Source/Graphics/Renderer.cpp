@@ -27,7 +27,7 @@ bool Renderer::InitializeDevice()
 	if (D3D12CreateDevice(nullptr, featureLevel, IID_PPV_ARGS(&Device)) != S_OK)
 		return false;
 
-		// [DEBUG] Setup debug interface to break on any warnings/errors
+	// [DEBUG] Setup debug interface to break on any warnings/errors
 #ifdef DX12_ENABLE_DEBUG_LAYER
 	if (pdx12Debug != nullptr)
 	{
@@ -50,10 +50,10 @@ bool Renderer::InitializeDevice()
 	g_CPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1024);
 
 	g_GPUDescriptorAllocator = GPUDescriptorHeapAllocator::Create(GetDevice());
-	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048 * (8 + FramesInFlight + 1),
-											 FramesInFlight + 1, 2048 * 8);
-	g_GPUDescriptorAllocator->CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 128 * (FramesInFlight + 2),
-											 FramesInFlight + 1, 128);
+	g_GPUDescriptorAllocator->CreateHeapType(
+		D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 2048 * (8 + FramesInFlight + 1), FramesInFlight + 1, 2048 * 8);
+	g_GPUDescriptorAllocator->CreateHeapType(
+		D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 128 * (FramesInFlight + 2), FramesInFlight + 1, 128);
 
 	TextureManager = std::make_unique<rad::TextureManager>(*this);
 	if (!TextureManager->Init())
@@ -79,8 +79,11 @@ bool Renderer::InitializeDevice()
 	for (auto& cmdContext : CommandContexts)
 		AvailableCommandContexts.push_back(*cmdContext);
 
-	if (Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, CommandContexts[0]->CommandAllocator.Get(),
-								  nullptr, IID_PPV_ARGS(&CommandList)) != S_OK ||
+	if (Device->CreateCommandList(0,
+								  D3D12_COMMAND_LIST_TYPE_DIRECT,
+								  CommandContexts[0]->CommandAllocator.Get(),
+								  nullptr,
+								  IID_PPV_ARGS(&CommandList)) != S_OK ||
 		CommandList->Close() != S_OK)
 		return false;
 
@@ -157,8 +160,8 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 		Swapchain.BackBuffers.clear();
 		DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
 		ThrowIfFailed(Swapchain.Swapchain->GetDesc(&swapChainDesc));
-		ThrowIfFailed(Swapchain.Swapchain->ResizeBuffers(BackBufferCount, width, height,
-														 swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
+		ThrowIfFailed(Swapchain.Swapchain->ResizeBuffers(
+			BackBufferCount, width, height, swapChainDesc.BufferDesc.Format, swapChainDesc.Flags));
 	}
 	for (uint32_t i = 0; i < BackBufferCount; i++)
 	{
@@ -173,9 +176,12 @@ bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)
 		auto dxSwapchainTex = DXTexture::FromExisting(GetDevice(), L"Swapchain_" + std::to_wstring(i), res, info);
 
 		Swapchain.BackBuffers.emplace_back(
-			dxSwapchainTex, ResourcePool->AddExternalResource(*res.Get(), "Swapchain_" + std::to_string(i),
-								ResourceCreateHelper::Texture2D(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, {}),
-								D3D12_RESOURCE_STATE_PRESENT));
+			dxSwapchainTex,
+			ResourcePool->AddExternalResource(
+				*res.Get(),
+				"Swapchain_" + std::to_string(i),
+				ResourceCreateHelper::Texture2D(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, {}),
+				D3D12_RESOURCE_STATE_PRESENT));
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
 		rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
@@ -258,32 +264,24 @@ void Renderer::Render(RenderFrameRecord& record)
 		record.CommandRecord.Queue.pop();
 	}
 
-	DeferredPipeline->BeginFrame(cmdContext, record);
-	DeferredPipeline->ShadowMapPass(cmdContext, record);
-	DeferredPipeline->DeferredRenderPass(cmdContext, record);
-	DeferredPipeline->WaterRenderPass(cmdContext, record);
-	DeferredPipeline->ScreenSpaceRaymarchPass(cmdContext, record);
-	DeferredPipeline->LightingPass(cmdContext, record);
-	DeferredPipeline->ForwardRenderPass(cmdContext, record);
+	DeferredPipeline->BuildFrameRenderGraph(cmdContext, record);
 
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
 	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
 	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
-	BlitPipeline->Blit(cmdContext, dxRes, viewingTexture,
-					   Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
+	BlitPipeline->Blit(
+		cmdContext, dxRes, viewingTexture, Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
 	TransitionVec(dxRes, D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
 	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
 	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);
 	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), &cmdContext.CommandList);
 	TransitionVec(dxRes, D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
 	ExecuteCommandContext(*activeCmdContext);
-	
-	
+
 	// Present
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
-	Swapchain.Swapchain->Present(1, 0/*DXGI_PRESENT_ALLOW_TEARING*/);
+	Swapchain.Swapchain->Present(1, 0 /*DXGI_PRESENT_ALLOW_TEARING*/);
 	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
-
 
 	record.EndPipeline();
 }
@@ -338,7 +336,7 @@ std::optional<Renderer::ActiveCommandContext> Renderer::GetNewCommandContext()
 	CommandList->SetDescriptorHeaps(heaps.size(), heaps.data());
 	return ActiveCommandContext{*CommandList.Get(), *cmdContext};
 }
-void Renderer::ExecuteCommandContext(ActiveCommandContext& context) 
+void Renderer::ExecuteCommandContext(ActiveCommandContext& context)
 {
 	assert(!context.Executed);
 	context.CommandList->Close();
@@ -347,7 +345,8 @@ void Renderer::ExecuteCommandContext(ActiveCommandContext& context)
 	context.Executed = true;
 }
 std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(ActiveCommandContext&& context,
-																			  Ref<DXFence> fence, uint64_t signalValue,
+																			  Ref<DXFence> fence,
+																			  uint64_t signalValue,
 																			  bool wait)
 {
 	assert(context.Executed);
@@ -363,7 +362,7 @@ std::optional<Renderer::PendingCommandContext> Renderer::SubmitCommandContext(Ac
 }
 Renderer::CommandContextData& Renderer::WaitAndClearCommandContext(PendingCommandContext&& pendingContext)
 {
-	auto completedValue = pendingContext.Fence->Fence->GetCompletedValue(); 
+	auto completedValue = pendingContext.Fence->Fence->GetCompletedValue();
 	if (completedValue < pendingContext.FenceValue)
 	{
 		pendingContext.Fence->Fence->SetEventOnCompletion(pendingContext.FenceValue, pendingContext.Fence->FenceEvent);

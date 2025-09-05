@@ -1,8 +1,8 @@
 #pragma once
 
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 
-#include <SDL2/SDL.h>
+#include <SDL2/SDL_scancode.h>
 
 namespace rad
 {
@@ -29,25 +29,13 @@ struct InputManager : Singleton<InputManager>
 
 	bool Init();
 
-	bool IsKeyDown(SDL_Scancode key)
-	{
-		return CUR_KEYS[key] == KEY_DOWN || CUR_KEYS[key] == KEY_PRESSED;
-	}
+	bool IsKeyDown(SDL_Scancode key) { return CUR_KEYS[key] == KEY_DOWN || CUR_KEYS[key] == KEY_PRESSED; }
 
-	bool IsKeyPressed(SDL_Scancode key)
-	{
-		return CUR_KEYS[key] == KEY_PRESSED;
-	}
+	bool IsKeyPressed(SDL_Scancode key) { return CUR_KEYS[key] == KEY_PRESSED; }
 
-	bool IsKeyReleased(SDL_Scancode key)
-	{
-		return CUR_KEYS[key] == KEY_RELEASED;
-	}
+	bool IsKeyReleased(SDL_Scancode key) { return CUR_KEYS[key] == KEY_RELEASED; }
 
-	bool IsKeyUp(SDL_Scancode key)
-	{
-		return CUR_KEYS[key] == KEY_UP || CUR_KEYS[key] == KEY_RELEASED;
-	}
+	bool IsKeyUp(SDL_Scancode key) { return CUR_KEYS[key] == KEY_UP || CUR_KEYS[key] == KEY_RELEASED; }
 };
 
 } // namespace rad

@@ -1,13 +1,12 @@
 #pragma once
 
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 #include "Graphics/DXResource.h"
 #include "Graphics/RendererCommon.h"
 #include "Graphics/Model.h"
 #include "Graphics/PipelineState.h"
 #include "Compute/Terrain/TerrainResources.hlsli"
 #include "InputManager.h"
-#include "Graphics/Renderer.h"
 #include "entt/entt.hpp"
 #include "Graphics/RenderGraph.h"
 #include "Graphics/ResourcePool.h"
@@ -15,18 +14,10 @@
 namespace rad::proc
 {
 
-struct RWTexture : public DXTexture
-{
-	RWTexture() = default;
-	RWTexture(DXTexture texture, int srvMipLevels = 1);
-	DescriptorAllocation UAV{};
-	DescriptorAllocation SRV{};
-};
-
 struct CTerrain
 {
 	Ref<ResourcePool::OwnedResource> HeightMap;
-    Ref<ResourcePool::OwnedResource> WaterHeightMap;
+	Ref<ResourcePool::OwnedResource> WaterHeightMap;
 
 	Ref<ResourcePool::OwnedResource> SedimentMap;
 	Ref<ResourcePool::OwnedResource> WaterOutflux;
@@ -99,19 +90,28 @@ struct TerrainErosionSystem
 	CIndexedPlane CreatePlane(RenderGraphBuilder& rgBuilder, uint32_t resX, uint32_t resY);
 	CTerrainRenderable CreateTerrainRenderable(CTerrain& terrain);
 	CWaterRenderable CreateWaterRenderable(CTerrain& terrain);
-	void GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder, CTerrain& terrain, CErosionParameters const& parameters,
+	void GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder,
+							   CTerrain& terrain,
+							   CErosionParameters const& parameters,
 							   OptionalRef<CTerrainRenderable> terrainRenderable,
 							   OptionalRef<CWaterRenderable> waterRenderable);
-	void ErodeTerrain(RenderGraphBuilder& rgBuilder, CTerrain& terrain, CErosionParameters const& parameters,
-					  OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable);
-	void GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder, CTerrain& terrain, CErosionParameters const& parameters,
+	void ErodeTerrain(RenderGraphBuilder& rgBuilder,
+					  CTerrain& terrain,
+					  CErosionParameters const& parameters,
+					  OptionalRef<CTerrainRenderable> terrainRenderable,
+					  OptionalRef<CWaterRenderable> waterRenderable);
+	void GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder,
+								 CTerrain& terrain,
+								 CErosionParameters const& parameters,
 								 CTerrainRenderable& terrainRenderable);
-	void GenerateWaterMaterial(RenderGraphBuilder& rgBuilder, CTerrain& terrain, CErosionParameters const& parameters,
+	void GenerateWaterMaterial(RenderGraphBuilder& rgBuilder,
+							   CTerrain& terrain,
+							   CErosionParameters const& parameters,
 							   CWaterRenderable& waterRenderable);
 
 	void Update(entt::registry& registry, InputManager& inputMan, RenderGraphBuilder& rgBuilder);
 
-  private:
+private:
 	Renderer& Renderer;
 	ComputePipelineState<hlsl::HeightToTerrainMaterialResources> HeightMapToTerrainMaterialPSO;
 	ComputePipelineState<hlsl::HeightToWaterMaterialResources> HeightMapToWaterMaterialPSO;
@@ -138,9 +138,11 @@ struct TerrainErosionSystem
 		hlsl::TerrainRenderResources Resources;
 	};
 
-	void TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
+	void TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects,
+							  const RenderView& view,
 							  DepthOnlyPassData& passData);
-	void TerrainDeferredPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
+	void TerrainDeferredPass(std::span<TerrainRenderData> renderObjects,
+							 const RenderView& view,
 							 DeferredPassData& passData);
 
 	struct WaterRenderData
