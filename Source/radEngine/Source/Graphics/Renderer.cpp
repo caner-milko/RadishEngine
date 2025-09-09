@@ -98,7 +98,7 @@ bool Renderer::InitializeDevice()
 
 bool Renderer::InitializeResourcePool()
 {
-	ResourcePool = std::make_unique<rad::ResourcePool>(*this);
+	ResourcePool = std::make_unique<rad::ResourcePool>(GetDevice());
 	return true;
 }
 
@@ -237,19 +237,11 @@ bool Renderer::Deinitialize()
 	return true;
 }
 
-RenderFrameRecord Renderer::BeginFrame()
+void Renderer::RenderScene(SceneRenderData sceneData)
 {
-	return RenderFrameRecord{.FrameNumber = CurrentFrameNumber++};
-}
+	RenderGraphBuilder graphBuilder{};
+	DeferredPipeline->BuildFrameRenderGraph(graphBuilder, sceneData);
 
-void Renderer::EnqueueFrame(RenderFrameRecord record)
-{
-	record.EndRecording();
-	PendingFrameRecords.push(std::move(record));
-}
-
-void Renderer::Render(RenderFrameRecord& record)
-{
 	auto activeCmdContext = GetNewCommandContext();
 	if (!activeCmdContext)
 	{
@@ -257,14 +249,8 @@ void Renderer::Render(RenderFrameRecord& record)
 		return;
 	}
 	auto cmdContext = activeCmdContext->AsCommandContext();
-	while (!record.CommandRecord.Queue.empty())
-	{
-		auto& command = record.CommandRecord.Queue.front();
-		command.Command(cmdContext);
-		record.CommandRecord.Queue.pop();
-	}
 
-	DeferredPipeline->BuildFrameRenderGraph(cmdContext, record);
+	graphBuilder.BuildAndExecute(*ResourcePool, cmdContext);
 
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
 	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
@@ -281,9 +267,7 @@ void Renderer::Render(RenderFrameRecord& record)
 	// Present
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
 	Swapchain.Swapchain->Present(1, 0 /*DXGI_PRESENT_ALLOW_TEARING*/);
-	SubmitCommandContext(std::move(*activeCmdContext), Fence, record.FrameNumber);
-
-	record.EndPipeline();
+	SubmitCommandContext(std::move(*activeCmdContext), Fence, sceneData.FrameNumber);
 }
 
 void Renderer::FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command)

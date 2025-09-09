@@ -124,9 +124,14 @@ struct RGResourceUsage
 		return RGResourceUsage{D3D12_RESOURCE_STATE_RENDER_TARGET,
 							   DescriptorCreateHelper::RenderTargetView(resource.GetCreateInfo())};
 	}
-	static RGResourceUsage DepthStencilView(RGResourceRef const& resource)
+	static RGResourceUsage DepthStencilWrite(RGResourceRef const& resource)
 	{
 		return RGResourceUsage{D3D12_RESOURCE_STATE_DEPTH_WRITE,
+							   DescriptorCreateHelper::DepthStencilView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage DepthStencilRead(RGResourceRef const& resource)
+	{
+		return RGResourceUsage{D3D12_RESOURCE_STATE_DEPTH_READ,
 							   DescriptorCreateHelper::DepthStencilView(resource.GetCreateInfo())};
 	}
 };
@@ -193,7 +198,7 @@ struct RGBInputResource
 	{
 	}
 
-	RGResourceDescriptor& AddDescriptor(DescriptorDesc desc);
+	Ref<RGResourceDescriptor> AddDescriptor(DescriptorDesc desc);
 
 	std::string Name;
 	Ref<RenderPassBuilder> OwnerPass;
@@ -214,11 +219,13 @@ struct RenderPassBuilder
 	std::function<void(CommandContext&)> Execute;
 	Ref<RenderGraphBuilder> RGBuilder;
 
-	RGBInputResource& AddInput(std::string name, RGBOutputResource& resource, RGResourceUsage usage);
-	std::pair<RGBInputResource&, Ref<RGBOutputResource>> AddInOutResource(std::string name,
-																		  RGBOutputResource& resource,
-																		  RGResourceUsage usage);
-	RGBInputResource& AddInResourceSetOut(std::string name, Ref<RGBOutputResource>& resource, RGResourceUsage usage);
+	Ref<RGBInputResource> AddInput(std::string name, RGBOutputResource& resource, RGResourceUsage usage);
+	std::pair<Ref<RGBInputResource>, Ref<RGBOutputResource>> AddInOutResource(std::string name,
+																			  RGBOutputResource& resource,
+																			  RGResourceUsage usage);
+	Ref<RGBInputResource> AddInResourceSetOut(std::string name,
+											  Ref<RGBOutputResource>& resource,
+											  RGResourceUsage usage);
 
 	friend struct RenderGraphBuilder;
 
@@ -259,10 +266,10 @@ struct RenderGraphBuilder
 	Ref<RGBOutputResource> GetOrAddExternalResource(PoolResourceView externalResource);
 
 	void BuildAndExecute(ResourcePool& resourcePool, CommandContext& cmd);
-	RGBInputResource& AddInputToPass(RenderPassBuilder& pass,
-									 std::string name,
-									 RGBOutputResource& resource,
-									 RGResourceUsage usage);
+	Ref<RGBInputResource> AddInputToPass(RenderPassBuilder& pass,
+										 std::string name,
+										 RGBOutputResource& resource,
+										 RGResourceUsage usage);
 	std::pair<RGBInputResource&, Ref<RGBOutputResource>> AddInOutToPass(RenderPassBuilder& pass,
 																		std::string name,
 																		RGBOutputResource& resourceRef,

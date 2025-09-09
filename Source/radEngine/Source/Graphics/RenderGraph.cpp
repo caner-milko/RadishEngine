@@ -24,21 +24,21 @@ Ref<RGBOutputResource> RenderGraphBuilder::InitializeResourceProvider(std::strin
 	return AddOutputToPass(providerPass, std::move(name), resourceRef);
 }
 
-RGBInputResource& RenderPassBuilder::AddInput(std::string name, RGBOutputResource& output, RGResourceUsage usage)
+Ref<RGBInputResource> RenderPassBuilder::AddInput(std::string name, RGBOutputResource& output, RGResourceUsage usage)
 {
 	return RGBuilder->AddInputToPass(*this, std::move(name), output, std::move(usage));
 }
 
-std::pair<RGBInputResource&, Ref<RGBOutputResource>> RenderPassBuilder::AddInOutResource(std::string name,
-																						 RGBOutputResource& output,
-																						 RGResourceUsage usage)
+std::pair<Ref<RGBInputResource>, Ref<RGBOutputResource>> RenderPassBuilder::AddInOutResource(std::string name,
+																							 RGBOutputResource& output,
+																							 RGResourceUsage usage)
 {
 	return RGBuilder->AddInOutToPass(*this, std::move(name), output, std::move(usage));
 }
 
-RGBInputResource& RenderPassBuilder::AddInResourceSetOut(std::string name,
-														 Ref<RGBOutputResource>& resource,
-														 RGResourceUsage usage)
+Ref<RGBInputResource> RenderPassBuilder::AddInResourceSetOut(std::string name,
+															 Ref<RGBOutputResource>& resource,
+															 RGResourceUsage usage)
 {
 	auto [in, out] = AddInOutResource(std::move(name), *resource, std::move(usage));
 	resource = out;
@@ -114,10 +114,10 @@ void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandCont
 	ResourceManager.FreeResources(resourcePool);
 }
 
-RGBInputResource& RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass,
-													 std::string name,
-													 RGBOutputResource& fromOut,
-													 RGResourceUsage usage)
+Ref<RGBInputResource> RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass,
+														 std::string name,
+														 RGBOutputResource& fromOut,
+														 RGResourceUsage usage)
 {
 	auto& inRef = pass.Inputs.emplace_back(std::move(name), pass, fromOut, usage.State);
 	fromOut.ConnectedInputs.push_back(inRef);
@@ -139,7 +139,7 @@ std::pair<RGBInputResource&, Ref<RGBOutputResource>> RenderGraphBuilder::AddInOu
 																						RGBOutputResource& fromOut,
 																						RGResourceUsage usage)
 {
-	auto& input = AddInputToPass(pass, name, fromOut, std::move(usage));
+	auto input = AddInputToPass(pass, name, fromOut, std::move(usage));
 	auto output = AddOutputToPass(pass, name, fromOut.GetResource());
 	return {input, output};
 }
@@ -230,10 +230,10 @@ void TestGraph()
 	auto inReadTex =
 		pass1.AddInput("InReadTex", *externalReadTex, RGResourceUsage::ShaderResourceView(*externalReadTex));
 	auto inBuf = pass1.AddInput("InBuf", *externalBuf, RGResourceUsage::ShaderResourceView(*externalBuf));
-	pass1.Execute = [&inTestTex, &inBuf, &inReadTex](CommandContext& cmd) {
-		auto rtv = inTestTex.GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>();
-		auto srvTex = inReadTex.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
-		auto srvBuf = inBuf.GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
+	pass1.Execute = [inTestTex, inBuf, inReadTex](CommandContext& cmd) {
+		auto rtv = inTestTex->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>();
+		auto srvTex = inReadTex->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
+		auto srvBuf = inBuf->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
 	};
 }
 

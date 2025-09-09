@@ -1,6 +1,6 @@
 #pragma once
 
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 
 #include "Graphics/RootSignature.h"
 #include "Graphics/PipelineState.h"
@@ -18,8 +18,11 @@ struct BlitPipeline
 {
 	BlitPipeline(rad::Renderer& renderer) : Renderer(renderer) {}
 	bool Setup();
-	void Blit(CommandContext& commandCtx, struct DXTexture& dstTex, struct DXTexture& srcTex,
-			  DescriptorAllocationView dstRTV, DescriptorAllocationView srcSRV);
+	void Blit(CommandContext& commandCtx,
+			  struct DXTexture& dstTex,
+			  struct DXTexture& srcTex,
+			  DescriptorAllocationView dstRTV,
+			  DescriptorAllocationView srcSRV);
 
 	Renderer& Renderer;
 	GraphicsPipelineState<hlsl::BlitResources> PipelineState;

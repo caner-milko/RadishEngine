@@ -2,7 +2,7 @@
 
 #include "DXHelpers.h"
 #include "Shader.h"
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 #include "RootSignature.h"
 #include "RendererCommon.h"
 
@@ -17,15 +17,20 @@ struct ShaderManager
 	ShaderManager(Renderer& renderer);
 	bool Init();
 
-	std::pair<Shader*, Shader*> CompileBindlessGraphicsShader(std::wstring_view name, std::wstring_view shaderPath,
+	std::pair<Shader*, Shader*> CompileBindlessGraphicsShader(std::wstring_view name,
+															  std::wstring_view shaderPath,
 															  std::span<const std::wstring_view> includeFolders = {});
-	Shader* CompileBindlessVertexShader(std::wstring_view name, std::wstring_view shaderPath,
+	Shader* CompileBindlessVertexShader(std::wstring_view name,
+										std::wstring_view shaderPath,
 										std::wstring_view entryPoint = L"VSMain",
 										std::span<const std::wstring_view> includeFolders = {});
-	Shader* CompileBindlessComputeShader(std::wstring_view name, std::wstring_view shaderPath,
+	Shader* CompileBindlessComputeShader(std::wstring_view name,
+										 std::wstring_view shaderPath,
 										 std::wstring_view entryPoint = L"CSMain",
 										 std::span<const std::wstring_view> includeFolders = {});
-	Shader* CompileShader(std::wstring_view name, std::wstring_view shaderPath, ShaderType type,
+	Shader* CompileShader(std::wstring_view name,
+						  std::wstring_view shaderPath,
+						  ShaderType type,
 						  std::wstring_view entryPoint = L"main",
 						  std::span<const std::wstring_view> includeFolders = {});
 
@@ -33,7 +38,7 @@ struct ShaderManager
 
 	RootSignature BindlessRootSignature;
 
-  private:
+private:
 	Renderer& Renderer;
 	ComPtr<IDxcUtils> Utils;
 	ComPtr<IDxcCompiler3> Compiler;

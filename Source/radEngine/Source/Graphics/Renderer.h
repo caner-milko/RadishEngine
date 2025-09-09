@@ -13,6 +13,10 @@ struct RenderGraphBuilder;
 
 struct RenderView
 {
+	// TODO RenderGraph: Width and Height should not be here, they are strictly related to rendering,
+	// while view settings are more general
+	uint32_t Width;
+	uint32_t Height;
 	// Light data, camera data, etc.
 	glm::mat4 ViewProjectionMatrix;
 	glm::mat4 ViewMatrix;
@@ -109,33 +113,11 @@ struct Renderer
 
 	uint64_t CurrentFrameNumber = 1;
 
-	RenderFrameRecord BeginFrame();
-	void EnqueueFrame(RenderFrameRecord frame);
-
-	void Render(RenderFrameRecord& queue);
+	void RenderScene(SceneRenderData sceneData);
 	void FrameIndependentCommand(std::move_only_function<void(CommandContext&)> command);
 	void SubmitFrameIndependentCommands(Ref<DXFence> fence, uint64_t signalValue, bool wait);
 
-	void RenderPendingFrameRecods()
-	{
-		while (!PendingFrameRecords.empty())
-		{
-			auto& queue = PendingFrameRecords.front();
-			Render(queue);
-			PendingFrameRecords.pop();
-		}
-	}
-
-	std::optional<ActiveCommandContext> GetNewCommandContext();
-	void ExecuteCommandContext(ActiveCommandContext& context);
-	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context,
-															  Ref<DXFence> fence,
-															  uint64_t signalValue,
-															  bool wait = false);
-	CommandContextData& WaitAndClearCommandContext(PendingCommandContext&& context);
 	void WaitAllCommandContexts();
-
-	std::queue<RenderFrameRecord> PendingFrameRecords;
 
 	ComPtr<RadDevice> Device;
 	ComPtr<ID3D12CommandQueue> CommandQueue;
@@ -175,5 +157,13 @@ private:
 	bool InitializeResourcePool();
 	bool InitializeSwapchain(HWND window, uint32_t width, uint32_t height);
 	bool InitializePipelines();
+
+	std::optional<ActiveCommandContext> GetNewCommandContext();
+	void ExecuteCommandContext(ActiveCommandContext& context);
+	std::optional<PendingCommandContext> SubmitCommandContext(ActiveCommandContext&& context,
+															  Ref<DXFence> fence,
+															  uint64_t signalValue,
+															  bool wait = false);
+	CommandContextData& WaitAndClearCommandContext(PendingCommandContext&& context);
 };
 } // namespace rad

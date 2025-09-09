@@ -18,7 +18,8 @@ void TextureManager::GenerateMips(CommandContext& commandCtx, DXTexture& texture
 }
 
 DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path,
-											TextureManager::TextureLoadInfo const& info, CommandContext& commandCtx,
+											TextureManager::TextureLoadInfo const& info,
+											CommandContext& commandCtx,
 											bool generateMips)
 {
 	auto it = LoadedTextures.find(path);
@@ -77,7 +78,7 @@ DXTexture* rad::TextureManager::LoadTexture(std::filesystem::path const& path,
 	}
 
 	TextureId id = NextId;
-	NextId.Id++;
+	NextId.Value++;
 
 	auto& tex = Textures[id] = std::make_unique<DXTexture>(texture);
 	LoadedTextures[path] = id;
