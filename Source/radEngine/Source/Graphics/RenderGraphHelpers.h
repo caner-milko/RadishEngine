@@ -74,10 +74,10 @@ void ClearUnorderedAccessViewFloat(RenderGraphBuilder& rgBuilder,
 	};
 }
 
-void CopyResource(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& src, Ref<RGBOutputResource>& dst)
+void CopyResource(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource> const& src, Ref<RGBOutputResource>& dst)
 {
 	auto& copyPass = rgBuilder.AddPass(dst->Name + "_CopyResource");
-	auto passSrc = copyPass.AddInResourceSetOut(src->Name, src, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_SOURCE));
+	auto passSrc = copyPass.AddInput(src->Name, src, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_SOURCE));
 	auto passDst = copyPass.AddInResourceSetOut(dst->Name, dst, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_DEST));
 	copyPass.Execute = [passDst, passSrc](CommandContext& cmd) {
 		cmd->CopyResource(&passDst->GetResourceView()->DXRes, &passSrc->GetResourceView()->DXRes);

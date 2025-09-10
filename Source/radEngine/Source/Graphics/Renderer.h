@@ -147,7 +147,6 @@ struct Renderer
 	std::unique_ptr<BlitPipeline> BlitPipeline;
 	std::unordered_map<std::string, std::pair<Ref<DXTexture>, DescriptorAllocationView>> ViewableTextures;
 	std::optional<std::string> ViewingTexture = std::nullopt;
-	std::pair<Ref<DXTexture>, DescriptorAllocationView> GetViewingTexture();
 
 private:
 	std::optional<CommandContextData> CreateCommandContext();

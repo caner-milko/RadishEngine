@@ -1,6 +1,6 @@
 #include "RootSignature.h"
 
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 namespace rad
 {
 
@@ -64,16 +64,18 @@ RootSignature RootSignatureBuilder::Build(std::string_view name, RadDevice& devi
 	RootSignature rs{};
 	rs.Name = name;
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc{};
-	rootSignatureDesc.Init_1_1(static_cast<UINT>(Parameters.size()), Parameters.data(),
-							   static_cast<UINT>(StaticSamplers.size()), StaticSamplers.data(),
+	rootSignatureDesc.Init_1_1(static_cast<UINT>(Parameters.size()),
+							   Parameters.data(),
+							   static_cast<UINT>(StaticSamplers.size()),
+							   StaticSamplers.data(),
 							   D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 	ComPtr<ID3DBlob> signatureBlob;
 	ComPtr<ID3DBlob> errorBlob;
-	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1,
-														&signatureBlob, &errorBlob));
-	ThrowIfFailed(device.CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(),
-											 IID_PPV_ARGS(&rs.DXSignature)));
+	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(
+		&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signatureBlob, &errorBlob));
+	ThrowIfFailed(device.CreateRootSignature(
+		0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rs.DXSignature)));
 	rs.DXSignature->SetName(s2ws(rs.Name).c_str());
 
 	for (size_t i = 0; i < ParameterNames.size(); i++)

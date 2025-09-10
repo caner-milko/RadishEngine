@@ -72,7 +72,8 @@ bool DeferredRenderingPipeline::OnResize(uint32_t width, uint32_t height)
 	return true;
 }
 
-void DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGraphBuilder& graphBuilder, SceneRenderData& sceneData)
+Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGraphBuilder& graphBuilder,
+																		SceneRenderData& sceneData)
 {
 	// BeginFrame(graphBuilder, sceneData);
 	/*
@@ -338,5 +339,7 @@ void DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGraphBuilder& graphB
 										.InRefractionResult = refractionResultBuf};
 		OnForwardRenderPass.Broadcast(forwardPassData);
 	}
+
+	return outputBuf;
 }
 } // namespace rad

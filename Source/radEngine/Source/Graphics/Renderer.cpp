@@ -9,6 +9,7 @@
 #include "imgui_impl_dx12.h"
 
 #include "RenderGraph.h"
+#include "RenderGraphHelpers.h"
 
 namespace rad
 {
@@ -240,7 +241,26 @@ bool Renderer::Deinitialize()
 void Renderer::RenderScene(SceneRenderData sceneData)
 {
 	RenderGraphBuilder graphBuilder{};
-	DeferredPipeline->BuildFrameRenderGraph(graphBuilder, sceneData);
+	auto colorBuf = DeferredPipeline->BuildFrameRenderGraph(graphBuilder, sceneData);
+
+	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
+	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
+
+	auto rgBackBuffer = graphBuilder.GetOrAddExternalResource(poolRes->AsView());
+
+	rghelpers::CopyResource(graphBuilder, colorBuf, rgBackBuffer);
+
+	{
+
+		auto& imguiPass = graphBuilder.AddPass("ImGui");
+		auto inBackBuffer =
+			imguiPass.AddInResourceSetOut("BackBuffer", rgBackBuffer, RGResourceUsage::RenderTargetView(*rgBackBuffer));
+		imguiPass.Execute = [inBackBuffer](CommandContext& cmdContext) {
+			auto rtv = inBackBuffer->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle();
+			cmdContext->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), &cmdContext.CommandList);
+		};
+	}
 
 	auto activeCmdContext = GetNewCommandContext();
 	if (!activeCmdContext)
@@ -252,18 +272,8 @@ void Renderer::RenderScene(SceneRenderData sceneData)
 
 	graphBuilder.BuildAndExecute(*ResourcePool, cmdContext);
 
-	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
-	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
-	auto [viewingTexture, viewingTextureSRV] = GetViewingTexture();
-	BlitPipeline->Blit(
-		cmdContext, dxRes, viewingTexture, Swapchain.BackBufferRGBRTVs.GetView(backbufferIndex), viewingTextureSRV);
-	TransitionVec(dxRes, D3D12_RESOURCE_STATE_RENDER_TARGET).Execute(cmdContext);
-	auto swapchainRTV = Swapchain.BackBufferRTVs.GetView(backbufferIndex).GetCPUHandle();
-	cmdContext->OMSetRenderTargets(1, &swapchainRTV, FALSE, nullptr);
-	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), &cmdContext.CommandList);
 	TransitionVec(dxRes, D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
 	ExecuteCommandContext(*activeCmdContext);
-
 	// Present
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
 	Swapchain.Swapchain->Present(1, 0 /*DXGI_PRESENT_ALLOW_TEARING*/);
@@ -371,13 +381,6 @@ void Renderer::WaitAllCommandContexts()
 		WaitAndClearCommandContext(std::move(PendingCommandContexts.front()));
 		PendingCommandContexts.pop_front();
 	}
-}
-std::pair<Ref<DXTexture>, DescriptorAllocationView> Renderer::GetViewingTexture()
-{
-	if (ViewingTexture)
-		if (auto it = ViewableTextures.find(*ViewingTexture); it != ViewableTextures.end())
-			return it->second;
-	return {DeferredPipeline->GetOutputBuffer(), DeferredPipeline->GetOutputBufferSRV()};
 }
 std::optional<Renderer::CommandContextData> Renderer::CreateCommandContext()
 {

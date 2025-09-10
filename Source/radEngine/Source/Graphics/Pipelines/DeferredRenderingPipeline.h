@@ -60,7 +60,7 @@ struct DeferredRenderingPipeline
 	bool Setup();
 	bool OnResize(uint32_t width, uint32_t height);
 
-	void BuildFrameRenderGraph(RenderGraphBuilder& graphBuilder, SceneRenderData& sceneData);
+	Ref<RGBOutputResource> BuildFrameRenderGraph(RenderGraphBuilder& graphBuilder, SceneRenderData& sceneData);
 
 	Event<PreRenderPassData&> OnPreRenderPass;
 	Event<ShadowMapPassData&> OnShadowMapPass;

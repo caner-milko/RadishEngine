@@ -20,23 +20,32 @@ struct SpdConstants
 
 bool GenerateMipsPipeline::Setup()
 {
-	auto* shader =
-		Renderer.ShaderManager->CompileShader(L"SPDImpl.cs", RAD_SHADERS_DIR L"Compute/SPDImpl.cs.hlsl",
-											  ShaderType::Compute, L"main", {{FIDELITYFX_SPD_SHADER_INCLUDE_DIR L""}});
+	auto* shader = Renderer.ShaderManager->CompileShader(L"SPDImpl.cs",
+														 RAD_ENGINE_SHADERS_DIR L"Compute/SPDImpl.cs.hlsl",
+														 ShaderType::Compute,
+														 L"main",
+														 {{FIDELITYFX_SPD_SHADER_INCLUDE_DIR L""}});
 	RootSignatureBuilder rsBuilder;
-	rsBuilder.AddConstantBufferView("spdConstants", {.ShaderRegister = 0,
-													 .Visibility = D3D12_SHADER_VISIBILITY_ALL,
-													 .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE});
+	rsBuilder.AddConstantBufferView("spdConstants",
+									{.ShaderRegister = 0,
+									 .Visibility = D3D12_SHADER_VISIBILITY_ALL,
+									 .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE});
 	rsBuilder.AddDescriptorTable("spdGlobalAtomic",
 								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1)}});
 	rsBuilder.AddDescriptorTable("imgDst6",
-								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2, 0,
+								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+															 1,
+															 2,
+															 0,
 															 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE |
 																 D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE)}});
-	rsBuilder.AddDescriptorTable(
-		"imgDst", {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, SPD_MAX_MIP_LEVELS + 1, 3, 0,
-											  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE |
-												  D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE)}});
+	rsBuilder.AddDescriptorTable("imgDst",
+								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+															 SPD_MAX_MIP_LEVELS + 1,
+															 3,
+															 0,
+															 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE |
+																 D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE)}});
 	RootSignature = rsBuilder.Build("SPDRS", Renderer.GetDevice(), D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
 	struct PipelineStateStream : PipelineStateStreamBase
