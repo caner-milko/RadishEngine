@@ -672,6 +672,37 @@ void TerrainErosionSystem::GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder
 												   CTerrainRenderable& renderable)
 {
 	renderable.TotalLength = parameters.TotalLength;
+
+	auto& pass = rgBuilder.AddPass("GenerateTerrainMaterial");
+	auto terrainAlbedo = rgBuilder.GetOrAddExternalResource(renderable.TerrainAlbedoTex->AsView());
+	auto terrainNormal = rgBuilder.GetOrAddExternalResource(renderable.TerrainNormalMap->AsView());
+	auto heightMap = rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView());
+
+	auto inTerrainAlbedo = pass.AddInResourceSetOut(
+		renderable.TerrainAlbedoTex->GetName(), terrainAlbedo, RGResourceUsage::UnorderedAccessView(terrainAlbedo));
+	auto inTerrainNormal = pass.AddInResourceSetOut(
+		renderable.TerrainNormalMap->GetName(), terrainNormal, RGResourceUsage::UnorderedAccessView(terrainNormal));
+	auto inHeightMap = pass.AddInResourceSetOut(
+		terrain.HeightMap->GetName(), heightMap, RGResourceUsage::ShaderResourceView(heightMap));
+
+	pass.Execute = [=](CommandContext& commandCtx) {
+		hlsl::HeightToTerrainMaterialResources resources{
+			.HeightMapTextureIndex = inHeightMap->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
+			.TerrainAlbedoTextureIndex =
+				inTerrainAlbedo->GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
+			.TerrainNormalMapTextureIndex =
+				inTerrainNormal->GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
+			.TotalLength = parameters.TotalLength,
+		};
+		HeightMapToTerrainMaterialPSO.ExecuteCompute(commandCtx,
+													 resources,
+													 inTerrainNormal->GetResourceView().GetCreateInfo().Desc.Width / 8,
+													 inTerrainNormal->GetResourceView().GetCreateInfo().Desc.Height / 8,
+													 1);
+		Renderer.TextureManager->GenerateMips(commandCtx, *renderable.TerrainAlbedoTex);
+		Renderer.TextureManager->GenerateMips(commandCtx, *renderable.TerrainNormalMap);
+	};
+
 	cmdRecord.Push("GenerateTerrainMaterial",
 				   [terrainAlbedo = renderable.TerrainAlbedoTex,
 					terrainNormal = renderable.TerrainNormalMap,

@@ -4,6 +4,31 @@
 
 namespace rad::rghelpers
 {
+void UploadTextureData(RenderGraphBuilder& rgBuilder,
+					   Ref<RGBOutputResource>& resource,
+					   std::vector<std::byte> data,
+					   size_t bytesPerPixel)
+{
+	auto uploadBuf =
+		rgBuilder.AddGraphResource(resource->Name + "_UploadBuffer",
+								   ResourceCreateHelper::Buffer(data.size(), ResourcePresetFlags::UploadResource));
+
+	auto& uploadPass = rgBuilder.AddPass(resource->Name + "_UploadData");
+	auto inUploadBuf =
+		uploadPass.AddInput(uploadBuf->Name, uploadBuf, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_SOURCE));
+	auto inRes =
+		uploadPass.AddInResourceSetOut(resource->Name, resource, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_DEST));
+	uploadPass.Execute = [inUploadBuf, inRes, bytesPerPixel, data = std::move(data)](CommandContext& cmd) {
+		D3D12_SUBRESOURCE_DATA subresourceData = {};
+		subresourceData.pData = data.data();
+		subresourceData.RowPitch = inRes.get()->CreateInfo.Desc.Width * bytesPerPixel;
+		subresourceData.SlicePitch = inRes.get()->CreateInfo.Desc.Height * subresourceData.RowPitch;
+
+		uint64_t res = UpdateSubresources(
+			&cmd.CommandList, &inRes.get()->DXRes, &inUploadBuf.get()->DXRes, 0, 0, 1, &subresourceData);
+		assert(res != 0);
+	};
+}
 template <typename T>
 	requires std::is_trivially_copyable_v<T>
 void UploadTextureData(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& resource, std::vector<T> data)

@@ -5,6 +5,7 @@
 #include "DXResource.h"
 #include "EngineCommon.h"
 #include "filesystem"
+#include "Graphics/ResourcePool.h"
 
 namespace rad
 {
@@ -23,14 +24,14 @@ struct TextureManager
 		D3D12_RESOURCE_FLAGS Flags = D3D12_RESOURCE_FLAG_NONE;
 	};
 
-	void GenerateMips(CommandContext& commandCtx, DXTexture& texture);
-	DXTexture* LoadTexture(std::filesystem::path const& path,
-						   TextureLoadInfo const& info,
-						   CommandContext& commandCtx,
-						   bool generateMips = true);
+	void GenerateMips(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& texture);
+	ResourcePool::OwnedResource* LoadTexture(std::filesystem::path const& path,
+											 TextureLoadInfo const& info,
+											 RenderGraphBuilder& rgBuilder,
+											 bool generateMips = true);
 
 private:
-	std::unordered_map<TextureId, std::unique_ptr<DXTexture>> Textures;
+	std::unordered_map<TextureId, Ref<ResourcePool::OwnedResource>> Textures;
 	std::unordered_map<std::filesystem::path, TextureId> LoadedTextures;
 	Renderer& Renderer;
 	TextureId NextId = {1};

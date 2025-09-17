@@ -20,4 +20,5 @@ struct ShaderManager;
 struct TextureManager;
 struct ModelManager;
 struct SceneRenderData;
+
 } // namespace rad

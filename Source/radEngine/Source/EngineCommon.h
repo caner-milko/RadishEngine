@@ -48,4 +48,7 @@ struct Singleton
 	static std::unique_ptr<T> Instance;
 };
 
+struct RenderGraphBuilder;
+struct RGBOutputResource;
+
 } // namespace rad
