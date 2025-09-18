@@ -20,14 +20,13 @@ struct GenerateMipsPipeline
 	GenerateMipsPipeline(Renderer& renderer) : Renderer(renderer) {}
 	bool Setup();
 
-	void GenerateMips(CommandContext& commandCtx, struct DXTexture& texture);
+	void GenerateMips(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& tex);
 
 	Renderer& Renderer;
 	RootSignature RootSignature;
 	PipelineState PipelineState;
 
-	DXTypedSingularBuffer<GlobalCounterStruct> GlobalCounterBuffer;
-	DescriptorAllocation GlobalCounterUAV;
+	ResourcePool::OwnedResource* GlobalCounterBuffer; // GlobalCounterStruct
 };
 
 } // namespace rad

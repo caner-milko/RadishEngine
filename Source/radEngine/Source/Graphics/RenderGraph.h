@@ -8,9 +8,9 @@ namespace rad
 template <typename T, bool Ref>
 struct RGFuture
 {
-	operator T&() { return *Future; }
-	bool HasValue() { return !!Future; }
-	T& Get() { return *Future; }
+	operator T&() const { return *Future; }
+	bool HasValue() const { return !!Future; }
+	T& Get() const { return *Future; }
 
 protected:
 	RGFuture() {}
@@ -150,7 +150,7 @@ struct RGResourceViewBase : RGResourceRef
 				 std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
 				 std::is_same_v<T, ConstantBufferViewDesc> || std::is_same_v<T, VertexBufferViewDesc> ||
 				 std::is_same_v<T, IndexBufferViewDesc>
-	auto& AsCPUDescriptor(size_t index = 0)
+	auto& AsCPUDescriptor(size_t index = 0) const
 	{
 		return Descriptor(index).AsCPUDescriptor<T>();
 	}
@@ -158,15 +158,15 @@ struct RGResourceViewBase : RGResourceRef
 	template <typename T>
 		requires std::is_same_v<T, ShaderResourceViewDesc> || std::is_same_v<T, UnorderedAccessViewDesc> ||
 				 std::is_same_v<T, ConstantBufferViewDesc>
-	auto& AsGPUDescriptor(size_t index = 0)
+	auto& AsGPUDescriptor(size_t index = 0) const
 	{
 		return Descriptor(index).AsGPUDescriptor<T>();
 	}
 
-	ResourceDescriptor& Descriptor(size_t index = 0) { return Descriptors[index].Get(); }
+	ResourceDescriptor& Descriptor(size_t index = 0) const { return Descriptors.at(index).Get(); }
 
-	operator PoolResourceView() { return GetResource(); }
-	PoolResourceView operator->() { return GetResource(); }
+	operator PoolResourceView() const { return GetResource(); }
+	PoolResourceView operator->() const { return GetResource(); }
 
 	std::vector<RGResourceDescriptor> Descriptors;
 };

@@ -1,6 +1,7 @@
 #include "BlitPipeline.h"
 #include "Graphics/ShaderManager.h"
 #include "Graphics/Renderer.h"
+#include "Graphics/RenderGraphHelpers.h"
 namespace rad
 {
 bool BlitPipeline::Setup()
@@ -35,34 +36,33 @@ bool BlitPipeline::Setup()
 	return true;
 }
 
-void BlitPipeline::Blit(CommandContext& commandCtx,
-						DXTexture& dstTex,
-						DXTexture& srcTex,
-						DescriptorAllocationView dstRTV,
-						DescriptorAllocationView srcSRV)
+void BlitPipeline::Blit(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& dstTex, RGBOutputResource& srcTex)
 {
-	D3D12_RECT scissorRect = {};
-	scissorRect.right = dstTex.Info.Width;
-	scissorRect.bottom = dstTex.Info.Height;
-	commandCtx->RSSetScissorRects(1, &scissorRect);
-	D3D12_VIEWPORT viewport = {};
-	viewport.Width = static_cast<float>(dstTex.Info.Width);
-	viewport.Height = static_cast<float>(dstTex.Info.Height);
-	commandCtx->RSSetViewports(1, &viewport);
-	TransitionVec{}
-		.Add(dstTex, D3D12_RESOURCE_STATE_RENDER_TARGET)
-		.Add(srcTex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-		.Execute(commandCtx);
+	auto& pass = rgBuilder.AddPass("Blit");
+	auto dstInput = pass.AddInResourceSetOut("DstInput", dstTex, RGResourceUsage::RenderTargetView(*dstTex));
+	auto srcInput = pass.AddInput("SrcInput", srcTex, RGResourceUsage::ShaderResourceView(srcTex));
+	pass.Execute = [this, dstInput = dstInput->GetResourceView(), srcInput = srcInput->GetResourceView()](
+					   CommandContext& commandCtx) {
+		auto& dstDesc = dstInput.GetCreateInfo().Desc;
+		D3D12_RECT scissorRect = {};
+		scissorRect.right = dstDesc.Width;
+		scissorRect.bottom = dstDesc.Height;
+		commandCtx->RSSetScissorRects(1, &scissorRect);
+		D3D12_VIEWPORT viewport = {};
+		viewport.Width = static_cast<float>(dstDesc.Width);
+		viewport.Height = static_cast<float>(dstDesc.Height);
+		commandCtx->RSSetViewports(1, &viewport);
 
-	auto rtvHandle = dstRTV.GetCPUHandle();
-	commandCtx->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+		auto rtvHandle = dstInput.AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle();
+		commandCtx->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
-	commandCtx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+		commandCtx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
-	rad::hlsl::BlitResources blitResources{};
-	blitResources.SourceTextureIndex = srcSRV.GetIndex();
-	PipelineState.BindWithResources(commandCtx, blitResources);
-	commandCtx->DrawInstanced(4, 1, 0, 0);
+		rad::hlsl::BlitResources blitResources{};
+		blitResources.SourceTextureIndex = srcInput.AsGPUDescriptor<ShaderResourceViewDesc>().Index;
+		PipelineState.BindWithResources(commandCtx, blitResources);
+		commandCtx->DrawInstanced(4, 1, 0, 0);
+	};
 }
 
 } // namespace rad
