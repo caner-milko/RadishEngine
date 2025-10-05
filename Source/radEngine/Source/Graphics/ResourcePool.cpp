@@ -381,11 +381,15 @@ ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo&
 	default: memcpy(clearValue.Color, createInfo.ClearValue.data(), sizeof(clearValue.Color)); break;
 	}
 
+	D3D12_CLEAR_VALUE* pClearValue = nullptr;
+	if (createInfo.Desc.Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL))
+		pClearValue = &clearValue;
+
 	Device.CreateCommittedResource(&createInfo.HeapProps,
 								   createInfo.HeapFlags,
 								   &createInfo.Desc,
 								   D3D12_RESOURCE_STATE_COMMON,
-								   &clearValue,
+								   pClearValue,
 								   IID_PPV_ARGS(&resource));
 
 	auto& resInfo = AddResourceInfo(*resource.Get(), createInfo, D3D12_RESOURCE_STATE_COMMON);

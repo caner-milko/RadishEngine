@@ -40,6 +40,8 @@ bool Renderer::InitializeDevice()
 	}
 #endif
 
+	InitializeResourcePool();
+
 	ShaderManager = std::make_unique<rad::ShaderManager>(*this);
 	if (!ShaderManager->Init())
 		return false;
@@ -147,8 +149,7 @@ bool Renderer::InitializePipelines()
 
 bool Renderer::Initialize(HWND window, uint32_t width, uint32_t height)
 {
-	return InitializeDevice() && InitializeResourcePool() && InitializePipelines() &&
-		   InitializeSwapchain(window, width, height);
+	return InitializeDevice() && InitializePipelines() && InitializeSwapchain(window, width, height);
 }
 
 bool Renderer::OnWindowResized(uint32_t width, uint32_t height, bool initial)

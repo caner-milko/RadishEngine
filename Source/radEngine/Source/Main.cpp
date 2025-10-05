@@ -162,11 +162,11 @@ void InitGame()
 
 void UpdateGame(float deltaTime, SceneRenderData& sceneRenderData)
 {
-	g_EnttSystems->TerrainErosionSystem.Update(g_EnttRegistry, InputManager::Get(), frameRecord);
+	g_EnttSystems->TerrainErosionSystem.Update(g_EnttRegistry, InputManager::Get());
 	g_EnttSystems->ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime, g_Renderer);
-	g_EnttSystems->CameraSystem.Update(g_EnttRegistry, frameRecord);
-	g_EnttSystems->LightSystem.Update(g_EnttRegistry, frameRecord);
-	g_EnttSystems->StaticRenderSystem.Update(g_EnttRegistry, frameRecord);
+	g_EnttSystems->CameraSystem.Update(g_EnttRegistry, sceneRenderData.View);
+	g_EnttSystems->LightSystem.Update(g_EnttRegistry, sceneRenderData.LightInfo);
+	g_EnttSystems->StaticRenderSystem.Update(g_EnttRegistry);
 	g_EnttSystems->UISystem.Update(g_EnttRegistry, g_Renderer);
 }
 
@@ -177,10 +177,9 @@ bool InitRenderer(HWND window, uint32_t width, uint32_t height)
 
 void LoadSceneData()
 {
+	RenderGraphBuilder loadRGBuilder{};
 	OptionalRef<ObjModel> sponzaObj{};
-	g_Renderer.FrameIndependentCommand([&](CommandContext& commmandCtx) {
-		sponzaObj = g_Renderer.ModelManager->LoadModel(RAD_SPONZA_DIR "sponza.obj", commmandCtx);
-	});
+	sponzaObj = g_Renderer.ModelManager->LoadModel(RAD_SPONZA_DIR "sponza.obj", loadRGBuilder);
 	if (!sponzaObj)
 	{
 		std::cout << "Failed to load sponza model" << std::endl;
@@ -196,10 +195,9 @@ void LoadSceneData()
 		g_EnttRegistry.emplace<ecs::CEntityInfo>(mesh, name);
 		auto& meshTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(mesh, mesh);
 		meshTransform.SetParent(&rootTransform);
-		assert(meshInfo.Model && meshInfo.Material);
 		g_EnttRegistry.emplace<ecs::CStaticRenderable>(mesh,
-													   ecs::CStaticRenderable{.Vertices = *meshInfo.Model,
-																			  .Indices = meshInfo.Indices,
+													   ecs::CStaticRenderable{.Vertices = &meshInfo.Vertices,
+																			  .Indices = &meshInfo.Indices,
 																			  .Material = *meshInfo.Material});
 	}
 
@@ -209,32 +207,27 @@ void LoadSceneData()
 		g_EnttRegistry.emplace<ecs::CEntityInfo>(terrainEnt, "Terrain");
 		auto& terrainTransform = g_EnttRegistry.emplace<ecs::CSceneTransform>(terrainEnt, terrainEnt);
 		auto& terrain = g_EnttRegistry.emplace<proc::CTerrain>(terrainEnt, terrainSystem.CreateTerrain(1024));
-		CommandRecord cmdRec{};
 		auto& indexedPlane =
-			g_EnttRegistry.emplace<proc::CIndexedPlane>(terrainEnt, terrainSystem.CreatePlane(cmdRec, 512, 512));
+			g_EnttRegistry.emplace<proc::CIndexedPlane>(terrainEnt, terrainSystem.CreatePlane(loadRGBuilder, 512, 512));
 		auto& erosionParams = g_EnttRegistry.emplace<proc::CErosionParameters>(terrainEnt, proc::CErosionParameters{});
 		auto& terrainRenderable = g_EnttRegistry.emplace<proc::CTerrainRenderable>(
 			terrainEnt, terrainSystem.CreateTerrainRenderable(terrain));
 		auto& waterRenderable =
 			g_EnttRegistry.emplace<proc::CWaterRenderable>(terrainEnt, terrainSystem.CreateWaterRenderable(terrain));
 
-		terrainSystem.GenerateBaseHeightMap(cmdRec, terrain, erosionParams, terrainRenderable, waterRenderable);
+		terrainSystem.GenerateBaseHeightMap(loadRGBuilder, terrain, erosionParams, terrainRenderable, waterRenderable);
 
-		g_Renderer.FrameIndependentCommand([cmdRec = std::move(cmdRec)](CommandContext& commandCtx) mutable {
-			while (!cmdRec.Queue.empty())
-			{
-				auto& [name, cmd] = cmdRec.Queue.front();
-				cmd(commandCtx);
-				cmdRec.Queue.pop();
-			}
-		});
+		g_Renderer.FrameIndependentCommand(
+			[loadRGBuilder = std::move(loadRGBuilder)](CommandContext& commandCtx) mutable {
+				loadRGBuilder.BuildAndExecute(*g_Renderer.ResourcePool, commandCtx);
+			});
 
 		ecs::Transform transform{};
 		transform.Scale *= 0.01f;
 		transform.Position = glm::vec3(0, 1, 0);
 		terrainTransform.SetTransform(transform);
 		// terrainRoot->Rotation = DirectX::XMVectorSet(-0.5f, 0, 0, 0);
-		hlsl::MaterialBuffer terrainMaterial = {};
+		/*
 		g_Renderer.ViewableTextures.emplace(
 			"TerrainHeightMap",
 			std::pair<Ref<DXTexture>, DescriptorAllocationView>{*terrain.HeightMap, terrain.HeightMap->SRV.GetView()});
@@ -275,6 +268,7 @@ void LoadSceneData()
 			"WaterNormalMap",
 			std::pair<Ref<DXTexture>, DescriptorAllocationView>{*waterRenderable.WaterNormalMap,
 																waterRenderable.WaterNormalMap->SRV.GetView()});
+																*/
 	}
 	auto fence = DXFence::Create(L"SceneLoadFence", g_Renderer.GetDevice());
 	g_Renderer.SubmitFrameIndependentCommands(fence, 1, true);
@@ -381,7 +375,7 @@ int main(int argv, char** args)
 			.FrameNumber = frameNumber++, .DeltaTime = deltaTime, .View = {}, .LightInfo = {}};
 		UpdateGame(deltaTime, frameSceneData);
 
-		g_Renderer.EnqueueFrameSceneData(std::move(frameSceneData));
+		g_Renderer.RenderScene(std::move(frameSceneData));
 
 		for (int i = 0; i < 322; i++)
 		{

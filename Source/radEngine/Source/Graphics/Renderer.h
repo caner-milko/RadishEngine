@@ -145,8 +145,9 @@ struct Renderer
 
 	std::unique_ptr<DeferredRenderingPipeline> DeferredPipeline;
 	std::unique_ptr<BlitPipeline> BlitPipeline;
-	std::unordered_map<std::string, std::pair<Ref<DXTexture>, DescriptorAllocationView>> ViewableTextures;
-	std::optional<std::string> ViewingTexture = std::nullopt;
+	// TODO: Viewable Textures
+	// std::unordered_map<std::string, std::pair<Ref<DXTexture>, DescriptorAllocationView>> ViewableTextures;
+	// std::optional<std::string> ViewingTexture = std::nullopt;
 
 private:
 	std::optional<CommandContextData> CreateCommandContext();

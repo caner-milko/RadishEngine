@@ -174,16 +174,14 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Rend
 		auto& materialInfoBuf = Renderer.ResourcePool->GetResource(
 			ResourceCreateHelper::Buffer(sizeof(rad::hlsl::MaterialBuffer), ResourcePresetFlags::ConstantBuffer),
 			mat.name + "_MaterialInfo");
-		Material material{.Name = mat.name,
-						  .DiffuseTextureName = diffuseTexName,
-						  .NormalMapTextureName = normalMapTexName,
-						  .MaterialInfoBuffer = materialInfoBuf};
+		Material material{.Name = mat.name, .MaterialInfoBuffer = materialInfoBuf};
 		rad::hlsl::MaterialBuffer matInfo = {};
 		bool difTexLoaded = false;
 		// Load the textures
 		if (!mat.diffuse_texname.empty())
 		{
 			diffuseTexName = std::filesystem::path(modelPath).parent_path().string() + "/" + mat.diffuse_texname;
+			material.DiffuseTextureName = diffuseTexName;
 			// Load texture into memory
 			if (auto* tex = Renderer.TextureManager->LoadTexture(
 					std::filesystem::path(*material.DiffuseTextureName), {}, rgBuilder, true))
@@ -200,6 +198,7 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Rend
 		if (!mat.displacement_texname.empty())
 		{
 			normalMapTexName = std::filesystem::path(modelPath).parent_path().string() + "/" + mat.displacement_texname;
+			material.NormalMapTextureName = normalMapTexName;
 			// Load texture into memory
 			if (auto* tex = Renderer.TextureManager->LoadTexture(
 					std::filesystem::path(*material.NormalMapTextureName), {}, rgBuilder, true))

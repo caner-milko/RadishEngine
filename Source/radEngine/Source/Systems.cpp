@@ -454,9 +454,10 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 	if (io.IsKeyPressed(SDL_SCANCODE_TAB))
 	{
 		ActiveViewpoint = ActiveViewpoint == cameraEntity ? lightEntity : cameraEntity;
-		if (!renderer.ViewingTexture || renderer.ViewingTexture == "ShadowMap")
-			renderer.ViewingTexture =
-				ActiveViewpoint == cameraEntity ? std::nullopt : std::optional<std::string>("ShadowMap");
+		// TODO: Viewable Textures
+		// if (!renderer.ViewingTexture || renderer.ViewingTexture == "ShadowMap")
+		//	renderer.ViewingTexture =
+		//		ActiveViewpoint == cameraEntity ? std::nullopt : std::optional<std::string>("ShadowMap");
 	}
 
 	auto& controlledViewpoint = registry.get<CViewpoint>(ActiveViewpoint);
@@ -719,23 +720,23 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 			}
 		}
 
-		if (ImGui::CollapsingHeader("Texture View"))
-		{
-
-			if (ImGui::BeginCombo("Textures", renderer.ViewingTexture ? renderer.ViewingTexture->c_str() : "None"))
-			{
-				for (auto& [name, func] : renderer.ViewableTextures)
-				{
-					if (ImGui::Selectable(name.c_str()))
-						renderer.ViewingTexture = name;
-				}
-				if (ImGui::Selectable("None"))
-				{
-					renderer.ViewingTexture = std::nullopt;
-				}
-				ImGui::EndCombo();
-			}
-		}
+		// if (ImGui::CollapsingHeader("Texture View"))
+		//{
+		//
+		//	if (ImGui::BeginCombo("Textures", renderer.ViewingTexture ? renderer.ViewingTexture->c_str() : "None"))
+		//	{
+		//		for (auto& [name, func] : renderer.ViewableTextures)
+		//		{
+		//			if (ImGui::Selectable(name.c_str()))
+		//				renderer.ViewingTexture = name;
+		//		}
+		//		if (ImGui::Selectable("None"))
+		//		{
+		//			renderer.ViewingTexture = std::nullopt;
+		//		}
+		//		ImGui::EndCombo();
+		//	}
+		// }
 
 		if (ImGui::TreeNodeEx("Entities", ImGuiTreeNodeFlags_Framed))
 		{

@@ -35,6 +35,10 @@ endmacro()
 
 project(RadishEngine LANGUAGES CXX)
 
+if (MSVC)
+    add_compile_options(/MP)
+endif()
+
 foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
     string( TOUPPER ${OUTPUTCONFIG} UPPERCONFIG )
     set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${UPPERCONFIG} ${CMAKE_SOURCE_DIR}/Builds/${OUTPUTCONFIG}/lib )

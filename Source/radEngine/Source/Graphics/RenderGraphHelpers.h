@@ -4,10 +4,10 @@
 
 namespace rad::rghelpers
 {
-void UploadTextureData(RenderGraphBuilder& rgBuilder,
-					   Ref<RGBOutputResource>& resource,
-					   std::vector<std::byte> data,
-					   size_t bytesPerPixel)
+inline void UploadTextureData(RenderGraphBuilder& rgBuilder,
+							  Ref<RGBOutputResource>& resource,
+							  std::vector<std::byte> data,
+							  size_t bytesPerPixel)
 {
 	auto uploadBuf =
 		rgBuilder.AddGraphResource(resource->Name + "_UploadBuffer",
@@ -31,7 +31,7 @@ void UploadTextureData(RenderGraphBuilder& rgBuilder,
 }
 template <typename T>
 	requires std::is_trivially_copyable_v<T>
-void UploadTextureData(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& resource, std::vector<T> data)
+inline void UploadTextureData(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& resource, std::vector<T> data)
 {
 	auto uploadBuf = rgBuilder.AddGraphResource(
 		resource->Name + "_UploadBuffer",
@@ -56,10 +56,10 @@ void UploadTextureData(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& re
 
 template <typename T>
 	requires std::is_trivially_copyable_v<T>
-void UploadBufferData(RenderGraphBuilder& rgBuilder,
-					  Ref<RGBOutputResource>& resource,
-					  std::vector<T> data,
-					  size_t offset = 0)
+inline void UploadBufferData(RenderGraphBuilder& rgBuilder,
+							 Ref<RGBOutputResource>& resource,
+							 std::vector<T> data,
+							 size_t offset = 0)
 {
 	auto uploadBuf = rgBuilder.AddGraphResource(
 		resource->Name + "_UploadBuffer",
@@ -78,9 +78,9 @@ void UploadBufferData(RenderGraphBuilder& rgBuilder,
 	};
 }
 
-void ClearUnorderedAccessViewFloat(RenderGraphBuilder& rgBuilder,
-								   Ref<RGBOutputResource>& resource,
-								   std::array<float, 4> clearValue)
+inline void ClearUnorderedAccessViewFloat(RenderGraphBuilder& rgBuilder,
+										  Ref<RGBOutputResource>& resource,
+										  std::array<float, 4> clearValue)
 {
 	auto& clearPass = rgBuilder.AddPass(resource->Name + "_ClearUAV");
 	auto inRes =
@@ -99,7 +99,7 @@ void ClearUnorderedAccessViewFloat(RenderGraphBuilder& rgBuilder,
 	};
 }
 
-void CopyResource(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource> const& src, Ref<RGBOutputResource>& dst)
+inline void CopyResource(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource> const& src, Ref<RGBOutputResource>& dst)
 {
 	auto& copyPass = rgBuilder.AddPass(dst->Name + "_CopyResource");
 	auto passSrc = copyPass.AddInput(src->Name, src, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_SOURCE));
@@ -109,9 +109,9 @@ void CopyResource(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource> const& s
 	};
 }
 
-void ClearRenderTargetView(RenderGraphBuilder& rgBuilder,
-						   Ref<RGBOutputResource>& resource,
-						   std::array<float, 4> clearColor)
+inline void ClearRenderTargetView(RenderGraphBuilder& rgBuilder,
+								  Ref<RGBOutputResource>& resource,
+								  std::array<float, 4> clearColor)
 {
 	auto& clearPass = rgBuilder.AddPass(resource->Name + "_ClearRTV");
 	auto inRes = clearPass.AddInResourceSetOut(resource->Name, resource, RGResourceUsage::RenderTargetView(resource));
@@ -123,10 +123,10 @@ void ClearRenderTargetView(RenderGraphBuilder& rgBuilder,
 	};
 }
 
-void ClearDepthStencilView(RenderGraphBuilder& rgBuilder,
-						   Ref<RGBOutputResource>& resource,
-						   std::optional<float> depth,
-						   std::optional<uint8_t> stencil)
+inline void ClearDepthStencilView(RenderGraphBuilder& rgBuilder,
+								  Ref<RGBOutputResource>& resource,
+								  std::optional<float> depth,
+								  std::optional<uint8_t> stencil)
 {
 	auto& clearPass = rgBuilder.AddPass(resource->Name + "_ClearDSV");
 	auto inRes = clearPass.AddInResourceSetOut(resource->Name, resource, RGResourceUsage::DepthStencilWrite(resource));
@@ -146,7 +146,7 @@ void ClearDepthStencilView(RenderGraphBuilder& rgBuilder,
 }
 
 template <typename T>
-void UploadConstantBufferData(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& resource, T const& data)
+inline void UploadConstantBufferData(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& resource, T const& data)
 {
 	auto& pass = rgBuilder.AddPass("UploadConstantBufferData_" + resource->Name);
 	auto inRes = pass.AddInResourceSetOut(resource->Name, resource, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_DEST));

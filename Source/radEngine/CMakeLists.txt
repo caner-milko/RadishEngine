@@ -2,15 +2,11 @@ set(CMAKE_CXX_STANDARD 23)
 
 project(radEngine)
 
-rad_add_target(radEngine EXECUTABLE DEPENDENCIES radUtil 3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader FidelityFX-SPD EnTT::EnTT glm::glm INCLUDES ${EXTERNAL_DIR}/stb)
+rad_add_target(radEngine EXECUTABLE DEPENDENCIES radUtil d3d12 dxgi dxcompiler SDL2-static SDL2::SDL2main imgui DirectX-Headers Shlwapi.lib tinyobjloader FidelityFX-SPD EnTT::EnTT glm::glm INCLUDES ${EXTERNAL_DIR}/stb)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_ENGINE_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets/")
 target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_ENGINE_SHADERS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/")
 target_compile_definitions(${PROJECT_NAME} PRIVATE RAD_SPONZA_DIR="${EXTERNAL_DIR}/Sponza/")
-
-target_link_libraries(${PROJECT_NAME} PRIVATE 
-    d
-)
 
 function(copy_redist_files target_name redist_src redist_dst)
 	add_custom_command(TARGET ${target_name} POST_BUILD
