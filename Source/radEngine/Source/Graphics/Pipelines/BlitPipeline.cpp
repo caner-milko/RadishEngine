@@ -40,7 +40,7 @@ void BlitPipeline::Blit(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& d
 {
 	auto& pass = rgBuilder.AddPass("Blit");
 	auto dstInput = pass.AddInResourceSetOut("DstInput", dstTex, RGResourceUsage::RenderTargetView(*dstTex));
-	auto srcInput = pass.AddInput("SrcInput", srcTex, RGResourceUsage::ShaderResourceView(srcTex));
+	auto srcInput = pass.AddInput("SrcInput", srcTex, RGResourceUsage::PixelShaderResourceView(srcTex));
 	pass.Execute = [this, dstInput = dstInput->GetResourceView(), srcInput = srcInput->GetResourceView()](
 					   CommandContext& commandCtx) {
 		auto& dstDesc = dstInput.GetCreateInfo().Desc;

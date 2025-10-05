@@ -443,6 +443,7 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 		}
 		else
 			assert(false && "Invalid descriptor type");
+
 		return descriptors.emplace(desc, ResourceDescriptor{alloc}).first->second;
 	}
 	else if (auto* cpuDesc = std::get_if<CPUDescriptorDesc>(&desc))
@@ -497,6 +498,86 @@ ResourceDescriptor& ResourcePool::GetDescriptor(const PoolResourceView& resource
 			assert(false && "Invalid descriptor type");
 
 		return descriptors.emplace(desc, ResourceDescriptor{resoureDesc}).first->second;
+	}
+	else if (auto* multiGPUDesc = std::get_if<std::vector<GPUDescriptorDesc>>(&desc))
+	{
+		auto alloc =
+			g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, multiGPUDesc->size());
+		for (size_t i = 0; i < multiGPUDesc->size(); ++i)
+		{
+			auto& gpuDesc = (*multiGPUDesc)[i];
+			if (auto* srvDesc = std::get_if<ShaderResourceViewDesc>(&gpuDesc))
+				Device.CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle(i));
+			else if (auto* uavDesc = std::get_if<UnorderedAccessViewDesc>(&gpuDesc))
+				Device.CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc, alloc.GetCPUHandle(i));
+			else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(&gpuDesc))
+			{
+				D3D12_CONSTANT_BUFFER_VIEW_DESC desc{.BufferLocation = resourceView->DXRes->GetGPUVirtualAddress() +
+																	   cbvDesc->StartOffset,
+													 .SizeInBytes = cbvDesc->SizeInBytes};
+				Device.CreateConstantBufferView(&desc, alloc.GetCPUHandle(i));
+			}
+			else
+				assert(false && "Invalid descriptor type");
+		}
+		return descriptors.emplace(desc, ResourceDescriptor{alloc}).first->second;
+	}
+	else if (auto* multiCPUDesc = std::get_if<std::vector<CPUDescriptorDesc>>(&desc))
+	{
+		// TODO: This assumes the descriptor type is either CBV/SRV/UAV or RTV or DSV. Do not allow VBV/IBV in
+		// multi-descriptor for now. Also it assumes all descriptors are of the same group type.
+
+		if (multiCPUDesc->empty())
+			assert(false && "Empty multi-descriptor");
+		auto& firstDesc = (*multiCPUDesc)[0];
+
+		DescriptorAllocation alloc{};
+
+		D3D12_DESCRIPTOR_HEAP_TYPE heapType{};
+
+		if (std::holds_alternative<ShaderResourceViewDesc>(firstDesc) ||
+			std::holds_alternative<UnorderedAccessViewDesc>(firstDesc) ||
+			std::holds_alternative<ConstantBufferViewDesc>(firstDesc))
+			heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		else if (std::holds_alternative<RenderTargetViewDesc>(firstDesc))
+			heapType = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		else if (std::holds_alternative<DepthStencilViewDesc>(firstDesc))
+			heapType = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+		else
+			assert(false && "Invalid descriptor type in multi-descriptor");
+
+		alloc = g_CPUDescriptorAllocator->AllocateFromStatic(heapType, multiCPUDesc->size());
+
+		for (size_t i = 0; i < multiCPUDesc->size(); ++i)
+		{
+			if (auto* srvDesc = std::get_if<ShaderResourceViewDesc>(cpuDesc))
+			{
+				Device.CreateShaderResourceView(&resourceView->DXRes, srvDesc, alloc.GetCPUHandle(i));
+			}
+			else if (auto* uavDesc = std::get_if<UnorderedAccessViewDesc>(cpuDesc))
+			{
+				Device.CreateUnorderedAccessView(&resourceView->DXRes, nullptr, uavDesc, alloc.GetCPUHandle(i));
+			}
+			else if (auto* cbvDesc = std::get_if<ConstantBufferViewDesc>(cpuDesc))
+			{
+				D3D12_CONSTANT_BUFFER_VIEW_DESC desc{.BufferLocation = resourceView->DXRes->GetGPUVirtualAddress() +
+																	   cbvDesc->StartOffset,
+													 .SizeInBytes = cbvDesc->SizeInBytes};
+				Device.CreateConstantBufferView(&desc, alloc.GetCPUHandle(i));
+			}
+			else if (auto* rtvDesc = std::get_if<RenderTargetViewDesc>(cpuDesc))
+			{
+				Device.CreateRenderTargetView(&resourceView->DXRes, rtvDesc, alloc.GetCPUHandle(i));
+			}
+			else if (auto* dsvDesc = std::get_if<DepthStencilViewDesc>(cpuDesc))
+			{
+				Device.CreateDepthStencilView(&resourceView->DXRes, dsvDesc, alloc.GetCPUHandle(i));
+			}
+			else
+				assert(false && "Invalid descriptor type");
+		}
+
+		return descriptors.emplace(desc, ResourceDescriptor{CPUResourceDescriptor{alloc}}).first->second;
 	}
 	else
 	{
@@ -1026,6 +1107,76 @@ DescriptorDesc DescriptorCreateHelper::IndexBufferView(ResourceCreateInfo const&
 	default: assert(false); break;
 	}
 	return DescriptorDesc(CPUDescriptorDesc{IndexBufferViewDesc{details.Desc}});
+}
+
+bool DescriptorDesc::operator==(const DescriptorDesc& Other) const
+{
+	if (this->index() != Other.index())
+		return false;
+	if (auto* thisGPUDesc = std::get_if<GPUDescriptorDesc>(this))
+	{
+		auto* otherGPUDesc = std::get_if<GPUDescriptorDesc>(&Other);
+		if (thisGPUDesc->index() != otherGPUDesc->index())
+			return false;
+	}
+	else if (auto* thisCPUDesc = std::get_if<CPUDescriptorDesc>(this))
+	{
+		auto* otherCPUDesc = std::get_if<CPUDescriptorDesc>(&Other);
+		if (thisCPUDesc->index() != otherCPUDesc->index())
+			return false;
+	}
+	else if (auto* thisMultiGPUDesc = std::get_if<std::vector<GPUDescriptorDesc>>(this))
+	{
+		auto* otherMultiGPUDesc = std::get_if<std::vector<GPUDescriptorDesc>>(&Other);
+		if (thisMultiGPUDesc->size() != otherMultiGPUDesc->size())
+			return false;
+		for (size_t i = 0; i < thisMultiGPUDesc->size(); i++)
+		{
+			if ((*thisMultiGPUDesc)[i] != (*otherMultiGPUDesc)[i])
+				return false;
+		}
+	}
+	else if (auto* thisMultiCPUDesc = std::get_if<std::vector<CPUDescriptorDesc>>(this))
+	{
+		auto* otherMultiCPUDesc = std::get_if<std::vector<CPUDescriptorDesc>>(&Other);
+		if (thisMultiCPUDesc->size() != otherMultiCPUDesc->size())
+			return false;
+		for (size_t i = 0; i < thisMultiCPUDesc->size(); i++)
+		{
+			if ((*thisMultiCPUDesc)[i] != (*otherMultiCPUDesc)[i])
+				return false;
+		}
+	}
+	return true;
+}
+
+size_t DescriptorDesc::Hash() const
+{
+	auto index = this->index();
+	if (auto* gpuDesc = std::get_if<GPUDescriptorDesc>(this))
+	{
+		return rad::HashCombine(index, *gpuDesc);
+	}
+	else if (auto* thisCPUDesc = std::get_if<CPUDescriptorDesc>(this))
+	{
+		return rad::HashCombine(index, *thisCPUDesc);
+	}
+	else if (auto* thisMultiGPUDesc = std::get_if<std::vector<GPUDescriptorDesc>>(this))
+	{
+		auto hash = rad::HashCombine(index, thisMultiGPUDesc->size());
+		for (const auto& desc : *thisMultiGPUDesc)
+			rad::HashCombineRecursive(hash, desc);
+		return hash;
+	}
+	else if (auto* thisMultiCPUDesc = std::get_if<std::vector<CPUDescriptorDesc>>(this))
+	{
+		auto hash = rad::HashCombine(index, thisMultiCPUDesc->size());
+		for (const auto& desc : *thisMultiCPUDesc)
+			rad::HashCombineRecursive(hash, desc);
+		return hash;
+	}
+	assert(false);
+	return 0;
 }
 
 } // namespace rad

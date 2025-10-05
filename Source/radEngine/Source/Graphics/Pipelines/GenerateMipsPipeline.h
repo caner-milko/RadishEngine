@@ -6,6 +6,7 @@
 #include "Graphics/PipelineState.h"
 #include "Graphics/RendererCommon.h"
 #include "Graphics/DXResource.h"
+#include "Graphics/ResourcePool.h"
 
 namespace rad
 {

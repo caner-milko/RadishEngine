@@ -196,6 +196,12 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 
 	{
 		PreRenderPassData preRenderPassData{.GraphBuilder = graphBuilder, .Frame = sceneData};
+		while (!EnqueuedPreRenderFuncs.empty())
+		{
+			auto& func = EnqueuedPreRenderFuncs.front();
+			func(preRenderPassData);
+			EnqueuedPreRenderFuncs.pop();
+		}
 		OnPreRenderPass.Broadcast(preRenderPassData);
 	}
 
@@ -237,9 +243,11 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 
 		auto& ssRaymarchPass = graphBuilder.AddPass("ScreenSpaceRaymarchPass");
 		auto inReflectRefract = ssRaymarchPass.AddInput(
-			"ReflectRefractNormal", reflectRefractBuf, RGResourceUsage::ShaderResourceView(reflectRefractBuf));
-		auto inSSDepth = ssRaymarchPass.AddInput("SSDepth", ssDepth, RGResourceUsage::ShaderResourceView(ssDepth));
-		auto inDepth = ssRaymarchPass.AddInput("Depth", depthBuf, RGResourceUsage::ShaderResourceView(depthBuf));
+			"ReflectRefractNormal", reflectRefractBuf, RGResourceUsage::NonPixelShaderResourceView(reflectRefractBuf));
+		auto inSSDepth =
+			ssRaymarchPass.AddInput("SSDepth", ssDepth, RGResourceUsage::NonPixelShaderResourceView(ssDepth));
+		auto inDepth =
+			ssRaymarchPass.AddInput("Depth", depthBuf, RGResourceUsage::NonPixelShaderResourceView(depthBuf));
 		auto outReflectionResult = ssRaymarchPass.AddInResourceSetOut(
 			"ReflectionResult", reflectionResultBuf, RGResourceUsage::UnorderedAccessView(reflectionResultBuf));
 		auto outRefractionResult = ssRaymarchPass.AddInResourceSetOut(
@@ -277,20 +285,20 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 		auto& lightingPass = graphBuilder.AddPass("LightingPass");
 		auto outLightingResult = lightingPass.AddInResourceSetOut(
 			"LightingResult", lightingResultBuf, RGResourceUsage::RenderTargetView(lightingResultBuf));
-		auto inAlbedo = lightingPass.AddInput("Albedo", albedoBuf, RGResourceUsage::ShaderResourceView(albedoBuf));
-		auto inNormal = lightingPass.AddInput("Normal", normalBuf, RGResourceUsage::ShaderResourceView(normalBuf));
-		auto inDepth = lightingPass.AddInput("Depth", depthBuf, RGResourceUsage::ShaderResourceView(depthBuf));
+		auto inAlbedo = lightingPass.AddInput("Albedo", albedoBuf, RGResourceUsage::PixelShaderResourceView(albedoBuf));
+		auto inNormal = lightingPass.AddInput("Normal", normalBuf, RGResourceUsage::PixelShaderResourceView(normalBuf));
+		auto inDepth = lightingPass.AddInput("Depth", depthBuf, RGResourceUsage::PixelShaderResourceView(depthBuf));
 		auto inShadowMap =
-			lightingPass.AddInput("ShadowMap", shadowMap, RGResourceUsage::ShaderResourceView(shadowMap));
+			lightingPass.AddInput("ShadowMap", shadowMap, RGResourceUsage::PixelShaderResourceView(shadowMap));
 		// TODO RenderGraph: Sampler
 		auto inLightBuffer =
 			lightingPass.AddInput("LightBuffer", lightBuf, RGResourceUsage::ConstantBufferView(lightBuf));
 		auto inViewTransform = lightingPass.AddInput(
 			"ViewTransformBuffer", viewTransformBuf, RGResourceUsage::ConstantBufferView(viewTransformBuf));
 		auto inReflectionResult = lightingPass.AddInput(
-			"ReflectionResult", reflectionResultBuf, RGResourceUsage::ShaderResourceView(reflectionResultBuf));
+			"ReflectionResult", reflectionResultBuf, RGResourceUsage::PixelShaderResourceView(reflectionResultBuf));
 		auto inRefractionResult = lightingPass.AddInput(
-			"RefractionResult", refractionResultBuf, RGResourceUsage::ShaderResourceView(refractionResultBuf));
+			"RefractionResult", refractionResultBuf, RGResourceUsage::PixelShaderResourceView(refractionResultBuf));
 		lightingPass.Execute = [outLightingResult,
 								inAlbedo,
 								inNormal,

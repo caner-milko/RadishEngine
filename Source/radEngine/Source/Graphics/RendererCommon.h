@@ -21,4 +21,10 @@ struct TextureManager;
 struct ModelManager;
 struct SceneRenderData;
 
+struct PreRenderPassData;
+struct ShadowMapPassData;
+struct DeferredPassData;
+struct WaterPassData;
+struct ForwardPassData;
+
 } // namespace rad

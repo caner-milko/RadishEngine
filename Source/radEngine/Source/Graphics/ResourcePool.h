@@ -64,7 +64,16 @@ using CPUDescriptorDesc = std::variant<ShaderResourceViewDesc,
 
 using GPUDescriptorDesc = std::variant<ShaderResourceViewDesc, UnorderedAccessViewDesc, ConstantBufferViewDesc>;
 
-using DescriptorDesc = std::variant<CPUDescriptorDesc, GPUDescriptorDesc>;
+struct DescriptorDesc
+	: std::variant<CPUDescriptorDesc, GPUDescriptorDesc, std::vector<CPUDescriptorDesc>, std::vector<GPUDescriptorDesc>>
+{
+	using std::variant<CPUDescriptorDesc,
+					   GPUDescriptorDesc,
+					   std::vector<CPUDescriptorDesc>,
+					   std::vector<GPUDescriptorDesc>>::variant;
+	bool operator==(const DescriptorDesc& Other) const;
+	size_t Hash() const;
+};
 
 using CPUResourceDescriptor = std::variant<DescriptorAllocation, D3D12_VERTEX_BUFFER_VIEW, D3D12_INDEX_BUFFER_VIEW>;
 
@@ -131,6 +140,14 @@ RAD_DECLARE_HASH(rad::DepthStencilViewDesc)
 RAD_DECLARE_HASH(rad::VertexBufferViewDesc)
 RAD_DECLARE_HASH(rad::IndexBufferViewDesc)
 RAD_DECLARE_HASH(rad::ResourceCreateInfo)
+namespace std
+{
+template <>
+struct hash<rad::DescriptorDesc>
+{
+	size_t operator()(const rad::DescriptorDesc& val) const { return val.Hash(); }
+};
+} // namespace std
 
 namespace rad
 {

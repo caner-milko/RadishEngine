@@ -32,7 +32,6 @@ struct CIndexedPlane
 {
 	uint32_t ResX = 256, ResY = 256;
 	Ref<ResourcePool::OwnedResource> Indices;
-	Ref<ResourceDescriptor> IndexBufferView;
 };
 
 struct CTerrainRenderable
@@ -109,7 +108,7 @@ struct TerrainErosionSystem
 							   CErosionParameters const& parameters,
 							   CWaterRenderable& waterRenderable);
 
-	void Update(entt::registry& registry, InputManager& inputMan, RenderGraphBuilder& rgBuilder);
+	void Update(entt::registry& registry, InputManager& inputMan);
 
 private:
 	Renderer& Renderer;
@@ -134,27 +133,34 @@ private:
 	{
 		glm::mat4 WorldMatrix;
 		uint32_t IndexCount;
-		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		PoolResourceView Indices;
+		PoolResourceView HeightMap;
+		PoolResourceView TerrainAlbedoTex;
+		PoolResourceView TerrainNormalMap;
 		hlsl::TerrainRenderResources Resources;
 	};
 
-	void TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects,
-							  const RenderView& view,
-							  DepthOnlyPassData& passData);
-	void TerrainDeferredPass(std::span<TerrainRenderData> renderObjects,
-							 const RenderView& view,
-							 DeferredPassData& passData);
+	std::vector<TerrainRenderData> FrameTerrainRenderData;
+
+	void TerrainShadowMapPass(ShadowMapPassData& passData);
+	void TerrainDeferredPass(DeferredPassData& passData);
 
 	struct WaterRenderData
 	{
 		glm::mat4 WorldMatrix;
 		uint32_t IndexCount;
-		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		PoolResourceView Indices;
+		PoolResourceView HeightMap;
+		PoolResourceView WaterHeightMap;
+		PoolResourceView WaterAlbedoMap;
+		PoolResourceView WaterNormalMap;
 		hlsl::WaterRenderResources Resources;
 	};
 
-	void WaterPrepass(std::span<WaterRenderData> renderObjects, const RenderView& view, WaterPassData& passData);
-	void WaterForwardPass(std::span<WaterRenderData> renderObjects, const RenderView& view, ForwardPassData& passData);
+	std::vector<WaterRenderData> FrameWaterRenderData;
+
+	void WaterPass(WaterPassData& passData);
+	void WaterForwardPass(ForwardPassData& passData);
 };
 
 } // namespace rad::proc

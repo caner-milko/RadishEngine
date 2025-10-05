@@ -25,7 +25,7 @@ ResourcePool::OwnedResource* rad::TextureManager::LoadTexture(std::filesystem::p
 	auto it = LoadedTextures.find(path);
 	if (it != LoadedTextures.end())
 	{
-		return &Textures[it->second];
+		return &Textures.at(it->second);
 	}
 
 	int width, height, comp;

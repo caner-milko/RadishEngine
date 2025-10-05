@@ -228,13 +228,18 @@ void TestGraph()
 	auto& pass1 = graphBuilder.AddPass("TestPass1");
 	auto inTestTex = pass1.AddInResourceSetOut("InOutTestTex", testTex, RGResourceUsage::RenderTargetView(*testTex));
 	auto inReadTex =
-		pass1.AddInput("InReadTex", *externalReadTex, RGResourceUsage::ShaderResourceView(*externalReadTex));
-	auto inBuf = pass1.AddInput("InBuf", *externalBuf, RGResourceUsage::ShaderResourceView(*externalBuf));
+		pass1.AddInput("InReadTex", *externalReadTex, RGResourceUsage::PixelShaderResourceView(*externalReadTex));
+	auto inBuf = pass1.AddInput("InBuf", *externalBuf, RGResourceUsage::PixelShaderResourceView(*externalBuf));
 	pass1.Execute = [inTestTex, inBuf, inReadTex](CommandContext& cmd) {
 		auto rtv = inTestTex->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>();
 		auto srvTex = inReadTex->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
 		auto srvBuf = inBuf->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>();
 	};
+}
+
+Ref<RGResourceDescriptor> RGBInputResource::AddDescriptor(DescriptorDesc desc)
+{
+	return OwnerPass->RGBuilder->AddDescriptorToInput(OwnerPass, *this, std::move(desc));
 }
 
 } // namespace rad

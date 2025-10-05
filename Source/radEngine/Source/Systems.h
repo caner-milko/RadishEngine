@@ -1,7 +1,7 @@
 #pragma once
 
 #include <entt/entt.hpp>
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 #include "ConstantBuffers.hlsli"
 #include "Graphics/Model.h"
 #include "Graphics/Renderer.h"
@@ -29,31 +29,17 @@ struct WorldTransform
 {
 	glm::mat4 WorldMatrix = glm::mat4(1.0f);
 	// For directx, so row-major
-	glm::vec3 GetPosition() const
-	{
-		return glm::vec3(WorldMatrix[3]);
-	}
+	glm::vec3 GetPosition() const { return glm::vec3(WorldMatrix[3]); }
 	glm::vec3 GetScale() const
 	{
-		return glm::vec3(glm::length(glm::vec3(WorldMatrix[0])), glm::length(glm::vec3(WorldMatrix[1])),
+		return glm::vec3(glm::length(glm::vec3(WorldMatrix[0])),
+						 glm::length(glm::vec3(WorldMatrix[1])),
 						 glm::length(glm::vec3(WorldMatrix[2])));
 	}
-	glm::vec3 GetForward() const
-	{
-		return glm::mat3(WorldMatrix) * glm::vec3(0, 0, 1.0f);
-	}
-	glm::vec3 GetRight() const
-	{
-		return glm::mat3(WorldMatrix) * glm::vec3(-1.0f, 0, 0);
-	}
-	glm::vec3 GetUp() const
-	{
-		return glm::mat3(WorldMatrix) * glm::vec3(0, 1.0f, 0);
-	}
-	glm::mat3 GetRotation() const
-	{
-		return glm::mat3(WorldMatrix);
-	}
+	glm::vec3 GetForward() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 0, 1.0f); }
+	glm::vec3 GetRight() const { return glm::mat3(WorldMatrix) * glm::vec3(-1.0f, 0, 0); }
+	glm::vec3 GetUp() const { return glm::mat3(WorldMatrix) * glm::vec3(0, 1.0f, 0); }
+	glm::mat3 GetRotation() const { return glm::mat3(WorldMatrix); }
 	operator ecs::Transform() const;
 };
 struct CSceneTransform
@@ -63,10 +49,7 @@ struct CSceneTransform
 	std::vector<Ref<CSceneTransform>> Children;
 	entt::entity Entity = entt::null;
 
-	ecs::Transform const& LocalTransform() const
-	{
-		return Transform;
-	}
+	ecs::Transform const& LocalTransform() const { return Transform; }
 
 	WorldTransform GetWorldTransform() const
 	{
@@ -90,7 +73,9 @@ struct CSceneTransform
 	{
 		if (Parent != nullptr)
 		{
-			std::erase_if(Parent->Children, [this](Ref<CSceneTransform> child) { return child.Ptr() == this; });
+			std::erase_if(Parent->Children, [this](Ref<CSceneTransform> child) {
+				return child.Ptr() == this;
+			});
 		}
 		Parent = parent;
 		if (parent != nullptr)
@@ -118,7 +103,7 @@ struct CSceneTransform
 			child->InvalidateParentTransform();
 	}
 
-  private:
+private:
 	Transform Transform;
 	mutable std::optional<WorldTransform> CachedParentWorldTransform;
 };
@@ -126,28 +111,32 @@ struct CSceneTransform
 struct CStaticRenderable
 {
 	bool Hidden = false;
-	DXTypedBuffer<Vertex> Vertices;
-	DXTypedBuffer<uint32_t> Indices;
+	ResourcePool::OwnedResource* Vertices; // Vertex
+	ResourcePool::OwnedResource* Indices;  // uint32_t
 	Material Material;
 };
 
-struct CStaticRenderSystem
+struct CStaticRenderSystem : EventSubscriber
 {
 	GraphicsPipelineState<hlsl::StaticMeshResources> StaticMeshPipelineState;
 	GraphicsPipelineState<hlsl::ShadowMapResources> ShadowMapPipelineState;
 	bool Init(Renderer& renderer);
-	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
+	void Update(entt::registry& registry);
 
 	struct StaticRenderData
 	{
 		glm::mat4 WorldMatrix;
 		uint32_t IndexCount;
-		D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
-		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
-		DescriptorAllocationView Material;
+		ResourcePool::OwnedResource* Vertices;
+		ResourcePool::OwnedResource* Indices;
+		ResourcePool::OwnedResource* MaterialBuf;
 	};
-	void DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DepthOnlyPassData& passData);
-	void DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view, DeferredPassData& passData);
+
+private:
+	// TODO: Somehow enqueue this data instead of storing it here
+	std::vector<StaticRenderData> FrameRenderData;
+	void ShadowMapPass(ShadowMapPassData& passData);
+	void DeferredPass(DeferredPassData& passData);
 };
 struct CViewpoint
 {
@@ -173,7 +162,7 @@ struct CCamera
 };
 struct CCameraSystem
 {
-	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
+	void Update(entt::registry& registry, RenderView& renderView);
 };
 struct CLight
 {
@@ -183,7 +172,7 @@ struct CLight
 };
 struct CLightSystem
 {
-	void Update(entt::registry& registry, RenderFrameRecord& frameRecord);
+	void Update(entt::registry& registry, RenderLightInfo& lightInfo);
 };
 struct CViewpointController
 {
@@ -204,10 +193,7 @@ struct CViewpointControllerSystem
 
 struct CUISystem
 {
-	~CUISystem()
-	{
-		Destroy();
-	}
+	~CUISystem() { Destroy(); }
 	void Init(Renderer& renderer, SDL_Window* window);
 	void Destroy();
 	void ProcessEvent(const SDL_Event& event);

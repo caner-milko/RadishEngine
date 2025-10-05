@@ -62,6 +62,8 @@ struct DeferredRenderingPipeline
 
 	Ref<RGBOutputResource> BuildFrameRenderGraph(RenderGraphBuilder& graphBuilder, SceneRenderData& sceneData);
 
+	std::queue<std::move_only_function<void(PreRenderPassData&)>> EnqueuedPreRenderFuncs;
+
 	Event<PreRenderPassData&> OnPreRenderPass;
 	Event<ShadowMapPassData&> OnShadowMapPass;
 	Event<DeferredPassData&> OnDeferredPass;

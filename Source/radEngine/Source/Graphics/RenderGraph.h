@@ -103,10 +103,15 @@ struct RGResourceUsage
 
 	bool IsCompatibleWith(const RGResourceUsage& other) const { return true; }
 
-	static RGResourceUsage ShaderResourceView(RGResourceRef const& resource)
+	static RGResourceUsage PixelShaderResourceView(RGResourceRef const& resource)
 	{
 		return RGResourceUsage{D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
 								   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+							   DescriptorCreateHelper::ShaderResourceView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage NonPixelShaderResourceView(RGResourceRef const& resource)
+	{
+		return RGResourceUsage{D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
 							   DescriptorCreateHelper::ShaderResourceView(resource.GetCreateInfo())};
 	}
 	static RGResourceUsage UnorderedAccessView(RGResourceRef const& resource)
@@ -118,6 +123,17 @@ struct RGResourceUsage
 	{
 		return RGResourceUsage{D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
 							   DescriptorCreateHelper::ConstantBufferView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage VertexBufferView(RGResourceRef const& resource)
+	{
+		return RGResourceUsage{D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+							   DescriptorCreateHelper::VertexBufferView(resource.GetCreateInfo())};
+	}
+	static RGResourceUsage IndexBufferView(RGResourceRef const& resource, DXGI_FORMAT format)
+	{
+		return RGResourceUsage{D3D12_RESOURCE_STATE_INDEX_BUFFER,
+							   DescriptorCreateHelper::IndexBufferView(IndexBufferViewDesc{
+								   .SizeInBytes = UINT(resource.GetCreateInfo().Desc.Width), .Format = format})};
 	}
 	static RGResourceUsage RenderTargetView(RGResourceRef const& resource)
 	{
@@ -281,5 +297,4 @@ private:
 	Ref<RGBOutputResource> InitializeResourceProvider(std::string name, RGResourceRef resourceRef);
 	std::unordered_map<PoolResourceView, RGBOutputResource> ResourceToLastOutput;
 };
-
 }; // namespace rad
