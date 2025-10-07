@@ -253,18 +253,30 @@ void CStaticRenderSystem::ShadowMapPass(ShadowMapPassData& passData)
 		auto rgIndicesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Indices->AsView());
 		auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
 		renderObjects.push_back(RenderObject{
-			.Vertices =
-				pass.AddInResourceSetOut("Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes)),
+			.Vertices = pass.AddInResourceSetOut(
+				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex))),
 			.Indices = pass.AddInResourceSetOut(
 				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT)),
 			.IndexCount = renderData.IndexCount,
 			.MVP = passData.Frame.LightInfo.View.ViewProjectionMatrix * renderData.WorldMatrix});
+		break;
 	}
 
-	pass.Execute = [this, renderObjects = std::move(renderObjects)](CommandContext& cmd) {
+	auto rgShadowMapRes = pass.AddInResourceSetOut(
+		"ShadowMap", passData.OutShadowMap, RGResourceUsage::DepthStencilWrite(*passData.OutShadowMap));
+
+	pass.Execute = [this, renderObjects = std::move(renderObjects), rgShadowMapRes](CommandContext& cmd) {
+		D3D12_VIEWPORT viewport = CD3DX12_VIEWPORT(
+			0.f, 0.f, (*rgShadowMapRes)->CreateInfo.Desc.Width, (*rgShadowMapRes)->CreateInfo.Desc.Height);
+		D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
 		// TODO: Bind GBuffer RTVs/DSVs
 		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		ShadowMapPipelineState.Bind(cmd);
+		D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+			rgShadowMapRes->GetResourceView().AsCPUDescriptor<DepthStencilViewDesc>().GetCPUHandle();
+		cmd->OMSetRenderTargets(0, nullptr, FALSE, &dsvHandle);
+		cmd->RSSetViewports(1, &viewport);
+		cmd->RSSetScissorRects(1, &scissorRect);
 
 		const RenderObject* lastRenderObject{};
 		for (auto& renderObj : renderObjects)
@@ -307,22 +319,39 @@ void CStaticRenderSystem::DeferredPass(DeferredPassData& passData)
 		auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
 		auto rgMaterialRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.MaterialBuf->AsView());
 		renderObjects.push_back(RenderObject{
-			.Vertices =
-				pass.AddInResourceSetOut("Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes)),
+			.Vertices = pass.AddInResourceSetOut(
+				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex))),
 			.Indices = pass.AddInResourceSetOut(
 				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT)),
 			.IndexCount = renderData.IndexCount,
-			.MVP = passData.Frame.LightInfo.View.ViewProjectionMatrix * renderData.WorldMatrix,
+			.MVP = passData.Frame.View.ViewProjectionMatrix * renderData.WorldMatrix,
 			.NormalMatrix = glm::transpose(glm::inverse(renderData.WorldMatrix)),
 			.Material = pass.AddInResourceSetOut(
 				"Material", rgMaterialRes, RGResourceUsage::ConstantBufferView(*rgMaterialRes))});
 	}
 
-	pass.Execute = [this, renderObjects = std::move(renderObjects)](CommandContext& cmd) {
-		// TODO: Bind GBuffer RTVs/DSVs
+	auto rgAlbedoRes = pass.AddInResourceSetOut(
+		"AlbedoRT", passData.OutAlbedoBuffer, RGResourceUsage::RenderTargetView(*passData.OutAlbedoBuffer));
+	auto rgNormalRes = pass.AddInResourceSetOut(
+		"NormalRT", passData.OutNormalBuffer, RGResourceUsage::RenderTargetView(*passData.OutNormalBuffer));
+	auto rgDepth = pass.AddInResourceSetOut(
+		"DepthRT", passData.OutDepthBuffer, RGResourceUsage::DepthStencilWrite(*passData.OutDepthBuffer));
+
+	pass.Execute = [this, renderObjects = std::move(renderObjects), rgAlbedoRes, rgNormalRes, rgDepth](
+					   CommandContext& cmd) {
+		D3D12_VIEWPORT viewport =
+			CD3DX12_VIEWPORT(0.f, 0.f, (*rgAlbedoRes)->CreateInfo.Desc.Width, (*rgAlbedoRes)->CreateInfo.Desc.Height);
+		D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
 		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		StaticMeshPipelineState.Bind(cmd);
-
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[] = {
+			rgAlbedoRes->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle(),
+			rgNormalRes->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle()};
+		D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+			rgDepth->GetResourceView().AsCPUDescriptor<DepthStencilViewDesc>().GetCPUHandle();
+		cmd->OMSetRenderTargets(_countof(rtvHandles), rtvHandles, FALSE, &dsvHandle);
+		cmd->RSSetViewports(1, &viewport);
+		cmd->RSSetScissorRects(1, &scissorRect);
 		const RenderObject* lastRenderObject{};
 		for (auto& renderObj : renderObjects)
 		{
@@ -338,7 +367,8 @@ void CStaticRenderSystem::DeferredPass(DeferredPassData& passData)
 			lastRenderObject = &renderObj;
 			rad::hlsl::StaticMeshResources staticMeshResources{};
 			staticMeshResources.MVP = renderObj.MVP;
-			staticMeshResources.Normal = staticMeshResources.MaterialBufferIndex =
+			staticMeshResources.Normal = renderObj.NormalMatrix;
+			staticMeshResources.MaterialBufferIndex =
 				renderObj.Material->GetResourceView().AsGPUDescriptor<ConstantBufferViewDesc>().Index;
 			cmd->SetGraphicsRoot32BitConstants(0, sizeof(staticMeshResources) / 4, &staticMeshResources, 0);
 			cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
@@ -370,7 +400,7 @@ glm::mat4 CViewpoint::ProjectionMatrix() const
 }
 RenderView ViewpointToRenderView(const CViewpoint& viewpoint, const CSceneTransform& transform)
 {
-	RenderView view;
+	RenderView view{};
 	view.ViewMatrix = viewpoint.ViewMatrix(transform);
 	view.ProjectionMatrix = viewpoint.ProjectionMatrix();
 	view.ViewPosition = transform.GetWorldTransform().GetPosition();

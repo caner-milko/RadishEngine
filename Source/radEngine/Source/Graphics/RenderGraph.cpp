@@ -1,6 +1,7 @@
 #include "RenderGraph.h"
 #include "DXResource.h"
 #include "ResourcePool.h"
+#include <sstream>
 
 namespace rad
 {
@@ -20,7 +21,7 @@ Ref<RGBOutputResource> RenderGraphBuilder::GetOrAddExternalResource(PoolResource
 
 Ref<RGBOutputResource> RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
 {
-	auto& providerPass = AddPass(std::move(name) + " Provider");
+	auto& providerPass = AddPass(name + " Provider");
 	return AddOutputToPass(providerPass, std::move(name), resourceRef);
 }
 
@@ -47,6 +48,19 @@ Ref<RGBInputResource> RenderPassBuilder::AddInResourceSetOut(std::string name,
 
 void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandContext& cmd)
 {
+#ifndef NDEBUG
+	for (auto& pass : Passes)
+	{
+		for (auto& input : pass.Inputs)
+		{
+			// assert(input.Source->OwnerPass != pass);
+			auto& sourceConnecteds = input.Source->ConnectedInputs;
+			assert(std::find(sourceConnecteds.begin(), sourceConnecteds.end(), Ref(input)) != sourceConnecteds.end() &&
+				   "Input not registered in source's connected inputs");
+		}
+	}
+#endif
+
 	/*
 		1. Create all graph resources && descriptors
 		2. Start from the leftmost & start recording passes/barriers
@@ -66,8 +80,9 @@ void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandCont
 	while (!passQueue.empty())
 	{
 		RenderPassBuilder& pass = passQueue.front();
-		visitedPasses.insert(pass);
 		passQueue.pop();
+		if (!visitedPasses.insert(pass).second)
+			continue;
 		// Record pass
 		// cmd.BeginPass(pass.Name);
 
@@ -101,16 +116,33 @@ void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandCont
 				RenderPassBuilder& owner = input->OwnerPass;
 				bool canVisit = true;
 				for (auto& input : owner.Inputs)
+				{
+					if (input.Source->OwnerPass == owner)
+						continue;
 					if (!visitedPasses.contains(input.Source->OwnerPass))
 					{
 						canVisit = false;
 						break;
 					}
+				}
 				if (canVisit)
 					passQueue.push(owner);
 			}
 		}
 	}
+#ifndef NDEBUG
+	if (visitedPasses.size() != Passes.size())
+	{
+		std::stringstream ss;
+		ss << "RenderGraphBuilder: Not all passes were visited. Unvisited passes:\n";
+		for (auto& pass : Passes)
+			if (!visitedPasses.contains(pass))
+				ss << " - " << pass.Name << "\n";
+		std::cerr << ss.str();
+		assert(false);
+	}
+#endif
+
 	ResourceManager.FreeResources(resourcePool);
 }
 
@@ -140,7 +172,7 @@ std::pair<RGBInputResource&, Ref<RGBOutputResource>> RenderGraphBuilder::AddInOu
 																						RGResourceUsage usage)
 {
 	auto input = AddInputToPass(pass, name, fromOut, std::move(usage));
-	auto output = AddOutputToPass(pass, name, fromOut.GetResource());
+	auto output = AddOutputToPass(pass, name, fromOut);
 	return {input, output};
 }
 
@@ -185,7 +217,10 @@ void RGResourceManager::CreateResourcesAndDescriptors(ResourcePool& resourcePool
 	{
 		resInfo.LastState = resourceRef.GetResource()->State;
 		for (auto& [desc, rgDesc] : resInfo.Descriptors)
+		{
 			rgDesc.ResourceDecided(resourcePool.GetDescriptor(resourceRef.GetResource(), desc));
+			assert(!rgDesc.Get().valueless_by_exception());
+		}
 	}
 }
 

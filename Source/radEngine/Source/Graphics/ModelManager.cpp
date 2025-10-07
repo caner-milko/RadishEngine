@@ -188,6 +188,12 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Rend
 			{
 				material.DiffuseTexture = tex->operator rad::ResourcePool::Resource&();
 				difTexLoaded = true;
+				matInfo.DiffuseTextureIndex =
+					Renderer.ResourcePool
+						->GetDescriptor(tex->AsView(),
+										DescriptorCreateHelper::ShaderResourceView(tex->AsView()->CreateInfo))
+						.AsGPUDescriptor<ShaderResourceViewDesc>()
+						.Index;
 			}
 		}
 		if (!difTexLoaded)
@@ -204,6 +210,12 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Rend
 					std::filesystem::path(*material.NormalMapTextureName), {}, rgBuilder, true))
 			{
 				material.NormalMapTexture = tex->operator rad::ResourcePool::Resource&();
+				matInfo.NormalMapTextureIndex =
+					Renderer.ResourcePool
+						->GetDescriptor(tex->AsView(),
+										DescriptorCreateHelper::ShaderResourceView(tex->AsView()->CreateInfo))
+						.AsGPUDescriptor<ShaderResourceViewDesc>()
+						.Index;
 			}
 		}
 

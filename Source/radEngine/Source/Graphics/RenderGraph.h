@@ -124,10 +124,13 @@ struct RGResourceUsage
 		return RGResourceUsage{D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
 							   DescriptorCreateHelper::ConstantBufferView(resource.GetCreateInfo())};
 	}
-	static RGResourceUsage VertexBufferView(RGResourceRef const& resource)
+	static RGResourceUsage VertexBufferView(RGResourceRef const& resource, uint32_t strideInBytes)
 	{
-		return RGResourceUsage{D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
-							   DescriptorCreateHelper::VertexBufferView(resource.GetCreateInfo())};
+		return RGResourceUsage{
+			D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+			DescriptorCreateHelper::VertexBufferView(resource.GetCreateInfo(),
+													 DescriptorCreateHelper::Details<VertexBufferViewDesc>{
+														 .VertexBuffer = {.StrideInBytes = strideInBytes}})};
 	}
 	static RGResourceUsage IndexBufferView(RGResourceRef const& resource, DXGI_FORMAT format)
 	{
@@ -156,7 +159,7 @@ using RGResourceDescriptor = RGFuture<ResourceDescriptor, true>;
 
 struct RGResourceViewBase : RGResourceRef
 {
-	RGResourceViewBase(RGResourceRef resourceRef, std::vector<RGResourceDescriptor> descriptors)
+	RGResourceViewBase(RGResourceRef& resourceRef, std::deque<Ref<RGResourceDescriptor>> descriptors)
 		: RGResourceRef(resourceRef), Descriptors(std::move(descriptors))
 	{
 	}
@@ -179,12 +182,12 @@ struct RGResourceViewBase : RGResourceRef
 		return Descriptor(index).AsGPUDescriptor<T>();
 	}
 
-	ResourceDescriptor& Descriptor(size_t index = 0) const { return Descriptors.at(index).Get(); }
+	ResourceDescriptor& Descriptor(size_t index = 0) const { return Descriptors.at(index)->Get(); }
 
 	operator PoolResourceView() const { return GetResource(); }
 	PoolResourceView operator->() const { return GetResource(); }
 
-	std::vector<RGResourceDescriptor> Descriptors;
+	std::deque<Ref<RGResourceDescriptor>> Descriptors;
 };
 
 struct RenderPassBuilder;
@@ -220,7 +223,7 @@ struct RGBInputResource
 	Ref<RenderPassBuilder> OwnerPass;
 	Ref<RGBOutputResource> Source;
 	D3D12_RESOURCE_STATES State;
-	std::vector<RGResourceDescriptor> Descriptors;
+	std::deque<Ref<RGResourceDescriptor>> Descriptors;
 
 	RGResourceViewBase GetResourceView() { return RGResourceViewBase{Source, Descriptors}; }
 	operator RGResourceViewBase() { return GetResourceView(); }
@@ -295,6 +298,6 @@ struct RenderGraphBuilder
 private:
 	Ref<RGBOutputResource> AddOutputToPass(RenderPassBuilder& pass, std::string name, RGResourceRef ref);
 	Ref<RGBOutputResource> InitializeResourceProvider(std::string name, RGResourceRef resourceRef);
-	std::unordered_map<PoolResourceView, RGBOutputResource> ResourceToLastOutput;
+	std::unordered_map<PoolResourceView, Ref<RGBOutputResource>> ResourceToLastOutput;
 };
 }; // namespace rad

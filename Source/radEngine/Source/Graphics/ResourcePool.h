@@ -114,7 +114,7 @@ struct ResourceCreateInfo
 	D3D12_RESOURCE_DESC Desc;
 	D3D12_HEAP_PROPERTIES HeapProps;
 	D3D12_HEAP_FLAGS HeapFlags;
-	std::array<float, 4> ClearValue = {0.0f, 0.0f, 0.0f, 0.0f};
+	std::optional<std::array<float, 4>> ClearValue = std::nullopt;
 	bool operator==(const ResourceCreateInfo& Other) const;
 	size_t Hash() const;
 };
@@ -349,7 +349,7 @@ struct ResourceCreateHelper
 		std::optional<D3D12_HEAP_PROPERTIES> Heap = std::nullopt;
 		D3D12_RESOURCE_FLAGS DetailedFlags = D3D12_RESOURCE_FLAG_NONE;
 		D3D12_HEAP_FLAGS HeapFlags = D3D12_HEAP_FLAG_NONE;
-		std::array<float, 4> ClearValue = {0.0f, 0.0f, 0.0f, 0.0f};
+		std::optional<std::array<float, 4>> ClearValue = std::nullopt;
 	};
 	static D3D12_RESOURCE_FLAGS ToResourceFlags(ResourcePresetFlags flags);
 	static D3D12_HEAP_FLAGS ToHeapFlags(ResourcePresetFlags flags, PresetType type);

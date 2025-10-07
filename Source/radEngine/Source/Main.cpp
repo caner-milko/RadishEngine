@@ -162,7 +162,7 @@ void InitGame()
 
 void UpdateGame(float deltaTime, SceneRenderData& sceneRenderData)
 {
-	g_EnttSystems->TerrainErosionSystem.Update(g_EnttRegistry, InputManager::Get());
+	// g_EnttSystems->TerrainErosionSystem.Update(g_EnttRegistry, InputManager::Get());
 	g_EnttSystems->ViewpointControllerSystem.Update(g_EnttRegistry, InputManager::Get(), deltaTime, g_Renderer);
 	g_EnttSystems->CameraSystem.Update(g_EnttRegistry, sceneRenderData.View);
 	g_EnttSystems->LightSystem.Update(g_EnttRegistry, sceneRenderData.LightInfo);

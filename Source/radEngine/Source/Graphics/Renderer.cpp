@@ -34,9 +34,9 @@ bool Renderer::InitializeDevice()
 	{
 		ComPtr<ID3D12InfoQueue> pInfoQueue = nullptr;
 		Device->QueryInterface(IID_PPV_ARGS(&pInfoQueue));
-		pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
-		pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
-		pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
+		// pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
+		// pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
+		// pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
 	}
 #endif
 
@@ -263,6 +263,11 @@ void Renderer::RenderScene(SceneRenderData sceneData)
 		};
 	}
 
+	{
+		auto& toPresentPass = graphBuilder.AddPass("ToPresent");
+		toPresentPass.AddInResourceSetOut("BackBuffer", rgBackBuffer, RGResourceUsage(D3D12_RESOURCE_STATE_PRESENT));
+	}
+
 	auto activeCmdContext = GetNewCommandContext();
 	if (!activeCmdContext)
 	{
@@ -273,7 +278,7 @@ void Renderer::RenderScene(SceneRenderData sceneData)
 
 	graphBuilder.BuildAndExecute(*ResourcePool, cmdContext);
 
-	TransitionVec(dxRes, D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
+	// TransitionVec(dxRes, D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
 	ExecuteCommandContext(*activeCmdContext);
 	// Present
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);

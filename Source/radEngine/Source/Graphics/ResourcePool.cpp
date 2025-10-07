@@ -328,11 +328,29 @@ bool ResourceCreateInfo::operator==(const ResourceCreateInfo& Other) const
 
 	if (HeapFlags != Other.HeapFlags)
 		return false;
+	if (ClearValue != Other.ClearValue)
+		return false;
 	return true;
 }
 size_t ResourceCreateInfo::Hash() const
 {
-	return HashCombine(Desc.Dimension,
+	size_t clearValHash = 0;
+	if (ClearValue)
+	{
+		clearValHash = HashCombine(Desc.Format);
+		switch (Desc.Format)
+		{
+		case DXGI_FORMAT_D32_FLOAT:
+		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+		case DXGI_FORMAT_D24_UNORM_S8_UINT:
+		case DXGI_FORMAT_D16_UNORM: clearValHash = HashCombine((*ClearValue)[0], (*ClearValue)[1]); break;
+		default:
+			clearValHash = HashCombine((*ClearValue)[0], (*ClearValue)[1], (*ClearValue)[2], (*ClearValue)[3]);
+			break;
+		}
+	}
+	return HashCombine(clearValHash,
+					   Desc.Dimension,
 					   Desc.Alignment,
 					   Desc.Width,
 					   Desc.Height,
@@ -358,38 +376,41 @@ ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo&
 		if (!it->second.empty())
 		{
 			OwnedResource& resource = it->second.back();
-			FreeResources.erase(it);
+			it->second.pop_back();
+			if (it->second.empty())
+				FreeResources.erase(it);
 			resource.AcquiredName = std::move(acquireName);
-			;
 			resource->DXRes->SetName(s2ws(*resource.AcquiredName).c_str());
 			return resource;
 		}
 	}
 	// Create ID3D12Resource from CreateInfo
 	ComPtr<ID3D12Resource> resource;
-
-	D3D12_CLEAR_VALUE clearValue = {.Format = createInfo.Desc.Format};
-	switch (createInfo.Desc.Format)
+	std::optional<D3D12_CLEAR_VALUE> clearValue = std::nullopt;
+	if (createInfo.ClearValue)
 	{
-	case DXGI_FORMAT_D32_FLOAT:
-	case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
-	case DXGI_FORMAT_D24_UNORM_S8_UINT:
-	case DXGI_FORMAT_D16_UNORM:
-		clearValue.DepthStencil.Depth = createInfo.ClearValue[0];
-		clearValue.DepthStencil.Stencil = createInfo.ClearValue[1];
-		break;
-	default: memcpy(clearValue.Color, createInfo.ClearValue.data(), sizeof(clearValue.Color)); break;
+		clearValue = D3D12_CLEAR_VALUE{.Format = createInfo.Desc.Format};
+		switch (createInfo.Desc.Format)
+		{
+		case DXGI_FORMAT_D32_FLOAT:
+		case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+		case DXGI_FORMAT_D24_UNORM_S8_UINT:
+		case DXGI_FORMAT_D16_UNORM:
+			clearValue->DepthStencil.Depth = (*createInfo.ClearValue)[0];
+			clearValue->DepthStencil.Stencil = (*createInfo.ClearValue)[1];
+			break;
+		default: memcpy(clearValue->Color, createInfo.ClearValue->data(), sizeof(clearValue->Color)); break;
+		}
+		if (!(createInfo.Desc.Flags &
+			  (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)))
+			assert(false);
 	}
-
-	D3D12_CLEAR_VALUE* pClearValue = nullptr;
-	if (createInfo.Desc.Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL))
-		pClearValue = &clearValue;
 
 	Device.CreateCommittedResource(&createInfo.HeapProps,
 								   createInfo.HeapFlags,
 								   &createInfo.Desc,
 								   D3D12_RESOURCE_STATE_COMMON,
-								   pClearValue,
+								   clearValue.has_value() ? &*clearValue : nullptr,
 								   IID_PPV_ARGS(&resource));
 
 	auto& resInfo = AddResourceInfo(*resource.Get(), createInfo, D3D12_RESOURCE_STATE_COMMON);
@@ -606,8 +627,8 @@ D3D12_RESOURCE_FLAGS ResourceCreateHelper::ToResourceFlags(ResourcePresetFlags f
 		resFlags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 	if (!!(flags & ResourcePresetFlags::DepthStencil))
 		resFlags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-	if (!(flags & ResourcePresetFlags::ShaderResource) && !!(flags & ResourcePresetFlags::DepthStencil))
-		resFlags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+	// if (!(flags & ResourcePresetFlags::ShaderResource) && !(flags & ResourcePresetFlags::DepthStencil))
+	//	resFlags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 	if (!!(flags & ResourcePresetFlags::UnorderedAccess))
 		resFlags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 	if (!!(flags & ResourcePresetFlags::MipMaps))
@@ -722,8 +743,13 @@ ResourceCreateInfo ResourceCreateHelper::Texture3D(uint32_t width,
 	return createInfo;
 }
 
-DXGI_FORMAT DecideFormat(DXGI_FORMAT format, DescriptorCreateFlags flags)
+DXGI_FORMAT DecideFormat(DXGI_FORMAT descFormat, DXGI_FORMAT detailFormat, DescriptorCreateFlags flags)
 {
+	if (detailFormat != DXGI_FORMAT_UNKNOWN)
+	{
+		return detailFormat;
+	}
+	DXGI_FORMAT format = descFormat;
 	if (!!(flags & DescriptorCreateFlags::SRGB))
 	{
 		if (format == DXGI_FORMAT_R8G8B8A8_UNORM)
@@ -758,7 +784,10 @@ DescriptorDesc DescriptorCreateHelper::ShaderResourceView(ResourceCreateInfo con
 														  Details<D3D12_SHADER_RESOURCE_VIEW_DESC> details,
 														  DescriptorCreateType type)
 {
-	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	details.Desc.Format = DecideFormat(createInfo.Desc.Format, details.Desc.Format, details.Flags);
+	// TODO: Fix
+	if (details.Desc.Format == DXGI_FORMAT_D32_FLOAT)
+		details.Desc.Format = DXGI_FORMAT_R32_FLOAT;
 	details.Desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	switch (createInfo.Desc.Dimension)
 	{
@@ -854,7 +883,7 @@ DescriptorDesc DescriptorCreateHelper::UnorderedAccessView(ResourceCreateInfo co
 														   Details<D3D12_UNORDERED_ACCESS_VIEW_DESC> details,
 														   DescriptorCreateType type)
 {
-	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	details.Desc.Format = DecideFormat(createInfo.Desc.Format, details.Desc.Format, details.Flags);
 	switch (createInfo.Desc.Dimension)
 	{
 	case D3D12_RESOURCE_DIMENSION_BUFFER: {
@@ -954,7 +983,7 @@ DescriptorDesc DescriptorCreateHelper::ConstantBufferView(ResourceCreateInfo con
 DescriptorDesc DescriptorCreateHelper::RenderTargetView(ResourceCreateInfo const& createInfo,
 														Details<D3D12_RENDER_TARGET_VIEW_DESC> details)
 {
-	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	details.Desc.Format = DecideFormat(createInfo.Desc.Format, details.Desc.Format, details.Flags);
 	switch (createInfo.Desc.Dimension)
 	{
 	case D3D12_RESOURCE_DIMENSION_BUFFER: {
@@ -1029,7 +1058,7 @@ DescriptorDesc DescriptorCreateHelper::RenderTargetView(ResourceCreateInfo const
 DescriptorDesc DescriptorCreateHelper::DepthStencilView(ResourceCreateInfo const& createInfo,
 														Details<D3D12_DEPTH_STENCIL_VIEW_DESC> details)
 {
-	details.Desc.Format = DecideFormat(details.Desc.Format, details.Flags);
+	details.Desc.Format = DecideFormat(createInfo.Desc.Format, details.Desc.Format, details.Flags);
 	switch (createInfo.Desc.Dimension)
 	{
 	case D3D12_RESOURCE_DIMENSION_TEXTURE1D: {

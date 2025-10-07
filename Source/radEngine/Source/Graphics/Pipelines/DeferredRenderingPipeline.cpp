@@ -81,9 +81,14 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 	2. Create required textures(Depth, SSDepth, Albedo, Normal, Output, SSReflectRefract, ReflectionResult,
 	RefractionResult, LightingResult, ShadowMap)
 	*/
-
+	sceneData.View.Width = Viewport.Width;
+	sceneData.View.Height = Viewport.Height;
 	auto depthBufCreateInfo = rad::ResourceCreateHelper::Texture2D(
-		sceneData.View.Width, sceneData.View.Height, DXGI_FORMAT_D32_FLOAT, ResourcePresetFlags::DepthStencil);
+		sceneData.View.Width,
+		sceneData.View.Height,
+		DXGI_FORMAT_D32_FLOAT,
+		ResourcePresetFlags::DepthStencil,
+		ResourceCreateHelper::TextureDetails{.ClearValue = std::array<float, 4>{1.f}});
 
 	auto depthBuf = graphBuilder.AddGraphResource("DepthBuffer", depthBufCreateInfo);
 
@@ -91,43 +96,46 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 
 	auto albedoBuf = graphBuilder.AddGraphResource(
 		"AlbedoBuffer",
-		rad::ResourceCreateHelper::Texture2D(sceneData.View.Width,
-											 sceneData.View.Height,
-											 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-											 ResourcePresetFlags::RenderTarget,
-											 ResourceCreateHelper::TextureDetails{.ClearValue = {0, 0, 0, 1}}));
+		rad::ResourceCreateHelper::Texture2D(
+			sceneData.View.Width,
+			sceneData.View.Height,
+			DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+			ResourcePresetFlags::RenderTarget,
+			ResourceCreateHelper::TextureDetails{.ClearValue = std::array<float, 4>{0.f, 0, 0, 1}}));
 	auto normalBuf = graphBuilder.AddGraphResource(
 		"NormalBuffer",
-		rad::ResourceCreateHelper::Texture2D(sceneData.View.Width,
-											 sceneData.View.Height,
-											 DXGI_FORMAT_R16G16B16A16_FLOAT,
-											 ResourcePresetFlags::RenderTarget,
-											 ResourceCreateHelper::TextureDetails{.ClearValue = {0, 0, 0, 1}}));
+		rad::ResourceCreateHelper::Texture2D(
+			sceneData.View.Width,
+			sceneData.View.Height,
+			DXGI_FORMAT_R16G16B16A16_FLOAT,
+			ResourcePresetFlags::RenderTarget,
+			ResourceCreateHelper::TextureDetails{.ClearValue = std::array<float, 4>{0.f, 0.f, 0.f, 1.f}}));
 
 	auto reflectRefractBuf = graphBuilder.AddGraphResource(
 		"SSReflectRefractBuffer",
-		rad::ResourceCreateHelper::Texture2D(sceneData.View.Width,
-											 sceneData.View.Height,
-											 DXGI_FORMAT_R16G16B16A16_FLOAT,
-											 ResourcePresetFlags::RenderTarget,
-											 ResourceCreateHelper::TextureDetails{.ClearValue = {0, 0, 0, 0}}));
+		rad::ResourceCreateHelper::Texture2D(
+			sceneData.View.Width,
+			sceneData.View.Height,
+			DXGI_FORMAT_R16G16B16A16_FLOAT,
+			ResourcePresetFlags::RenderTarget,
+			ResourceCreateHelper::TextureDetails{.ClearValue = std::array<float, 4>{0.f, 0, 0, 0}}));
 
-	auto reflectionResultBufferInfo =
-		rad::ResourceCreateHelper::Texture2D(sceneData.View.Width,
-											 sceneData.View.Height,
-											 DXGI_FORMAT_R16G16B16A16_FLOAT,
-											 ResourcePresetFlags::RenderTarget | ResourcePresetFlags::UnorderedAccess,
-											 ResourceCreateHelper::TextureDetails{.ClearValue = {0, 0, 0, 0}});
+	auto reflectionResultBufferInfo = rad::ResourceCreateHelper::Texture2D(
+		sceneData.View.Width,
+		sceneData.View.Height,
+		DXGI_FORMAT_R16G16B16A16_FLOAT,
+		ResourcePresetFlags::RenderTarget | ResourcePresetFlags::UnorderedAccess,
+		ResourceCreateHelper::TextureDetails{.ClearValue = std::array<float, 4>{0.f, 0, 0, 0}});
 	auto reflectionResultBuf = graphBuilder.AddGraphResource("ReflectionResultBuffer", reflectionResultBufferInfo);
 
 	auto refractionResultBuf = graphBuilder.AddGraphResource("RefractionResultBuffer", reflectionResultBufferInfo);
 
-	auto outputBufInfo =
-		rad::ResourceCreateHelper::Texture2D(sceneData.View.Width,
-											 sceneData.View.Height,
-											 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-											 ResourcePresetFlags::RenderTarget,
-											 ResourceCreateHelper::TextureDetails{.ClearValue = {0, 0, 0, 1}});
+	auto outputBufInfo = rad::ResourceCreateHelper::Texture2D(
+		sceneData.View.Width,
+		sceneData.View.Height,
+		DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+		ResourcePresetFlags::RenderTarget,
+		ResourceCreateHelper::TextureDetails{.ClearValue = std::array<float, 4>{0.f, 0, 0, 1}});
 
 	auto outputBuf = graphBuilder.AddGraphResource("OutputBuffer", outputBufInfo);
 	auto lightingResultBuf = graphBuilder.AddGraphResource("LightingResultBuffer", outputBufInfo);
@@ -142,11 +150,12 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 
 	auto shadowMap = graphBuilder.AddGraphResource(
 		"ShadowMap",
-		ResourceCreateHelper::Texture2D(1024,
-										1024,
-										DXGI_FORMAT_D32_FLOAT,
-										ResourcePresetFlags::DepthStencil,
-										ResourceCreateHelper::TextureDetails{.ClearValue = {1.f, 1.f, 1.f, 1.f}}));
+		ResourceCreateHelper::Texture2D(
+			1024,
+			1024,
+			DXGI_FORMAT_D32_FLOAT,
+			ResourcePresetFlags::DepthStencil,
+			ResourceCreateHelper::TextureDetails{.ClearValue = std::array<float, 4>{1.f, 1.f, 1.f, 1.f}}));
 
 	// D3D12_FILTER filter = D3D12_FILTER_ANISOTROPIC,
 	//	D3D12_TEXTURE_ADDRESS_MODE addressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
@@ -216,9 +225,10 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 	}
 
 	{
-		rghelpers::ClearDepthStencilView(graphBuilder, depthBuf, 1.0f, std::nullopt);
-		rghelpers::ClearRenderTargetView(graphBuilder, albedoBuf, {0, 0, 0, 1});
-		rghelpers::ClearRenderTargetView(graphBuilder, normalBuf, {0, 0, 0, 1});
+		rghelpers::ClearDepthStencilView(
+			graphBuilder, depthBuf, (*depthBuf->GetCreateInfo().ClearValue)[0], std::nullopt);
+		rghelpers::ClearRenderTargetView(graphBuilder, albedoBuf, *normalBuf->GetCreateInfo().ClearValue);
+		rghelpers::ClearRenderTargetView(graphBuilder, normalBuf, *normalBuf->GetCreateInfo().ClearValue);
 		// Deferred Render Pass
 		DeferredPassData deferredPassData{.GraphBuilder = graphBuilder,
 										  .Frame = sceneData,
@@ -229,7 +239,8 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 	}
 	{
 		rghelpers::CopyResource(graphBuilder, depthBuf, ssDepth);
-		rghelpers::ClearRenderTargetView(graphBuilder, reflectRefractBuf, {0, 0, 0, 0});
+		rghelpers::ClearRenderTargetView(
+			graphBuilder, reflectRefractBuf, *reflectRefractBuf->GetCreateInfo().ClearValue);
 		// Water Render Pass
 		WaterPassData waterPassData{.GraphBuilder = graphBuilder,
 									.Frame = sceneData,
@@ -310,7 +321,6 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 								inRefractionResult,
 								this](CommandContext& cmdContext) {
 			auto rtv = outLightingResult->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle();
-			cmdContext->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
 
 			rad::hlsl::LightingResources lightingResources{};
 			lightingResources.AlbedoTextureIndex =
@@ -332,9 +342,13 @@ Ref<RGBOutputResource> DeferredRenderingPipeline::BuildFrameRenderGraph(RenderGr
 				inRefractionResult->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index;
 			LightingPipelineState.BindWithResources(cmdContext, lightingResources);
 			cmdContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			cmdContext->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+			cmdContext->RSSetViewports(1, &Viewport);
+			cmdContext->RSSetScissorRects(1, &ScissorRect);
 			cmdContext->DrawInstanced(4, 1, 0, 0);
 		};
 	}
+	rghelpers::CopyResource(graphBuilder, lightingResultBuf, outputBuf);
 	{
 		// Forward Render Pass
 		ForwardPassData forwardPassData{.GraphBuilder = graphBuilder,

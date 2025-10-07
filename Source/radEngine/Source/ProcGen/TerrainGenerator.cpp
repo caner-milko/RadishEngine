@@ -337,55 +337,55 @@ void TerrainErosionSystem::GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder,
 												 OptionalRef<CTerrainRenderable> terrainRenderable,
 												 OptionalRef<CWaterRenderable> waterRenderable)
 {
-	// create heightmap
-	constexpr auto scaleHeightMaps = [](float* data, size_t size, float min, float max) {
-		float valsMin = FLT_MAX, valsMax = FLT_MIN;
-		for (size_t i = 0; i < size; i++)
-		{
-			valsMin = std::min(valsMin, data[i]);
-			valsMax = std::max(valsMax, data[i]);
-		}
-		float oneOverRange = 1.0 / (valsMax - valsMin);
-		for (size_t i = 0; i < size; i++)
-			data[i] = std::pow((data[i] - valsMin) * oneOverRange, 2.0f) * (max - min) + min;
-	};
-	auto rgHeightMap = rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView());
-	if (parameters.BaseFromFile)
-	{
-		int width, height, channels;
-		float* heightMapVals = stbi_loadf(RAD_ENGINE_ASSETS_DIR "heightmap.png", &width, &height, &channels, 1);
-		scaleHeightMaps(heightMapVals, width * height, parameters.MinHeight, parameters.MaxHeight);
-		std::vector<float> heightMapValsVec(heightMapVals, heightMapVals + width * height);
-		stbi_image_free(heightMapVals);
-		rghelpers::UploadTextureData(rgBuilder, rgHeightMap, std::move(heightMapValsVec));
-	}
-	else
-	{
-		if (!parameters.Random)
-			generator = std::mt19937(parameters.Seed);
-		else
-			generator = std::mt19937(time(0));
-		auto heightMapVals =
-			CreateDiamondSquareHeightMap(terrain.HeightMap->Info().CreateInfo.Desc.Width, parameters.InitialRoughness);
-		scaleHeightMaps(heightMapVals.data(), heightMapVals.size(), parameters.MinHeight, parameters.MaxHeight);
-		rghelpers::UploadTextureData(rgBuilder, rgHeightMap, std::move(heightMapVals));
-	}
+	//// create heightmap
+	// constexpr auto scaleHeightMaps = [](float* data, size_t size, float min, float max) {
+	//	float valsMin = FLT_MAX, valsMax = FLT_MIN;
+	//	for (size_t i = 0; i < size; i++)
+	//	{
+	//		valsMin = std::min(valsMin, data[i]);
+	//		valsMax = std::max(valsMax, data[i]);
+	//	}
+	//	float oneOverRange = 1.0 / (valsMax - valsMin);
+	//	for (size_t i = 0; i < size; i++)
+	//		data[i] = std::pow((data[i] - valsMin) * oneOverRange, 2.0f) * (max - min) + min;
+	// };
+	// auto rgHeightMap = rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView());
+	// if (parameters.BaseFromFile)
+	//{
+	//	int width, height, channels;
+	//	float* heightMapVals = stbi_loadf(RAD_ENGINE_ASSETS_DIR "heightmap.png", &width, &height, &channels, 1);
+	//	scaleHeightMaps(heightMapVals, width * height, parameters.MinHeight, parameters.MaxHeight);
+	//	std::vector<float> heightMapValsVec(heightMapVals, heightMapVals + width * height);
+	//	stbi_image_free(heightMapVals);
+	//	rghelpers::UploadTextureData(rgBuilder, rgHeightMap, std::move(heightMapValsVec));
+	// }
+	// else
+	//{
+	//	if (!parameters.Random)
+	//		generator = std::mt19937(parameters.Seed);
+	//	else
+	//		generator = std::mt19937(time(0));
+	//	auto heightMapVals =
+	//		CreateDiamondSquareHeightMap(terrain.HeightMap->Info().CreateInfo.Desc.Width, parameters.InitialRoughness);
+	//	scaleHeightMaps(heightMapVals.data(), heightMapVals.size(), parameters.MinHeight, parameters.MaxHeight);
+	//	rghelpers::UploadTextureData(rgBuilder, rgHeightMap, std::move(heightMapVals));
+	// }
 
-	auto rgWaterHeightMap = rgBuilder.GetOrAddExternalResource(terrain.WaterHeightMap->AsView());
-	auto rgSedimentMap = rgBuilder.GetOrAddExternalResource(terrain.SedimentMap->AsView());
-	auto rgWaterOutflux = rgBuilder.GetOrAddExternalResource(terrain.WaterOutflux->AsView());
-	auto rgHardnessMap = rgBuilder.GetOrAddExternalResource(terrain.HardnessMap->AsView());
+	// auto rgWaterHeightMap = rgBuilder.GetOrAddExternalResource(terrain.WaterHeightMap->AsView());
+	// auto rgSedimentMap = rgBuilder.GetOrAddExternalResource(terrain.SedimentMap->AsView());
+	// auto rgWaterOutflux = rgBuilder.GetOrAddExternalResource(terrain.WaterOutflux->AsView());
+	// auto rgHardnessMap = rgBuilder.GetOrAddExternalResource(terrain.HardnessMap->AsView());
 
-	rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgWaterHeightMap, {0.f, 0.f, 0.f, 0.f});
-	rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgSedimentMap, {0.f, 0.f, 0.f, 0.f});
-	rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgWaterOutflux, {0.f, 0.f, 0.f, 0.f});
-	rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgHardnessMap, HardnessClearCol);
+	// rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgWaterHeightMap, {0.f, 0.f, 0.f, 0.f});
+	// rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgSedimentMap, {0.f, 0.f, 0.f, 0.f});
+	// rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgWaterOutflux, {0.f, 0.f, 0.f, 0.f});
+	// rghelpers::ClearUnorderedAccessViewFloat(rgBuilder, rgHardnessMap, HardnessClearCol);
 
 	terrain.IterationCount = 0;
 	if (terrainRenderable)
 		GenerateTerrainMaterial(rgBuilder, terrain, parameters, *terrainRenderable);
-	if (waterRenderable)
-		GenerateWaterMaterial(rgBuilder, terrain, parameters, *waterRenderable);
+	// if (waterRenderable)
+	//	GenerateWaterMaterial(rgBuilder, terrain, parameters, *waterRenderable);
 }
 
 void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder,
@@ -491,7 +491,7 @@ void TerrainErosionSystem::ErodeTerrain(RenderGraphBuilder& rgBuilder,
 				tempHeightMap->Name, tempHeightMap, RGResourceUsage::UnorderedAccessView(tempHeightMap));
 			auto outSediment = erosionAndDepositionPass.AddInResourceSetOut(
 				terrain.SedimentMap->GetName(), sedimentMap, RGResourceUsage::UnorderedAccessView(sedimentMap));
-			erosionAndDepositionPass.Execute = [&](CommandContext& cmd) {
+			erosionAndDepositionPass.Execute = [=](CommandContext& cmd) {
 				hlsl::HydrolicErosionAndDepositionResources erosionAndDepositionResources{
 					.InVelocityMapIndex = inVelocity->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
 					.InOldHeightMapIndex = inHeight->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
@@ -682,35 +682,36 @@ void TerrainErosionSystem::GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder
 {
 	renderable.TotalLength = parameters.TotalLength;
 
-	auto& pass = rgBuilder.AddPass("GenerateTerrainMaterial");
 	auto terrainAlbedo = rgBuilder.GetOrAddExternalResource(renderable.TerrainAlbedoTex->AsView());
-	auto terrainNormal = rgBuilder.GetOrAddExternalResource(renderable.TerrainNormalMap->AsView());
-	auto heightMap = rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView());
+	// auto& pass = rgBuilder.AddPass("GenerateTerrainMaterial");
+	// auto terrainNormal = rgBuilder.GetOrAddExternalResource(renderable.TerrainNormalMap->AsView());
+	// auto heightMap = rgBuilder.GetOrAddExternalResource(terrain.HeightMap->AsView());
 
-	auto inTerrainAlbedo = pass.AddInResourceSetOut(
-		renderable.TerrainAlbedoTex->GetName(), terrainAlbedo, RGResourceUsage::UnorderedAccessView(terrainAlbedo));
-	auto inTerrainNormal = pass.AddInResourceSetOut(
-		renderable.TerrainNormalMap->GetName(), terrainNormal, RGResourceUsage::UnorderedAccessView(terrainNormal));
-	auto inHeightMap = pass.AddInResourceSetOut(
-		terrain.HeightMap->GetName(), heightMap, RGResourceUsage::NonPixelShaderResourceView(heightMap));
+	// auto inTerrainAlbedo = pass.AddInResourceSetOut(
+	//	renderable.TerrainAlbedoTex->GetName(), terrainAlbedo, RGResourceUsage::UnorderedAccessView(terrainAlbedo));
+	// auto inTerrainNormal = pass.AddInResourceSetOut(
+	//	renderable.TerrainNormalMap->GetName(), terrainNormal, RGResourceUsage::UnorderedAccessView(terrainNormal));
+	// auto inHeightMap = pass.AddInResourceSetOut(
+	//	terrain.HeightMap->GetName(), heightMap, RGResourceUsage::NonPixelShaderResourceView(heightMap));
 
-	pass.Execute = [=](CommandContext& commandCtx) {
-		hlsl::HeightToTerrainMaterialResources resources{
-			.HeightMapTextureIndex = inHeightMap->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
-			.TerrainAlbedoTextureIndex =
-				inTerrainAlbedo->GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
-			.TerrainNormalMapTextureIndex =
-				inTerrainNormal->GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
-			.TotalLength = parameters.TotalLength,
-		};
-		HeightMapToTerrainMaterialPSO.ExecuteCompute(commandCtx,
-													 resources,
-													 inTerrainNormal->GetResourceView().GetCreateInfo().Desc.Width / 8,
-													 inTerrainNormal->GetResourceView().GetCreateInfo().Desc.Height / 8,
-													 1);
-	};
+	// pass.Execute = [=](CommandContext& commandCtx) {
+	//	hlsl::HeightToTerrainMaterialResources resources{
+	//		.HeightMapTextureIndex = inHeightMap->GetResourceView().AsGPUDescriptor<ShaderResourceViewDesc>().Index,
+	//		.TerrainAlbedoTextureIndex =
+	//			inTerrainAlbedo->GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
+	//		.TerrainNormalMapTextureIndex =
+	//			inTerrainNormal->GetResourceView().AsGPUDescriptor<UnorderedAccessViewDesc>().Index,
+	//		.TotalLength = parameters.TotalLength,
+	//	};
+	//	HeightMapToTerrainMaterialPSO.ExecuteCompute(commandCtx,
+	//												 resources,
+	//												 inTerrainNormal->GetResourceView().GetCreateInfo().Desc.Width / 8,
+	//												 inTerrainNormal->GetResourceView().GetCreateInfo().Desc.Height / 8,
+	//												 1);
+	// };
 	Renderer.TextureManager->GenerateMips(rgBuilder, terrainAlbedo);
 	Renderer.TextureManager->GenerateMips(rgBuilder, terrainAlbedo);
+	return;
 }
 
 void TerrainErosionSystem::GenerateWaterMaterial(RenderGraphBuilder& rgBuilder,

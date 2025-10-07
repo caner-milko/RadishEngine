@@ -72,9 +72,9 @@ inline void UploadBufferData(RenderGraphBuilder& rgBuilder,
 	uploadPass.Execute = [inUploadBuf, inRes, data = std::move(data), offset](CommandContext& cmd) {
 		T* uploadData = nullptr;
 		inUploadBuf.get()->DXRes->Map(0, nullptr, (void**)&uploadData);
-		memcpy(uploadData, data.data(), data.size());
+		memcpy(uploadData, data.data(), data.size() * sizeof(T));
 		inUploadBuf.get()->DXRes->Unmap(0, nullptr);
-		cmd->CopyBufferRegion(&inRes.get()->DXRes, offset, &inUploadBuf.get()->DXRes, 0, data.size());
+		cmd->CopyBufferRegion(&inRes.get()->DXRes, offset, &inUploadBuf.get()->DXRes, 0, data.size() * sizeof(T));
 	};
 }
 
@@ -89,12 +89,9 @@ inline void ClearUnorderedAccessViewFloat(RenderGraphBuilder& rgBuilder,
 	auto cpuDesc = inRes->AddDescriptor(
 		DescriptorCreateHelper::UnorderedAccessView(resource->GetCreateInfo(), {}, DescriptorCreateType::CPU));
 	clearPass.Execute = [inRes, gpuDesc, cpuDesc, clearValue = std::move(clearValue)](CommandContext& cmd) {
-		cmd->ClearUnorderedAccessViewFloat(gpuDesc->Get().AsGPUDescriptor<UnorderedAccessViewDesc>().GetGPUHandle(),
-										   gpuDesc->Get().AsGPUDescriptor<UnorderedAccessViewDesc>().GetCPUHandle(),
-										   &inRes.get()->DXRes,
-										   clearValue.data(),
-										   0,
-										   nullptr);
+		auto gpuHandle = gpuDesc->Get().AsGPUDescriptor<UnorderedAccessViewDesc>().GetGPUHandle();
+		auto cpuHandle = cpuDesc->Get().AsCPUDescriptor<UnorderedAccessViewDesc>().GetCPUHandle();
+		cmd->ClearUnorderedAccessViewFloat(gpuHandle, cpuHandle, &inRes.get()->DXRes, clearValue.data(), 0, nullptr);
 		g_CPUDescriptorAllocator->Heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StaticPage->Top--;
 	};
 }
@@ -148,6 +145,7 @@ inline void ClearDepthStencilView(RenderGraphBuilder& rgBuilder,
 template <typename T>
 inline void UploadConstantBufferData(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& resource, T const& data)
 {
+	static_assert(sizeof(T) % sizeof(UINT) == 0, "Constant buffer size must be multiple of 4 bytes");
 	auto& pass = rgBuilder.AddPass("UploadConstantBufferData_" + resource->Name);
 	auto inRes = pass.AddInResourceSetOut(resource->Name, resource, RGResourceUsage(D3D12_RESOURCE_STATE_COPY_DEST));
 	pass.Execute = [inRes, data](CommandContext& cmd) {
