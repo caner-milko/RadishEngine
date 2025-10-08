@@ -69,6 +69,21 @@ void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandCont
 	// 1. Create all graph resources
 	ResourceManager.CreateResourcesAndDescriptors(resourcePool);
 
+	std::unordered_map<Ref<RenderPassBuilder>, uint64_t> passRemainingDepCount;
+	{
+		// Count dependencies for each pass
+		for (auto& pass : Passes)
+		{
+			uint64_t depCount = 0;
+
+			for (auto& input : pass.Inputs)
+				if (input.Source->OwnerPass != pass)
+					depCount++;
+
+			passRemainingDepCount.insert_or_assign(pass, depCount);
+		}
+	}
+
 	// 2. Start from the leftmost & start recording passes/barriers
 	std::unordered_set<Ref<RenderPassBuilder>> visitedPasses;
 	std::queue<Ref<RenderPassBuilder>> passQueue;
@@ -83,49 +98,20 @@ void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandCont
 		passQueue.pop();
 		if (!visitedPasses.insert(pass).second)
 			continue;
-		// Record pass
-		// cmd.BeginPass(pass.Name);
-
-		std::vector<D3D12_RESOURCE_BARRIER> barriers;
-
-		for (auto& input : pass.Inputs)
-		{
-			auto& resInfo = ResourceManager.CreatedGraphResourcesMap[input.Source];
-			auto& lastState = ResourceManager.GetLastState(input.GetResourceView());
-			if (input.State != lastState)
-			{
-				D3D12_RESOURCE_BARRIER barrier = {.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-												  .Transition = {.pResource = &input->DXRes,
-																 .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-																 .StateBefore = resInfo.LastState,
-																 .StateAfter = input.State}};
-				barriers.push_back(barrier);
-				lastState = input.State;
-			}
-		}
-		if (!barriers.empty())
-			cmd->ResourceBarrier(barriers.size(), barriers.data());
-		if (pass.Execute)
-			pass.Execute(cmd);
-		// cmd.EndPass();
-		//  Add outputs to queue
+		ExecutePass(pass, cmd);
 		for (auto& output : pass.Outputs)
 		{
 			for (auto& input : output.ConnectedInputs)
 			{
 				RenderPassBuilder& owner = input->OwnerPass;
-				bool canVisit = true;
-				for (auto& input : owner.Inputs)
-				{
-					if (input.Source->OwnerPass == owner)
-						continue;
-					if (!visitedPasses.contains(input.Source->OwnerPass))
-					{
-						canVisit = false;
-						break;
-					}
-				}
-				if (canVisit)
+				if (&owner == &pass)
+					continue;
+				auto it = passRemainingDepCount.find(owner);
+				assert(it != passRemainingDepCount.end());
+				if (it == passRemainingDepCount.end())
+					continue;
+				assert(it->second > 0);
+				if (--it->second == 0)
 					passQueue.push(owner);
 			}
 		}
@@ -144,6 +130,36 @@ void RenderGraphBuilder::BuildAndExecute(ResourcePool& resourcePool, CommandCont
 #endif
 
 	ResourceManager.FreeResources(resourcePool);
+}
+
+void RenderGraphBuilder::ExecutePass(RenderPassBuilder& pass, CommandContext& cmd)
+{
+	// Record pass
+	// cmd.BeginPass(pass.Name);
+
+	std::vector<D3D12_RESOURCE_BARRIER> barriers;
+
+	for (auto& input : pass.Inputs)
+	{
+		auto& resInfo = ResourceManager.CreatedGraphResourcesMap[input.Source];
+		auto& lastState = ResourceManager.GetLastState(input.GetResourceView());
+		if (input.State != lastState)
+		{
+			D3D12_RESOURCE_BARRIER barrier = {.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+											  .Transition = {.pResource = &input->DXRes,
+															 .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+															 .StateBefore = resInfo.LastState,
+															 .StateAfter = input.State}};
+			barriers.push_back(barrier);
+			lastState = input.State;
+		}
+	}
+	if (!barriers.empty())
+		cmd->ResourceBarrier(barriers.size(), barriers.data());
+	if (pass.Execute)
+		pass.Execute(cmd);
+	// cmd.EndPass();
+	//  Add outputs to queue
 }
 
 Ref<RGBInputResource> RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass,

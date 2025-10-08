@@ -298,6 +298,7 @@ struct RenderGraphBuilder
 private:
 	Ref<RGBOutputResource> AddOutputToPass(RenderPassBuilder& pass, std::string name, RGResourceRef ref);
 	Ref<RGBOutputResource> InitializeResourceProvider(std::string name, RGResourceRef resourceRef);
+	void ExecutePass(RenderPassBuilder& pass, CommandContext& cmd);
 	std::unordered_map<PoolResourceView, Ref<RGBOutputResource>> ResourceToLastOutput;
 };
 }; // namespace rad
