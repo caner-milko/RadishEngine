@@ -376,11 +376,14 @@ ResourcePool::OwnedResource& ResourcePool::GetResource(const ResourceCreateInfo&
 		if (!it->second.empty())
 		{
 			OwnedResource& resource = it->second.back();
-			it->second.pop_back();
+			it->second.pop_front();
 			if (it->second.empty())
 				FreeResources.erase(it);
-			resource.AcquiredName = std::move(acquireName);
-			resource->DXRes->SetName(s2ws(*resource.AcquiredName).c_str());
+			if (resource.AcquiredName != acquireName)
+			{
+				resource.AcquiredName = std::move(acquireName);
+				resource->DXRes->SetName(s2ws(*resource.AcquiredName).c_str());
+			}
 			return resource;
 		}
 	}

@@ -5,6 +5,10 @@
 
 namespace rad
 {
+RenderGraphBuilder::RenderGraphBuilder()
+{
+	Passes.push_back(RenderPassBuilder("RootResourceProvider", *this));
+}
 Ref<RGBOutputResource> RenderGraphBuilder::AddGraphResource(std::string name, ResourceCreateInfo createInfo)
 {
 	auto& resource = ResourceManager.AddGraphResource(std::move(createInfo), name);
@@ -21,8 +25,7 @@ Ref<RGBOutputResource> RenderGraphBuilder::GetOrAddExternalResource(PoolResource
 
 Ref<RGBOutputResource> RenderGraphBuilder::InitializeResourceProvider(std::string name, RGResourceRef resourceRef)
 {
-	auto& providerPass = AddPass(name + " Provider");
-	return AddOutputToPass(providerPass, std::move(name), resourceRef);
+	return AddOutputToPass(Passes[0], std::move(name), resourceRef);
 }
 
 Ref<RGBInputResource> RenderPassBuilder::AddInput(std::string name, RGBOutputResource& output, RGResourceUsage usage)
@@ -168,9 +171,9 @@ Ref<RGBInputResource> RenderGraphBuilder::AddInputToPass(RenderPassBuilder& pass
 														 RGResourceUsage usage)
 {
 	auto& inRef = pass.Inputs.emplace_back(std::move(name), pass, fromOut, usage.State);
-	fromOut.ConnectedInputs.push_back(inRef);
+	fromOut.ConnectedInputs.emplace_back(inRef);
 	for (auto& desc : usage.DescriptorDescs)
-		AddDescriptorToInput(pass, inRef, desc);
+		AddDescriptorToInput(pass, inRef, std::move(desc));
 	return inRef;
 }
 
@@ -188,7 +191,7 @@ std::pair<RGBInputResource&, Ref<RGBOutputResource>> RenderGraphBuilder::AddInOu
 																						RGResourceUsage usage)
 {
 	auto input = AddInputToPass(pass, name, fromOut, std::move(usage));
-	auto output = AddOutputToPass(pass, name, fromOut);
+	auto output = AddOutputToPass(pass, std::move(name), fromOut);
 	return {input, output};
 }
 
@@ -202,20 +205,20 @@ RGResourceDescriptor& RenderGraphBuilder::AddDescriptorToInput(RenderPassBuilder
 PoolResourceView& RGResourceManager::AddExternalResource(PoolResourceView resource)
 {
 	auto& resPoolRef = ExternalResources.emplace_back(resource);
-	CreatedGraphResourcesMap[resPoolRef];
+	CreatedGraphResourcesMap.emplace(resPoolRef, ResourceInfo{});
 	return resPoolRef;
 }
 
 RGGraphResource& RGResourceManager::AddGraphResource(ResourceCreateInfo createInfo, std::string name)
 {
 	auto& res = GraphResources.emplace_back(createInfo, std::move(name));
-	CreatedGraphResourcesMap[res];
+	CreatedGraphResourcesMap.emplace(res, ResourceInfo{});
 	return res;
 }
 
 RGResourceDescriptor& RGResourceManager::GetDescriptor(RGResourceRef const& resource, DescriptorDesc const& desc)
 {
-	return CreatedGraphResourcesMap[resource].Descriptors.try_emplace(desc, RGResourceDescriptor{}).first->second;
+	return ResourceDescriptors.try_emplace({resource, desc}, RGResourceDescriptor{}).first->second;
 }
 
 D3D12_RESOURCE_STATES& RGResourceManager::GetLastState(RGResourceRef const& resource)
@@ -230,13 +233,12 @@ void RGResourceManager::CreateResourcesAndDescriptors(ResourcePool& resourcePool
 		resource.ResourceDecided(resourcePool.GetResource(resource.CreateInfo, resource.Name));
 	// Create all descriptors
 	for (auto& [resourceRef, resInfo] : CreatedGraphResourcesMap)
-	{
 		resInfo.LastState = resourceRef.GetResource()->State;
-		for (auto& [desc, rgDesc] : resInfo.Descriptors)
-		{
-			rgDesc.ResourceDecided(resourcePool.GetDescriptor(resourceRef.GetResource(), desc));
-			assert(!rgDesc.Get().valueless_by_exception());
-		}
+	for (auto& [resourceDescriptorDescPair, descInfo] : ResourceDescriptors)
+	{
+		descInfo.ResourceDecided(resourcePool.GetDescriptor(resourceDescriptorDescPair.first.GetResource(),
+															resourceDescriptorDescPair.second));
+		assert(!descInfo.Get().valueless_by_exception());
 	}
 }
 
@@ -244,8 +246,8 @@ void RGResourceManager::FreeResources(ResourcePool& resourcePool)
 {
 	for (auto [resource, resInfo] : CreatedGraphResourcesMap)
 		resource.GetResource()->State = resInfo.LastState;
-	for (auto& resource : GraphResources)
-		resourcePool.FreeResource(resource.Get());
+	for (auto it = GraphResources.rbegin(); it != GraphResources.rend(); ++it)
+		resourcePool.FreeResource(it->Get());
 }
 
 void TestGraph()

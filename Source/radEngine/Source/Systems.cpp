@@ -14,6 +14,8 @@
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_dx12.h"
 
+#include <chrono>
+
 namespace rad::ecs
 {
 glm::mat4 Transform::GetModelMatrix(glm::mat4 parentWorldMatrix) const
@@ -147,7 +149,7 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 
 		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(
 			renderer.ShaderManager
-				->CompileBindlessVertexShader(L"ShadowMap", RAD_ENGINE_SHADERS_DIR L"Graphics/Shadowmap.hlsl")
+				->CompileBindlessVertexShader(L"ShadowMap", RAD_ENGINE_SHADERS_DIR L"Graphics/ShadowMap.hlsl")
 				->Blob.Get());
 
 		pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
@@ -248,18 +250,32 @@ void CStaticRenderSystem::ShadowMapPass(ShadowMapPassData& passData)
 	};
 
 	std::vector<RenderObject> renderObjects;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> vertexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> indexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> materialBuffersCache;
 	for (auto const& renderData : FrameRenderData)
 	{
-		auto rgIndicesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Indices->AsView());
-		auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
-		renderObjects.push_back(RenderObject{
-			.Vertices = pass.AddInResourceSetOut(
-				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex))),
-			.Indices = pass.AddInResourceSetOut(
-				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT)),
-			.IndexCount = renderData.IndexCount,
-			.MVP = passData.Frame.LightInfo.View.ViewProjectionMatrix * renderData.WorldMatrix});
-		break;
+		Ref<RGBInputResource> inVertices = [&]() {
+			if (auto it = vertexBuffersCache.find(*renderData.Vertices); it != vertexBuffersCache.end())
+				return it->second;
+			auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
+			auto inVertices = pass.AddInput(
+				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex)));
+			return vertexBuffersCache.insert_or_assign(*renderData.Vertices, inVertices).first->second;
+		}();
+		Ref<RGBInputResource> inIndices = [&]() {
+			if (auto it = indexBuffersCache.find(*renderData.Indices); it != indexBuffersCache.end())
+				return it->second;
+			auto rgIndicesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Indices->AsView());
+			auto inIndices = pass.AddInput(
+				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT));
+			return indexBuffersCache.insert_or_assign(*renderData.Indices, inIndices).first->second;
+		}();
+		renderObjects.push_back(
+			RenderObject{.Vertices = inVertices,
+						 .Indices = inIndices,
+						 .IndexCount = renderData.IndexCount,
+						 .MVP = passData.Frame.LightInfo.View.ViewProjectionMatrix * renderData.WorldMatrix});
 	}
 
 	auto rgShadowMapRes = pass.AddInResourceSetOut(
@@ -312,23 +328,51 @@ void CStaticRenderSystem::DeferredPass(DeferredPassData& passData)
 		Ref<RGBInputResource> Material;
 	};
 
+	auto start = std::chrono::steady_clock::now();
 	std::vector<RenderObject> renderObjects;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> vertexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> indexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> materialBuffersCache;
+
 	for (auto const& renderData : FrameRenderData)
 	{
-		auto rgIndicesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Indices->AsView());
-		auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
-		auto rgMaterialRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.MaterialBuf->AsView());
-		renderObjects.push_back(RenderObject{
-			.Vertices = pass.AddInResourceSetOut(
-				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex))),
-			.Indices = pass.AddInResourceSetOut(
-				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT)),
-			.IndexCount = renderData.IndexCount,
-			.MVP = passData.Frame.View.ViewProjectionMatrix * renderData.WorldMatrix,
-			.NormalMatrix = glm::transpose(glm::inverse(renderData.WorldMatrix)),
-			.Material = pass.AddInResourceSetOut(
-				"Material", rgMaterialRes, RGResourceUsage::ConstantBufferView(*rgMaterialRes))});
+		Ref<RGBInputResource> inVertices = [&]() {
+			if (auto it = vertexBuffersCache.find(*renderData.Vertices); it != vertexBuffersCache.end())
+				return it->second;
+			auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
+			auto inVertices = pass.AddInput(
+				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex)));
+			return vertexBuffersCache.insert_or_assign(*renderData.Vertices, inVertices).first->second;
+		}();
+		Ref<RGBInputResource> inIndices = [&]() {
+			if (auto it = indexBuffersCache.find(*renderData.Indices); it != indexBuffersCache.end())
+				return it->second;
+			auto rgIndicesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Indices->AsView());
+			auto inIndices = pass.AddInput(
+				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT));
+			return indexBuffersCache.insert_or_assign(*renderData.Indices, inIndices).first->second;
+		}();
+		Ref<RGBInputResource> inMaterial = [&]() {
+			if (auto it = materialBuffersCache.find(*renderData.MaterialBuf); it != materialBuffersCache.end())
+				return it->second;
+			auto rgMaterialRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.MaterialBuf->AsView());
+			auto inMaterial =
+				pass.AddInput("Material", rgMaterialRes, RGResourceUsage::ConstantBufferView(*rgMaterialRes));
+			return materialBuffersCache.insert_or_assign(*renderData.MaterialBuf, inMaterial).first->second;
+		}();
+
+		renderObjects.push_back(RenderObject{.Vertices = inVertices,
+											 .Indices = inIndices,
+											 .IndexCount = renderData.IndexCount,
+											 .MVP = passData.Frame.View.ViewProjectionMatrix * renderData.WorldMatrix,
+											 .NormalMatrix = glm::transpose(glm::inverse(renderData.WorldMatrix)),
+											 .Material = inMaterial});
 	}
+	auto end = std::chrono::steady_clock::now();
+	auto duration = end - start;
+
+	std::cout << std::format("Prepared static render objects in {} ms\n",
+							 std::chrono::duration<float, std::milli>(duration).count());
 
 	auto rgAlbedoRes = pass.AddInResourceSetOut(
 		"AlbedoRT", passData.OutAlbedoBuffer, RGResourceUsage::RenderTargetView(*passData.OutAlbedoBuffer));

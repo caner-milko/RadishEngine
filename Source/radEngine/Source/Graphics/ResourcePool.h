@@ -248,11 +248,8 @@ struct PoolResourceView
 	ResourcePool::Resource* operator->() { return &Info; }
 	const ResourcePool::Resource* operator->() const { return &Info; }
 	std::string const& GetName() const { return Name; }
-	bool operator==(const PoolResourceView& Other) const
-	{
-		return &Info == &Other.Info && &Name == &Other.Name && UnderlyingResource == Other.UnderlyingResource;
-	}
-	size_t Hash() const { return HashCombine(Info, Name, UnderlyingResource); }
+	bool operator==(const PoolResourceView& Other) const { return UnderlyingResource == Other.UnderlyingResource; }
+	size_t Hash() const { return HashCombine(UnderlyingResource); }
 	PoolResourceView(std::variant<Ref<ResourcePool::OwnedResource>, Ref<ResourcePool::ExternalResource>> resInfo)
 		: Info(std::visit(
 			  [](auto&& arg) -> ResourcePool::Resource& {

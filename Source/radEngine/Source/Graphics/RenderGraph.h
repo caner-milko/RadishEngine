@@ -86,6 +86,15 @@ struct hash<rad::RGResourceRef>
 		return std::hash<std::variant<rad::Ref<rad::RGGraphResource>, rad::RGExternalResourceRef>>{}(resource);
 	}
 };
+template <>
+struct hash<std::pair<rad::RGResourceRef, rad::DescriptorDesc>>
+{
+	size_t operator()(const std::pair<rad::RGResourceRef, rad::DescriptorDesc>& pair) const
+	{
+		return rad::HashCombine(std::hash<rad::RGResourceRef>{}(pair.first),
+								std::hash<rad::DescriptorDesc>{}(pair.second));
+	}
+};
 } // namespace std
 
 namespace rad
@@ -182,7 +191,7 @@ struct RGResourceViewBase : RGResourceRef
 		return Descriptor(index).AsGPUDescriptor<T>();
 	}
 
-	ResourceDescriptor& Descriptor(size_t index = 0) const { return Descriptors.at(index)->Get(); }
+	ResourceDescriptor& Descriptor(size_t index = 0) const { return Descriptors[index]->Get(); }
 
 	operator PoolResourceView() const { return GetResource(); }
 	PoolResourceView operator->() const { return GetResource(); }
@@ -259,10 +268,10 @@ struct RGResourceManager
 	std::deque<RGGraphResource> GraphResources;
 	struct ResourceInfo
 	{
-		std::unordered_map<DescriptorDesc, RGResourceDescriptor> Descriptors;
-		D3D12_RESOURCE_STATES LastState;
+		D3D12_RESOURCE_STATES LastState{};
 	};
 	std::unordered_map<RGResourceRef, ResourceInfo> CreatedGraphResourcesMap;
+	std::unordered_map<std::pair<RGResourceRef, DescriptorDesc>, RGResourceDescriptor> ResourceDescriptors;
 	D3D12_RESOURCE_STATES& GetLastState(RGResourceRef const& resource);
 
 	friend struct RenderGraphBuilder;
@@ -279,6 +288,8 @@ struct RenderGraphBuilder
 {
 	RGResourceManager ResourceManager;
 	std::deque<RenderPassBuilder> Passes;
+
+	RenderGraphBuilder();
 
 	RenderPassBuilder& AddPass(std::string name) { return Passes.emplace_back(std::move(name), *this); }
 	Ref<RGBOutputResource> AddGraphResource(std::string name, ResourceCreateInfo createInfo);

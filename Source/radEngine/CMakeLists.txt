@@ -54,4 +54,3 @@ copy_redist_files(${PROJECT_NAME} "${bin_path}/d3d12SDKLayers.dll" "D3D12/d3d12S
 copy_redist_files(${PROJECT_NAME} "${bin_path}/d3dconfig.exe" "D3D12/d3dconfig.exe")
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY DX_COMPONENT_CONFIG "NuGet (${pkg_id}.${pkg_version})")
-

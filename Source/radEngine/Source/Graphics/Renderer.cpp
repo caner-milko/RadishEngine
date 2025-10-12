@@ -243,7 +243,6 @@ void Renderer::RenderScene(SceneRenderData sceneData)
 {
 	RenderGraphBuilder graphBuilder{};
 	auto colorBuf = DeferredPipeline->BuildFrameRenderGraph(graphBuilder, sceneData);
-
 	auto backbufferIndex = Swapchain.Swapchain->GetCurrentBackBufferIndex();
 	auto& [dxRes, poolRes] = Swapchain.BackBuffers[backbufferIndex];
 
@@ -252,7 +251,6 @@ void Renderer::RenderScene(SceneRenderData sceneData)
 	rghelpers::CopyResource(graphBuilder, colorBuf, rgBackBuffer);
 
 	{
-
 		auto& imguiPass = graphBuilder.AddPass("ImGui");
 		auto inBackBuffer =
 			imguiPass.AddInResourceSetOut("BackBuffer", rgBackBuffer, RGResourceUsage::RenderTargetView(*rgBackBuffer));
@@ -275,14 +273,12 @@ void Renderer::RenderScene(SceneRenderData sceneData)
 		return;
 	}
 	auto cmdContext = activeCmdContext->AsCommandContext();
-
 	graphBuilder.BuildAndExecute(*ResourcePool, cmdContext);
 
-	// TransitionVec(dxRes, D3D12_RESOURCE_STATE_PRESENT).Execute(cmdContext);
 	ExecuteCommandContext(*activeCmdContext);
 	// Present
 	WaitForSingleObject(Swapchain.SwapChainWaitableObject, INFINITE);
-	Swapchain.Swapchain->Present(1, 0 /*DXGI_PRESENT_ALLOW_TEARING*/);
+	Swapchain.Swapchain->Present(0, DXGI_PRESENT_ALLOW_TEARING);
 	SubmitCommandContext(std::move(*activeCmdContext), Fence, sceneData.FrameNumber);
 }
 
