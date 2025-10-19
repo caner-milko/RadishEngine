@@ -1,11 +1,12 @@
 #pragma once
 
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 
 #include "Graphics/RootSignature.h"
 #include "Graphics/PipelineState.h"
 #include "Graphics/RendererCommon.h"
 #include "Graphics/DXResource.h"
+#include "Graphics/ResourcePool.h"
 
 namespace rad
 {
@@ -20,14 +21,13 @@ struct GenerateMipsPipeline
 	GenerateMipsPipeline(Renderer& renderer) : Renderer(renderer) {}
 	bool Setup();
 
-	void GenerateMips(CommandContext& commandCtx, struct DXTexture& texture);
+	void GenerateMips(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& tex);
 
 	Renderer& Renderer;
 	RootSignature RootSignature;
 	PipelineState PipelineState;
 
-	DXTypedSingularBuffer<GlobalCounterStruct> GlobalCounterBuffer;
-	DescriptorAllocation GlobalCounterUAV;
+	ResourcePool::OwnedResource* GlobalCounterBuffer; // GlobalCounterStruct
 };
 
 } // namespace rad

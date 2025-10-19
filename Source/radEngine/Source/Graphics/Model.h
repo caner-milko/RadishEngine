@@ -4,6 +4,7 @@
 #include "RendererCommon.h"
 
 #include "ConstantBuffers.hlsli"
+#include "ResourcePool.h"
 
 namespace rad
 {
@@ -16,10 +17,9 @@ struct Material
 
 	glm::vec3 DiffuseColor = {1, 1, 1};
 
-	DXTypedSingularBuffer<rad::hlsl::MaterialBuffer> MaterialInfoBuffer;
-	DescriptorAllocation MaterialInfo;
-	std::optional<DescriptorAllocation> DiffuseTextureSRV = std::nullopt;
-	std::optional<DescriptorAllocation> NormalMapTextureSRV = std::nullopt;
+	Ref<ResourcePool::OwnedResource> MaterialInfoBuffer; // rad::hlsl::MaterialBuffer
+	OptionalRef<ResourcePool::Resource> DiffuseTexture = std::nullopt;
+	OptionalRef<ResourcePool::Resource> NormalMapTexture = std::nullopt;
 };
 
 struct Vertex

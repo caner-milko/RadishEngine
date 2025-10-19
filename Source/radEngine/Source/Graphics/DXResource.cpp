@@ -89,7 +89,6 @@ ComPtr<ID3D12Resource> DXBuffer::Upload(CommandContext& commandCtx, std::span<co
 {
 	auto uploadResource = Create(commandCtx.Device, Name + L"UploadBuffer", data.size(), D3D12_HEAP_TYPE_UPLOAD);
 	TransitionVec(uploadResource, D3D12_RESOURCE_STATE_GENERIC_READ).Execute(commandCtx);
-	CD3DX12_RANGE readRange(0, 0);
 	memcpy(uploadResource.Map(), data.data(), data.size());
 	uploadResource.Unmap();
 	commandCtx->CopyBufferRegion(Resource.Get(), offset, uploadResource.Resource.Get(), 0, data.size());

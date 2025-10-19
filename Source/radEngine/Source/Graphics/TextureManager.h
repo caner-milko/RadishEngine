@@ -3,13 +3,15 @@
 #include "Pipelines/GenerateMipsPipeline.h"
 #include "RendererCommon.h"
 #include "DXResource.h"
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 #include "filesystem"
-
-RAD_ID_STRUCT_U32(rad, TextureId)
+#include "Graphics/ResourcePool.h"
 
 namespace rad
 {
+struct TextureIdType;
+
+using TextureId = Id<TextureIdType>;
 
 struct TextureManager
 {
@@ -22,12 +24,14 @@ struct TextureManager
 		D3D12_RESOURCE_FLAGS Flags = D3D12_RESOURCE_FLAG_NONE;
 	};
 
-	void GenerateMips(CommandContext& commandCtx, DXTexture& texture);
-	DXTexture* LoadTexture(std::filesystem::path const& path, TextureLoadInfo const& info, CommandContext& commandCtx,
-						   bool generateMips = true);
+	void GenerateMips(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& texture);
+	ResourcePool::OwnedResource* LoadTexture(std::filesystem::path const& path,
+											 TextureLoadInfo const& info,
+											 RenderGraphBuilder& rgBuilder,
+											 bool generateMips = true);
 
-  private:
-	std::unordered_map<TextureId, std::unique_ptr<DXTexture>> Textures;
+private:
+	std::unordered_map<TextureId, Ref<ResourcePool::OwnedResource>> Textures;
 	std::unordered_map<std::filesystem::path, TextureId> LoadedTextures;
 	Renderer& Renderer;
 	TextureId NextId = {1};

@@ -1,5 +1,5 @@
 #pragma once
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -70,10 +70,7 @@ struct DescriptorHeap
 		handle.ptr += index * Increment;
 		return handle;
 	}
-	uint32_t GetSize() const
-	{
-		return Desc.NumDescriptors;
-	}
+	uint32_t GetSize() const { return Desc.NumDescriptors; }
 };
 
 struct DescriptorAllocationView
@@ -96,19 +93,10 @@ struct DescriptorAllocation
 	uint32_t Index;
 	uint32_t Size;
 
-	inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(uint32_t offset = 0)
-	{
-		return Heap->GetCPUHandle(Index + offset);
-	}
-	inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(uint32_t offset = 0)
-	{
-		return Heap->GetGPUHandle(Index + offset);
-	}
+	inline D3D12_CPU_DESCRIPTOR_HANDLE GetCPUHandle(uint32_t offset = 0) { return Heap->GetCPUHandle(Index + offset); }
+	inline D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandle(uint32_t offset = 0) { return Heap->GetGPUHandle(Index + offset); }
 
-	inline DescriptorAllocationView GetView(uint32_t offset = 0)
-	{
-		return {this, offset};
-	}
+	inline DescriptorAllocationView GetView(uint32_t offset = 0) { return {this, offset}; }
 
 	DescriptorAllocation() = default;
 };
@@ -155,17 +143,14 @@ struct DescriptorHeapPage
 	DescriptorAllocation CopyFrom(DescriptorAllocation* alloc)
 	{
 		auto newAlloc = Allocate(alloc->Size);
-		Heap->Device->CopyDescriptorsSimple(alloc->Size, newAlloc.GetCPUHandle(), alloc->GetCPUHandle(),
-											Heap->Desc.Type);
+		Heap->Device->CopyDescriptorsSimple(
+			alloc->Size, newAlloc.GetCPUHandle(), alloc->GetCPUHandle(), Heap->Desc.Type);
 		return newAlloc;
 	}
 
-	void Reset()
-	{
-		Top = 0;
-	}
+	void Reset() { Top = 0; }
 
-  private:
+private:
 	DescriptorHeapPage() = default;
 };
 
@@ -179,8 +164,10 @@ struct DescriptorHeapPageCollection
 	std::vector<DescriptorHeapPage*> FreePages;
 	std::vector<DescriptorHeapPage*> UsedPages;
 
-	static std::unique_ptr<DescriptorHeapPageCollection> Create(D3D12_DESCRIPTOR_HEAP_DESC desc, RadDevice& device,
-																uint32_t pageCount, uint32_t staticPageSize)
+	static std::unique_ptr<DescriptorHeapPageCollection> Create(D3D12_DESCRIPTOR_HEAP_DESC desc,
+																RadDevice& device,
+																uint32_t pageCount,
+																uint32_t staticPageSize)
 	{
 		auto collection = std::make_unique<DescriptorHeapPageCollection>();
 		collection->Heap = DescriptorHeap::Create(desc, device);
@@ -224,13 +211,11 @@ struct DescriptorHeapPageCollection
 		page->Reset();
 	}
 
-	DescriptorAllocation AllocateFromStatic(uint32_t count = 1)
-	{
-		return StaticPage->Allocate(count);
-	}
+	DescriptorAllocation AllocateFromStatic(uint32_t count = 1) { return StaticPage->Allocate(count); }
 };
 
-template <bool CPU> struct DescriptorHeapAllocator
+template <bool CPU>
+struct DescriptorHeapAllocator
 {
 	std::unordered_map<D3D12_DESCRIPTOR_HEAP_TYPE, std::unique_ptr<DescriptorHeapPageCollection>> Heaps;
 	Ref<RadDevice> Device;
@@ -238,7 +223,9 @@ template <bool CPU> struct DescriptorHeapAllocator
 	DescriptorHeapAllocator(RadDevice& device) : Device(device) {}
 	static std::unique_ptr<DescriptorHeapAllocator> Create(RadDevice& dev);
 
-	void CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t numDescriptors, uint32_t pageCount = 0,
+	void CreateHeapType(D3D12_DESCRIPTOR_HEAP_TYPE type,
+						uint32_t numDescriptors,
+						uint32_t pageCount = 0,
 						uint32_t staticPageSize = 0);
 
 	DescriptorAllocation AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE type, uint32_t size = 1)
@@ -270,49 +257,54 @@ enum class ViewTypes
 	DepthStencilView
 };
 
-template <ViewTypes type> struct ResourceViewToDesc;
+template <ViewTypes type>
+struct ResourceViewToDesc;
 
-template <> struct ResourceViewToDesc<ViewTypes::ShaderResourceView>
+template <>
+struct ResourceViewToDesc<ViewTypes::ShaderResourceView>
 {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	const D3D12_SHADER_RESOURCE_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
-template <> struct ResourceViewToDesc<ViewTypes::UnorderedAccessView>
+template <>
+struct ResourceViewToDesc<ViewTypes::UnorderedAccessView>
 {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	const D3D12_UNORDERED_ACCESS_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
-template <> struct ResourceViewToDesc<ViewTypes::ConstantBufferView>
+template <>
+struct ResourceViewToDesc<ViewTypes::ConstantBufferView>
 {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	const D3D12_CONSTANT_BUFFER_VIEW_DESC* Desc;
 };
-template <> struct ResourceViewToDesc<ViewTypes::Sampler>
+template <>
+struct ResourceViewToDesc<ViewTypes::Sampler>
 {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
 	const D3D12_SAMPLER_DESC* Desc;
 };
-template <> struct ResourceViewToDesc<ViewTypes::RenderTargetView>
+template <>
+struct ResourceViewToDesc<ViewTypes::RenderTargetView>
 {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 	const D3D12_RENDER_TARGET_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
-template <> struct ResourceViewToDesc<ViewTypes::DepthStencilView>
+template <>
+struct ResourceViewToDesc<ViewTypes::DepthStencilView>
 {
 	const static D3D12_DESCRIPTOR_HEAP_TYPE HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	const D3D12_DEPTH_STENCIL_VIEW_DESC* Desc;
 	ID3D12Resource* Resource;
 };
 
-template <ViewTypes type> struct ResourceView : DescriptorAllocation
+template <ViewTypes type>
+struct ResourceView : DescriptorAllocation
 {
-	static ResourceView<type> Create(typename ResourceViewToDesc<type> descs)
-	{
-		return Create(std::span{&descs, 1});
-	}
+	static ResourceView<type> Create(typename ResourceViewToDesc<type> descs) { return Create(std::span{&descs, 1}); }
 	static ResourceView<type> Create(std::span<typename ResourceViewToDesc<type>> descs);
 };
 
@@ -326,10 +318,7 @@ using DepthStencilView = ResourceView<ViewTypes::DepthStencilView>;
 struct TransitionVec : std::vector<D3D12_RESOURCE_BARRIER>
 {
 	using std::vector<D3D12_RESOURCE_BARRIER>::vector;
-	TransitionVec(struct DXResource& res, D3D12_RESOURCE_STATES after)
-	{
-		Add(res, after);
-	}
+	TransitionVec(struct DXResource& res, D3D12_RESOURCE_STATES after) { Add(res, after); }
 
 	TransitionVec& Add(struct DXResource& res, D3D12_RESOURCE_STATES after);
 	TransitionVec& Add(ID3D12Resource* res, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);

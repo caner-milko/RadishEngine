@@ -4,35 +4,27 @@
 #include <filesystem>
 #include <tiny_obj_loader.h>
 #include "TextureManager.h"
+#include "Graphics/RenderGraphHelpers.h"
 
 // Hash function for Vertex
 namespace std
 {
-template <> struct hash<glm::vec2>
+template <>
+struct hash<glm::vec2>
 {
-	size_t operator()(glm::vec2 const& v) const
-	{
-		size_t seed = 0;
-		rad::HashCombine(seed, v.x, v.y);
-		return seed;
-	}
+	size_t operator()(glm::vec2 const& v) const { return rad::HashCombine(v.x, v.y); }
 };
-template <> struct hash<glm::vec3>
+template <>
+struct hash<glm::vec3>
 {
-	size_t operator()(glm::vec3 const& v) const
-	{
-		size_t seed = 0;
-		rad::HashCombine(seed, v.x, v.y, v.z);
-		return seed;
-	}
+	size_t operator()(glm::vec3 const& v) const { return rad::HashCombine(v.x, v.y, v.z); }
 };
-template <> struct hash<rad::Vertex>
+template <>
+struct hash<rad::Vertex>
 {
 	size_t operator()(rad::Vertex const& vertex) const
 	{
-		size_t seed = 0;
-		rad::HashCombine(seed, vertex.Position, vertex.Normal, vertex.TexCoord);
-		return seed;
+		return rad::HashCombine(vertex.Position, vertex.Normal, vertex.TexCoord);
 	}
 };
 } // namespace std
@@ -40,7 +32,8 @@ template <> struct hash<rad::Vertex>
 namespace rad
 {
 
-void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Vertex>& vertices,
+void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader,
+								std::vector<Vertex>& vertices,
 								std::vector<std::vector<uint32_t>>& indexPerShape)
 {
 	auto& attrib = reader.GetAttrib();
@@ -142,15 +135,13 @@ void LoadVerticesAndIndexBuffer(const tinyobj::ObjReader& reader, std::vector<Ve
 	}
 }
 
-OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, CommandContext& commandCtx)
+OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, RenderGraphBuilder& rgBuilder)
 {
 	auto it = Models.find(modelPath);
 	if (it != Models.end())
 	{
 		return it->second;
 	}
-
-	auto& objModel = Models[modelPath] = ObjModel{};
 
 	tinyobj::ObjReaderConfig readerConfig;
 	tinyobj::ObjReader reader;
@@ -159,45 +150,50 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Comm
 	auto& attrib = reader.GetAttrib();
 	auto shapes = reader.GetShapes();
 
-	objModel.Meshes.reserve(shapes.size());
-	objModel.Materials.reserve(reader.GetMaterials().size());
-
 	std::vector<Vertex> vertices;
 	std::vector<std::vector<uint32_t>> indicesPerShape;
 	LoadVerticesAndIndexBuffer(reader, vertices, indicesPerShape);
-	objModel.Vertices =
-		DXTypedBuffer<Vertex>::CreateAndUpload(Renderer.GetDevice(), s2ws(modelPath) + L"_Vertices", commandCtx,
-											   vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	ResourcePool::OwnedResource& verticesBuf = Renderer.ResourcePool->GetResource(
+		ResourceCreateHelper::Buffer(sizeof(Vertex) * vertices.size(), ResourcePresetFlags::VertexBuffer),
+		modelPath + "_Vertices");
+
+	{
+		auto rgVerticesBuf = rgBuilder.GetOrAddExternalResource(verticesBuf.AsView());
+		rghelpers::UploadBufferData(rgBuilder, rgVerticesBuf, std::move(vertices));
+	}
+
+	auto& objModel = Models.insert_or_assign(modelPath, ObjModel{.Vertices = verticesBuf}).first->second;
+	objModel.Meshes.reserve(shapes.size());
+	objModel.Materials.reserve(reader.GetMaterials().size());
 
 	for (auto& mat : reader.GetMaterials())
 	{
-		auto& material = objModel.Materials[mat.name];
-		material.Name = mat.name;
-
-		material.MaterialInfo = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-
+		std::optional<std::string> diffuseTexName = std::nullopt;
+		std::optional<std::string> normalMapTexName = std::nullopt;
+		auto& materialInfoBuf = Renderer.ResourcePool->GetResource(
+			ResourceCreateHelper::Buffer(sizeof(rad::hlsl::MaterialBuffer), ResourcePresetFlags::ConstantBuffer),
+			mat.name + "_MaterialInfo");
+		Material material{.Name = mat.name, .MaterialInfoBuffer = materialInfoBuf};
 		rad::hlsl::MaterialBuffer matInfo = {};
 		bool difTexLoaded = false;
 		// Load the textures
 		if (!mat.diffuse_texname.empty())
 		{
-			material.DiffuseTextureName =
-				std::filesystem::path(modelPath).parent_path().string() + "/" + mat.diffuse_texname;
+			diffuseTexName = std::filesystem::path(modelPath).parent_path().string() + "/" + mat.diffuse_texname;
+			material.DiffuseTextureName = diffuseTexName;
 			// Load texture into memory
-			auto* tex = Renderer.TextureManager->LoadTexture(std::filesystem::path(*material.DiffuseTextureName), {},
-															 commandCtx, true);
-			if (tex)
+			if (auto* tex = Renderer.TextureManager->LoadTexture(
+					std::filesystem::path(*material.DiffuseTextureName), {}, rgBuilder, true))
 			{
-				material.DiffuseTextureSRV =
-					g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-				D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-				srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-				srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-				srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-				srvDesc.Texture2D.MipLevels = -1;
-				tex->CreatePlacedSRV(material.DiffuseTextureSRV->GetView(0), &srvDesc);
+				material.DiffuseTexture = tex->operator rad::ResourcePool::Resource&();
 				difTexLoaded = true;
-				matInfo.DiffuseTextureIndex = material.DiffuseTextureSRV->Index;
+				matInfo.DiffuseTextureIndex =
+					Renderer.ResourcePool
+						->GetDescriptor(tex->AsView(),
+										DescriptorCreateHelper::ShaderResourceView(tex->AsView()->CreateInfo))
+						.AsGPUDescriptor<ShaderResourceViewDesc>()
+						.Index;
 			}
 		}
 		if (!difTexLoaded)
@@ -207,29 +203,27 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Comm
 		}
 		if (!mat.displacement_texname.empty())
 		{
-			material.NormalMapTextureName =
-				std::filesystem::path(modelPath).parent_path().string() + "/" + mat.displacement_texname;
+			normalMapTexName = std::filesystem::path(modelPath).parent_path().string() + "/" + mat.displacement_texname;
+			material.NormalMapTextureName = normalMapTexName;
 			// Load texture into memory
-			auto* tex = Renderer.TextureManager->LoadTexture(std::filesystem::path(*material.NormalMapTextureName), {},
-															 commandCtx, true);
-			if (tex)
+			if (auto* tex = Renderer.TextureManager->LoadTexture(
+					std::filesystem::path(*material.NormalMapTextureName), {}, rgBuilder, true))
 			{
-				material.NormalMapTextureSRV =
-					g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-				D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-				srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-				srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-				srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-				srvDesc.Texture2D.MipLevels = -1;
-				tex->CreatePlacedSRV(material.NormalMapTextureSRV->GetView(0), &srvDesc);
-				matInfo.NormalMapTextureIndex = material.NormalMapTextureSRV->Index;
+				material.NormalMapTexture = tex->operator rad::ResourcePool::Resource&();
+				matInfo.NormalMapTextureIndex =
+					Renderer.ResourcePool
+						->GetDescriptor(tex->AsView(),
+										DescriptorCreateHelper::ShaderResourceView(tex->AsView()->CreateInfo))
+						.AsGPUDescriptor<ShaderResourceViewDesc>()
+						.Index;
 			}
 		}
 
-		material.MaterialInfoBuffer = DXTypedSingularBuffer<rad::hlsl::MaterialBuffer>::CreateAndUpload(
-			Renderer.GetDevice(), s2ws(mat.name) + L"_MaterialInfo", commandCtx, matInfo,
-			D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-		material.MaterialInfoBuffer.CreatePlacedCBV(material.MaterialInfo.GetView(0));
+		{
+			auto rgMatInfoBuf = rgBuilder.GetOrAddExternalResource(materialInfoBuf.AsView());
+			rghelpers::UploadConstantBufferData(rgBuilder, rgMatInfoBuf, matInfo);
+		}
+		objModel.Materials.insert_or_assign(mat.name, std::move(material));
 	}
 
 	// Loop over shapes
@@ -237,12 +231,21 @@ OptionalRef<ObjModel> ModelManager::LoadModel(const std::string& modelPath, Comm
 	{
 		auto& shape = shapes[i];
 		auto& indices = indicesPerShape[i];
-		auto& mesh = objModel.Meshes[shape.name];
-		mesh.Model = objModel.Vertices;
-		mesh.Name = shape.name;
-		mesh.Indices = DXTypedBuffer<uint32_t>::CreateAndUpload(Renderer.GetDevice(), s2ws(shape.name), commandCtx,
-																indices, D3D12_RESOURCE_STATE_INDEX_BUFFER);
-		mesh.Material = objModel.Materials[reader.GetMaterials()[shape.mesh.material_ids[0]].name];
+		auto& indexBuf = Renderer.ResourcePool->GetResource(
+			ResourceCreateHelper::Buffer(sizeof(uint32_t) * indices.size(), ResourcePresetFlags::IndexBuffer),
+			shape.name + "_Indices");
+		{
+			auto rgIndexBuf = rgBuilder.GetOrAddExternalResource(indexBuf.AsView());
+			rghelpers::UploadBufferData(rgBuilder, rgIndexBuf, std::move(indices));
+		}
+		objModel.Meshes.insert_or_assign(
+			shape.name,
+			Mesh{
+				.Name = shape.name,
+				.Vertices = objModel.Vertices,
+				.Indices = indexBuf,
+				.Material = objModel.Materials.at(reader.GetMaterials()[shape.mesh.material_ids[0]].name),
+			});
 	}
 
 	return objModel;

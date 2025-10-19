@@ -8,9 +8,13 @@
 #include "Graphics/Renderer.h"
 #include "Graphics/ShaderManager.h"
 #include "ProcGen/TerrainGenerator.h"
+#include "Graphics/Pipelines/DeferredRenderingPipeline.h"
+
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_dx12.h"
+
+#include <chrono>
 
 namespace rad::ecs
 {
@@ -46,21 +50,41 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 		} pipelineStateStream;
 
 		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"POSITION",
+			 0,
+			 DXGI_FORMAT_R32G32B32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
+			{"NORMAL",
+			 0,
+			 DXGI_FORMAT_R32G32B32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
+			{"TEXCOORD",
+			 0,
+			 DXGI_FORMAT_R32G32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
+			{"TANGENT",
+			 0,
+			 DXGI_FORMAT_R32G32B32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
 		};
 
 		pipelineStateStream.InputLayout = {inputLayout, _countof(inputLayout)};
 		pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
 		auto [vertexShader, pixelShader] = renderer.ShaderManager->CompileBindlessGraphicsShader(
-			L"Triangle", RAD_SHADERS_DIR L"Graphics/StaticMesh.hlsl");
+			L"Triangle", RAD_ENGINE_SHADERS_DIR L"Graphics/StaticMesh.hlsl");
 
 		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexShader->Blob.Get());
 		pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelShader->Blob.Get());
@@ -74,7 +98,9 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 
 		pipelineStateStream.Rasterizer = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
-		StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline", renderer.GetDevice(), pipelineStateStream,
+		StaticMeshPipelineState = PipelineState::Create("StaticMeshPipeline",
+														renderer.GetDevice(),
+														pipelineStateStream,
 														&renderer.ShaderManager->BindlessRootSignature);
 	}
 	// Shadow Map Pipeline
@@ -88,14 +114,34 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 		} pipelineStateStream;
 
 		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
-			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"POSITION",
+			 0,
+			 DXGI_FORMAT_R32G32B32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
+			{"NORMAL",
+			 0,
+			 DXGI_FORMAT_R32G32B32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
+			{"TEXCOORD",
+			 0,
+			 DXGI_FORMAT_R32G32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
+			{"TANGENT",
+			 0,
+			 DXGI_FORMAT_R32G32B32_FLOAT,
+			 0,
+			 D3D12_APPEND_ALIGNED_ELEMENT,
+			 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			 0},
 		};
 
 		pipelineStateStream.InputLayout = {inputLayout, _countof(inputLayout)};
@@ -103,21 +149,25 @@ bool CStaticRenderSystem::Init(Renderer& renderer)
 
 		pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(
 			renderer.ShaderManager
-				->CompileBindlessVertexShader(L"ShadowMap", RAD_SHADERS_DIR L"Graphics/Shadowmap.hlsl")
+				->CompileBindlessVertexShader(L"ShadowMap", RAD_ENGINE_SHADERS_DIR L"Graphics/ShadowMap.hlsl")
 				->Blob.Get());
 
 		pipelineStateStream.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
-		ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline", renderer.GetDevice(), pipelineStateStream,
+		ShadowMapPipelineState = PipelineState::Create("ShadowMapPipeline",
+													   renderer.GetDevice(),
+													   pipelineStateStream,
 													   &renderer.ShaderManager->BindlessRootSignature);
 	}
 
+	renderer.DeferredPipeline->OnShadowMapPass.Add<&CStaticRenderSystem::ShadowMapPass>(*this);
+	renderer.DeferredPipeline->OnDeferredPass.Add<&CStaticRenderSystem::DeferredPass>(*this);
 	return true;
 }
 
-void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& frameRecord)
+void CStaticRenderSystem::Update(entt::registry& registry)
 {
-	std::vector<StaticRenderData> renderObjects;
+	FrameRenderData.clear();
 
 	auto view = registry.view<CStaticRenderable, CSceneTransform>();
 	for (auto entity : view)
@@ -129,75 +179,245 @@ void CStaticRenderSystem::Update(entt::registry& registry, RenderFrameRecord& fr
 
 		StaticRenderData renderData;
 		renderData.WorldMatrix = transform.GetWorldTransform().WorldMatrix;
-		renderData.IndexCount = renderable.Indices.Size / sizeof(uint32_t);
-		renderData.VertexBufferView = renderable.Vertices.VertexBufferView();
-		renderData.IndexBufferView = renderable.Indices.IndexBufferView();
-		renderData.Material = renderable.Material.MaterialInfo.GetView();
+		renderData.IndexCount = renderable.Indices->Info().CreateInfo.Desc.Width / sizeof(uint32_t);
+		renderData.Vertices = renderable.Vertices;
+		renderData.Indices = renderable.Indices;
+		renderData.MaterialBuf = &renderable.Material.MaterialInfoBuffer;
 
-		renderObjects.push_back(renderData);
+		FrameRenderData.push_back(renderData);
 	}
 
-	frameRecord.Push(TypedRenderCommand<StaticRenderData>{
-		.Name = "StaticRender",
-		.Data = std::move(renderObjects),
-		.DepthOnlyPass = [this](auto span, auto view, auto passData) { DepthOnlyPass(span, view, passData); },
-		.DeferredPass = [this](auto span, auto view, auto passData) { DeferredPass(span, view, passData); }});
+	/*
+		struct StaticDepthOnlyRenderData
+		{
+			RGView<VertexBuffer> VertexBufferView;
+			RGView<IndexBuffer> IndexBufferView;
+			RGView<ConstantBuffer> WorldMatrix;
+		};
+		struct StaticDeferredRenderData
+		{
+			RGView<VertexBuffer> VertexBufferView;
+			RGView<IndexBuffer> IndexBufferView;
+			RGView<ConstantBuffer> WorldMatrix;
+			RGView<ConstantBuffer> Material;
+			RGView<Texture2D> AlbedoTex;
+			RGView<Texture2D> NormalTex;
+		};
+		std::vector<StaticDepthOnlyRenderData> depthOnlyRenderData;
+		std::vector<StaticDeferredRenderData> deferredRenderData;
+		for(renderable : renderObjects)
+		{
+			StaticDepthOnlyRenderData depthOnlyRenderData;
+			depthOnlyRenderData.VertexBufferView = depthPassTemplate.AddVertexBuffer(renderable.VertexBufferView);
+			depthOnlyRenderData.IndexBufferView = depthPassTemplate.AddIndexBuffer(renderable.IndexBufferView);
+			depthOnlyRenderData.WorldMatrix = depthPassTemplate.AddCBV(renderable.WorldMatrix);
+			depthOnlyRenderData.push_back(std::move(depthOnlyRenderData));
+
+			StaticDeferredRenderData deferredRenderData;
+			deferredRenderData.VertexBufferView = pass.AddVertexBuffer(renderable.VertexBufferView);
+			deferredRenderData.IndexBufferView = pass.AddIndexBuffer(renderable.IndexBufferView);
+			deferredRenderData.WorldMatrix = pass.AddCBV(renderable.WorldMatrix);
+			deferredRenderData.Material = pass.AddCBV(renderable.Material);
+			deferredRenderData.AlbedoTex = pass.AddSRV(renderable.AlbedoTex);
+			deferredRenderData.NormalTex = pass.AddSRV(renderable.NormalTex);
+			deferredRenderData.push_back(std::move(deferredRenderData));
+		}
+
+		DepthOnlyPass depthPass; //DepthOnlyPass is a sub-pass of the main DepthOnlyPass RenderPass
+
+		depthPassTemplate.SetUserData(depthOnlyRenderData);
+		depthPassTemplate.SetRenderPass<StaticDepthOnlyRenderData>("StaticDepthOnlyRender", std::move(renderObjects),
+			[this](auto span, auto& depthPassData) { DepthOnlyPass(span, depthPassData); });
+
+		auto futView = pass.AddCBV(view.ViewMatrix);
+		auto normalRT = pass.AddRTV(DeferredRenderingPipeline.NormalBuffer);
+		auto albedoRT = pass.AddRTV(DeferredRenderingPipeline.AlbedoBuffer);
+		auto depthDSV = pass.AddDSV(DeferredRenderingPipeline.DepthBuffer);
+
+
+	*/
 }
-void CStaticRenderSystem::DepthOnlyPass(std::span<StaticRenderData> renderObjects, const RenderView& view,
-										DepthOnlyPassData& passData)
+void CStaticRenderSystem::ShadowMapPass(ShadowMapPassData& passData)
 {
-	auto& cmd = passData.CmdContext;
-	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	ShadowMapPipelineState.Bind(cmd);
+	auto& pass = passData.GraphBuilder.AddPass("StaticRenders");
 
-	StaticRenderData lastRenderData{};
-	for (auto& renderObj : renderObjects)
+	struct RenderObject
 	{
-		if (renderObj.VertexBufferView.BufferLocation != lastRenderData.VertexBufferView.BufferLocation)
-		{
-			lastRenderData.VertexBufferView = renderObj.VertexBufferView;
-			cmd->IASetVertexBuffers(0, 1, &renderObj.VertexBufferView);
-		}
+		Ref<RGBInputResource> Vertices;
+		Ref<RGBInputResource> Indices;
+		uint32_t IndexCount = 0;
+		glm::mat4 MVP;
+	};
 
-		if (renderObj.IndexBufferView.BufferLocation != lastRenderData.IndexBufferView.BufferLocation)
-		{
-			lastRenderData.IndexBufferView = renderObj.IndexBufferView;
-			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
-		}
-		rad::hlsl::ShadowMapResources shadowMapResources{};
-		shadowMapResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
-		ShadowMapPipelineState.SetResources(cmd, shadowMapResources);
-		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+	std::vector<RenderObject> renderObjects;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> vertexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> indexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> materialBuffersCache;
+	for (auto const& renderData : FrameRenderData)
+	{
+		Ref<RGBInputResource> inVertices = [&]() {
+			if (auto it = vertexBuffersCache.find(*renderData.Vertices); it != vertexBuffersCache.end())
+				return it->second;
+			auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
+			auto inVertices = pass.AddInput(
+				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex)));
+			return vertexBuffersCache.insert_or_assign(*renderData.Vertices, inVertices).first->second;
+		}();
+		Ref<RGBInputResource> inIndices = [&]() {
+			if (auto it = indexBuffersCache.find(*renderData.Indices); it != indexBuffersCache.end())
+				return it->second;
+			auto rgIndicesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Indices->AsView());
+			auto inIndices = pass.AddInput(
+				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT));
+			return indexBuffersCache.insert_or_assign(*renderData.Indices, inIndices).first->second;
+		}();
+		renderObjects.push_back(
+			RenderObject{.Vertices = inVertices,
+						 .Indices = inIndices,
+						 .IndexCount = renderData.IndexCount,
+						 .MVP = passData.Frame.LightInfo.View.ViewProjectionMatrix * renderData.WorldMatrix});
 	}
+
+	auto rgShadowMapRes = pass.AddInResourceSetOut(
+		"ShadowMap", passData.OutShadowMap, RGResourceUsage::DepthStencilWrite(*passData.OutShadowMap));
+
+	pass.Execute = [this, renderObjects = std::move(renderObjects), rgShadowMapRes](CommandContext& cmd) {
+		D3D12_VIEWPORT viewport = CD3DX12_VIEWPORT(
+			0.f, 0.f, (*rgShadowMapRes)->CreateInfo.Desc.Width, (*rgShadowMapRes)->CreateInfo.Desc.Height);
+		D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+		// TODO: Bind GBuffer RTVs/DSVs
+		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		ShadowMapPipelineState.Bind(cmd);
+		D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+			rgShadowMapRes->GetResourceView().AsCPUDescriptor<DepthStencilViewDesc>().GetCPUHandle();
+		cmd->OMSetRenderTargets(0, nullptr, FALSE, &dsvHandle);
+		cmd->RSSetViewports(1, &viewport);
+		cmd->RSSetScissorRects(1, &scissorRect);
+
+		const RenderObject* lastRenderObject{};
+		for (auto& renderObj : renderObjects)
+		{
+			if (!lastRenderObject || renderObj.Vertices != lastRenderObject->Vertices)
+			{
+				cmd->IASetVertexBuffers(
+					0, 1, &renderObj.Vertices->GetResourceView().AsCPUDescriptor<VertexBufferViewDesc>());
+			}
+			if (!lastRenderObject || renderObj.Indices != lastRenderObject->Indices)
+			{
+				cmd->IASetIndexBuffer(&renderObj.Indices->GetResourceView().AsCPUDescriptor<IndexBufferViewDesc>());
+			}
+			lastRenderObject = &renderObj;
+			rad::hlsl::ShadowMapResources shadowMapResources{};
+			shadowMapResources.MVP = renderObj.MVP;
+			ShadowMapPipelineState.SetResources(cmd, shadowMapResources);
+			cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+		}
+	};
 }
-void CStaticRenderSystem::DeferredPass(std::span<StaticRenderData> renderObjects, const RenderView& view,
-									   DeferredPassData& passData)
+void CStaticRenderSystem::DeferredPass(DeferredPassData& passData)
 {
-	auto& cmd = passData.CmdContext;
-	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	StaticMeshPipelineState.Bind(cmd);
+	auto& pass = passData.GraphBuilder.AddPass("StaticRenders");
 
-	StaticRenderData lastRenderData{};
-	for (auto& renderObj : renderObjects)
+	struct RenderObject
 	{
-		if (renderObj.VertexBufferView.BufferLocation != lastRenderData.VertexBufferView.BufferLocation)
-		{
-			lastRenderData.VertexBufferView = renderObj.VertexBufferView;
-			cmd->IASetVertexBuffers(0, 1, &renderObj.VertexBufferView);
-		}
+		Ref<RGBInputResource> Vertices;
+		Ref<RGBInputResource> Indices;
+		uint32_t IndexCount = 0;
+		glm::mat4 MVP;
+		glm::mat4 NormalMatrix;
+		Ref<RGBInputResource> Material;
+	};
 
-		if (renderObj.IndexBufferView.BufferLocation != lastRenderData.IndexBufferView.BufferLocation)
-		{
-			lastRenderData.IndexBufferView = renderObj.IndexBufferView;
-			cmd->IASetIndexBuffer(&renderObj.IndexBufferView);
-		}
-		rad::hlsl::StaticMeshResources staticMeshResources{};
-		staticMeshResources.MVP = view.ViewProjectionMatrix * renderObj.WorldMatrix;
-		staticMeshResources.Normal = glm::transpose(glm::inverse(renderObj.WorldMatrix));
-		staticMeshResources.MaterialBufferIndex = renderObj.Material.GetIndex();
-		cmd->SetGraphicsRoot32BitConstants(0, sizeof(staticMeshResources) / 4, &staticMeshResources, 0);
-		cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+	auto start = std::chrono::steady_clock::now();
+	std::vector<RenderObject> renderObjects;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> vertexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> indexBuffersCache;
+	std::unordered_map<Ref<ResourcePool::OwnedResource>, Ref<RGBInputResource>> materialBuffersCache;
+
+	for (auto const& renderData : FrameRenderData)
+	{
+		Ref<RGBInputResource> inVertices = [&]() {
+			if (auto it = vertexBuffersCache.find(*renderData.Vertices); it != vertexBuffersCache.end())
+				return it->second;
+			auto rgVerticesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Vertices->AsView());
+			auto inVertices = pass.AddInput(
+				"Vertices", rgVerticesRes, RGResourceUsage::VertexBufferView(*rgVerticesRes, sizeof(Vertex)));
+			return vertexBuffersCache.insert_or_assign(*renderData.Vertices, inVertices).first->second;
+		}();
+		Ref<RGBInputResource> inIndices = [&]() {
+			if (auto it = indexBuffersCache.find(*renderData.Indices); it != indexBuffersCache.end())
+				return it->second;
+			auto rgIndicesRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.Indices->AsView());
+			auto inIndices = pass.AddInput(
+				"Indices", rgIndicesRes, RGResourceUsage::IndexBufferView(*rgIndicesRes, DXGI_FORMAT_R32_UINT));
+			return indexBuffersCache.insert_or_assign(*renderData.Indices, inIndices).first->second;
+		}();
+		Ref<RGBInputResource> inMaterial = [&]() {
+			if (auto it = materialBuffersCache.find(*renderData.MaterialBuf); it != materialBuffersCache.end())
+				return it->second;
+			auto rgMaterialRes = passData.GraphBuilder.GetOrAddExternalResource(renderData.MaterialBuf->AsView());
+			auto inMaterial =
+				pass.AddInput("Material", rgMaterialRes, RGResourceUsage::ConstantBufferView(*rgMaterialRes));
+			return materialBuffersCache.insert_or_assign(*renderData.MaterialBuf, inMaterial).first->second;
+		}();
+
+		renderObjects.push_back(RenderObject{.Vertices = inVertices,
+											 .Indices = inIndices,
+											 .IndexCount = renderData.IndexCount,
+											 .MVP = passData.Frame.View.ViewProjectionMatrix * renderData.WorldMatrix,
+											 .NormalMatrix = glm::transpose(glm::inverse(renderData.WorldMatrix)),
+											 .Material = inMaterial});
 	}
+	auto end = std::chrono::steady_clock::now();
+	auto duration = end - start;
+
+	std::cout << std::format("Prepared static render objects in {} ms\n",
+							 std::chrono::duration<float, std::milli>(duration).count());
+
+	auto rgAlbedoRes = pass.AddInResourceSetOut(
+		"AlbedoRT", passData.OutAlbedoBuffer, RGResourceUsage::RenderTargetView(*passData.OutAlbedoBuffer));
+	auto rgNormalRes = pass.AddInResourceSetOut(
+		"NormalRT", passData.OutNormalBuffer, RGResourceUsage::RenderTargetView(*passData.OutNormalBuffer));
+	auto rgDepth = pass.AddInResourceSetOut(
+		"DepthRT", passData.OutDepthBuffer, RGResourceUsage::DepthStencilWrite(*passData.OutDepthBuffer));
+
+	pass.Execute = [this, renderObjects = std::move(renderObjects), rgAlbedoRes, rgNormalRes, rgDepth](
+					   CommandContext& cmd) {
+		D3D12_VIEWPORT viewport =
+			CD3DX12_VIEWPORT(0.f, 0.f, (*rgAlbedoRes)->CreateInfo.Desc.Width, (*rgAlbedoRes)->CreateInfo.Desc.Height);
+		D3D12_RECT scissorRect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		StaticMeshPipelineState.Bind(cmd);
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[] = {
+			rgAlbedoRes->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle(),
+			rgNormalRes->GetResourceView().AsCPUDescriptor<RenderTargetViewDesc>().GetCPUHandle()};
+		D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+			rgDepth->GetResourceView().AsCPUDescriptor<DepthStencilViewDesc>().GetCPUHandle();
+		cmd->OMSetRenderTargets(_countof(rtvHandles), rtvHandles, FALSE, &dsvHandle);
+		cmd->RSSetViewports(1, &viewport);
+		cmd->RSSetScissorRects(1, &scissorRect);
+		const RenderObject* lastRenderObject{};
+		for (auto& renderObj : renderObjects)
+		{
+			if (!lastRenderObject || renderObj.Vertices != lastRenderObject->Vertices)
+			{
+				cmd->IASetVertexBuffers(
+					0, 1, &renderObj.Vertices->GetResourceView().AsCPUDescriptor<VertexBufferViewDesc>());
+			}
+			if (!lastRenderObject || renderObj.Indices != lastRenderObject->Indices)
+			{
+				cmd->IASetIndexBuffer(&renderObj.Indices->GetResourceView().AsCPUDescriptor<IndexBufferViewDesc>());
+			}
+			lastRenderObject = &renderObj;
+			rad::hlsl::StaticMeshResources staticMeshResources{};
+			staticMeshResources.MVP = renderObj.MVP;
+			staticMeshResources.Normal = renderObj.NormalMatrix;
+			staticMeshResources.MaterialBufferIndex =
+				renderObj.Material->GetResourceView().AsGPUDescriptor<ConstantBufferViewDesc>().Index;
+			cmd->SetGraphicsRoot32BitConstants(0, sizeof(staticMeshResources) / 4, &staticMeshResources, 0);
+			cmd->DrawIndexedInstanced(renderObj.IndexCount, 1, 0, 0, 0);
+		}
+	};
 }
 
 glm::mat4 CViewpoint::ViewMatrix(CSceneTransform const& sceneTransform) const
@@ -208,19 +428,23 @@ glm::mat4 CViewpoint::ProjectionMatrix() const
 {
 	if (auto* perspective = std::get_if<Perspective>(&Projection))
 	{
-		return glm::perspectiveLH(glm::radians(perspective->Fov), perspective->AspectRatio, perspective->Near,
-								  perspective->Far);
+		return glm::perspectiveLH(
+			glm::radians(perspective->Fov), perspective->AspectRatio, perspective->Near, perspective->Far);
 	}
 	else
 	{
 		auto orthographic = std::get<Orthographic>(Projection);
-		return glm::orthoLH(-orthographic.Width / 2.0f, orthographic.Width / 2.0f, -orthographic.Height / 2.0f,
-							orthographic.Height / 2.0f, 0.1f, 100.0f);
+		return glm::orthoLH(-orthographic.Width / 2.0f,
+							orthographic.Width / 2.0f,
+							-orthographic.Height / 2.0f,
+							orthographic.Height / 2.0f,
+							0.1f,
+							100.0f);
 	}
 }
 RenderView ViewpointToRenderView(const CViewpoint& viewpoint, const CSceneTransform& transform)
 {
-	RenderView view;
+	RenderView view{};
 	view.ViewMatrix = viewpoint.ViewMatrix(transform);
 	view.ProjectionMatrix = viewpoint.ProjectionMatrix();
 	view.ViewPosition = transform.GetWorldTransform().GetPosition();
@@ -233,7 +457,7 @@ RenderView ViewpointToRenderView(const CViewpoint& viewpoint, const CSceneTransf
 	}
 	return view;
 }
-void CCameraSystem::Update(entt::registry& registry, RenderFrameRecord& frameRecord)
+void CCameraSystem::Update(entt::registry& registry, RenderView& renderView)
 {
 	auto view = registry.view<CCamera, CViewpoint, CSceneTransform>();
 	for (auto entity : view)
@@ -244,10 +468,10 @@ void CCameraSystem::Update(entt::registry& registry, RenderFrameRecord& frameRec
 		auto projectionMatrix = viewpoint.ProjectionMatrix();
 		auto worldTransform = transform.GetWorldTransform();
 
-		frameRecord.View = ViewpointToRenderView(viewpoint, transform);
+		renderView = ViewpointToRenderView(viewpoint, transform);
 	}
 }
-void CLightSystem::Update(entt::registry& registry, RenderFrameRecord& frameRecord)
+void CLightSystem::Update(entt::registry& registry, RenderLightInfo& lightInfo)
 {
 	auto view = registry.view<CLight, CViewpoint, CSceneTransform>();
 	for (auto entity : view)
@@ -259,8 +483,10 @@ void CLightSystem::Update(entt::registry& registry, RenderFrameRecord& frameReco
 		auto projectionMatrix = viewpoint.ProjectionMatrix();
 		auto worldTransform = transform.GetWorldTransform();
 
-		frameRecord.LightInfo = {
-			.View = ViewpointToRenderView(viewpoint, transform), .Color = light.Color, .Intensity = light.Intensity, .AmbientColor = light.Ambient};
+		lightInfo = {.View = ViewpointToRenderView(viewpoint, transform),
+					 .Color = light.Color,
+					 .Intensity = light.Intensity,
+					 .AmbientColor = light.Ambient};
 	}
 }
 void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& io, float deltaTime, Renderer& renderer)
@@ -302,9 +528,10 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 	if (io.IsKeyPressed(SDL_SCANCODE_TAB))
 	{
 		ActiveViewpoint = ActiveViewpoint == cameraEntity ? lightEntity : cameraEntity;
-		if (!renderer.ViewingTexture || renderer.ViewingTexture == "ShadowMap")
-			renderer.ViewingTexture =
-				ActiveViewpoint == cameraEntity ? std::nullopt : std::optional<std::string>("ShadowMap");
+		// TODO: Viewable Textures
+		// if (!renderer.ViewingTexture || renderer.ViewingTexture == "ShadowMap")
+		//	renderer.ViewingTexture =
+		//		ActiveViewpoint == cameraEntity ? std::nullopt : std::optional<std::string>("ShadowMap");
 	}
 
 	auto& controlledViewpoint = registry.get<CViewpoint>(ActiveViewpoint);
@@ -325,7 +552,8 @@ void CViewpointControllerSystem::Update(entt::registry& registry, InputManager& 
 		orthographic->Height = glm::clamp(orthographic->Height - io.Immediate.MouseWheelDelta * 2.0f, 0.1f, 100.0f);
 	}
 
-	glm::vec3 moveDir = {float(io.IsKeyDown(SDL_SCANCODE_D)) - float(io.IsKeyDown(SDL_SCANCODE_A)), 0,
+	glm::vec3 moveDir = {float(io.IsKeyDown(SDL_SCANCODE_D)) - float(io.IsKeyDown(SDL_SCANCODE_A)),
+						 0,
 						 float(io.IsKeyDown(SDL_SCANCODE_W)) - float(io.IsKeyDown(SDL_SCANCODE_S))};
 
 	if (glm::length(moveDir) > 0.0f)
@@ -374,17 +602,23 @@ void CUISystem::Init(Renderer& renderer, SDL_Window* window)
 	// Setup Platform/Renderer backends
 	ImGui_ImplSDL2_InitForD3D(window);
 	auto fontAllocation = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	ImGui_ImplDX12_Init(&renderer.GetDevice(), renderer.FramesInFlight, DXGI_FORMAT_R8G8B8A8_UNORM,
-						fontAllocation.Heap->Heap.Get(), fontAllocation.GetCPUHandle(), fontAllocation.GetGPUHandle());
+	ImGui_ImplDX12_Init(&renderer.GetDevice(),
+						renderer.FramesInFlight,
+						DXGI_FORMAT_R8G8B8A8_UNORM,
+						fontAllocation.Heap->Heap.Get(),
+						fontAllocation.GetCPUHandle(),
+						fontAllocation.GetGPUHandle());
 	// Load Fonts
 	// - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use
 	// ImGui::PushFont()/PopFont() to select them.
-	// - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
+	// - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among
+	// multiple.
 	// - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your
 	// application (e.g. use an assertion, or display an error and quit).
 	// - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling
 	// ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-	// - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
+	// - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font
+	// rendering.
 	// - Read 'docs/FONTS.md' for more instructions and details.
 	// - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double
 	// backslash \\ !
@@ -560,23 +794,23 @@ void CUISystem::Update(entt::registry& registry, Renderer& renderer)
 			}
 		}
 
-		if (ImGui::CollapsingHeader("Texture View"))
-		{
-
-			if (ImGui::BeginCombo("Textures", renderer.ViewingTexture ? renderer.ViewingTexture->c_str() : "None"))
-			{
-				for (auto& [name, func] : renderer.ViewableTextures)
-				{
-					if (ImGui::Selectable(name.c_str()))
-						renderer.ViewingTexture = name;
-				}
-				if (ImGui::Selectable("None"))
-				{
-					renderer.ViewingTexture = std::nullopt;
-				}
-				ImGui::EndCombo();
-			}
-		}
+		// if (ImGui::CollapsingHeader("Texture View"))
+		//{
+		//
+		//	if (ImGui::BeginCombo("Textures", renderer.ViewingTexture ? renderer.ViewingTexture->c_str() : "None"))
+		//	{
+		//		for (auto& [name, func] : renderer.ViewableTextures)
+		//		{
+		//			if (ImGui::Selectable(name.c_str()))
+		//				renderer.ViewingTexture = name;
+		//		}
+		//		if (ImGui::Selectable("None"))
+		//		{
+		//			renderer.ViewingTexture = std::nullopt;
+		//		}
+		//		ImGui::EndCombo();
+		//	}
+		// }
 
 		if (ImGui::TreeNodeEx("Entities", ImGuiTreeNodeFlags_Framed))
 		{

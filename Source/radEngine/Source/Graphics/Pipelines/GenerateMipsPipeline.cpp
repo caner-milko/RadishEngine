@@ -3,6 +3,8 @@
 #include "Graphics/Renderer.h"
 #include "Graphics/ShaderManager.h"
 #include "Graphics/DXResource.h"
+#include "Graphics/RenderGraphHelpers.h"
+#include "Graphics/ResourcePool.h"
 
 #define A_CPU
 #include <ffx_a.h>
@@ -20,23 +22,32 @@ struct SpdConstants
 
 bool GenerateMipsPipeline::Setup()
 {
-	auto* shader =
-		Renderer.ShaderManager->CompileShader(L"SPDImpl.cs", RAD_SHADERS_DIR L"Compute/SPDImpl.cs.hlsl",
-											  ShaderType::Compute, L"main", {{FIDELITYFX_SPD_SHADER_INCLUDE_DIR L""}});
+	auto* shader = Renderer.ShaderManager->CompileShader(L"SPDImpl.cs",
+														 RAD_ENGINE_SHADERS_DIR L"Compute/SPDImpl.cs.hlsl",
+														 ShaderType::Compute,
+														 L"main",
+														 {{FIDELITYFX_SPD_SHADER_INCLUDE_DIR L""}});
 	RootSignatureBuilder rsBuilder;
-	rsBuilder.AddConstantBufferView("spdConstants", {.ShaderRegister = 0,
-													 .Visibility = D3D12_SHADER_VISIBILITY_ALL,
-													 .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE});
+	rsBuilder.AddConstantBufferView("spdConstants",
+									{.ShaderRegister = 0,
+									 .Visibility = D3D12_SHADER_VISIBILITY_ALL,
+									 .DescFlags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE});
 	rsBuilder.AddDescriptorTable("spdGlobalAtomic",
 								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1)}});
 	rsBuilder.AddDescriptorTable("imgDst6",
-								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2, 0,
+								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+															 1,
+															 2,
+															 0,
 															 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE |
 																 D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE)}});
-	rsBuilder.AddDescriptorTable(
-		"imgDst", {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, SPD_MAX_MIP_LEVELS + 1, 3, 0,
-											  D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE |
-												  D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE)}});
+	rsBuilder.AddDescriptorTable("imgDst",
+								 {{CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+															 SPD_MAX_MIP_LEVELS + 1,
+															 3,
+															 0,
+															 D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE |
+																 D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE)}});
 	RootSignature = rsBuilder.Build("SPDRS", Renderer.GetDevice(), D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
 	struct PipelineStateStream : PipelineStateStreamBase
@@ -53,87 +64,96 @@ bool GenerateMipsPipeline::Setup()
 
 	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 
-	GlobalCounterBuffer = DXTypedSingularBuffer<GlobalCounterStruct>::Create(
-		Renderer.GetDevice(), L"GlobalCounterBuffer", D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-	GlobalCounterUAV = g_GPUDescriptorAllocator->AllocateFromStatic(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
-	GlobalCounterBuffer.CreatePlacedTypedUAV(GlobalCounterUAV.GetView());
+	GlobalCounterBuffer = &Renderer.ResourcePool->GetResource(
+		ResourceCreateHelper::Buffer(sizeof(GlobalCounterStruct), ResourcePresetFlags::UnorderedAccess),
+		"MipPipelineCounterBuffer");
 	return true;
 }
 
-void GenerateMipsPipeline::GenerateMips(CommandContext& commandCtx, DXTexture& texture)
+void GenerateMipsPipeline::GenerateMips(RenderGraphBuilder& rgBuilder, Ref<RGBOutputResource>& tex)
 {
-	assert(texture.Info.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-	assert(texture.Info.MipLevels == 0);
+	auto& desc = tex->GetCreateInfo().Desc;
+	assert(desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	assert(desc.MipLevels == 0);
+
 	varAU2(dispatchThreadGroupCountXY);
 	varAU2(workGroupOffset); // needed if Left and Top are not 0,0
 	varAU2(numWorkGroupsAndMips);
-	varAU4(rectInfo) = initAU4(0, 0, texture.Info.Width, texture.Info.Height); // left, top, width, height
+	varAU4(rectInfo) = initAU4(0, 0, uint32_t(desc.Width), uint32_t(desc.Height)); // left, top, width, height
+
 	SpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo);
 
-	// downsample
-	uint32_t dispatchX = dispatchThreadGroupCountXY[0];
-	uint32_t dispatchY = dispatchThreadGroupCountXY[1];
-	uint32_t dispatchZ = texture.Info.IsCubeMap ? texture.Info.DepthOrArraySize * 6 : texture.Info.DepthOrArraySize;
-
-	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-
-	auto cb = DXBuffer::Create(Renderer.GetDevice(), L"SPDConstants", sizeof(SpdConstants), D3D12_HEAP_TYPE_UPLOAD);
-	TransitionVec(cb, D3D12_RESOURCE_STATE_GENERIC_READ).Execute(commandCtx);
-	commandCtx.IntermediateResources.push_back(cb.Resource);
-	auto* consts = cb.Map<SpdConstants>();
-
-	SpdConstants constants;
+	SpdConstants constants{};
 	constants.numWorkGroupsPerSlice = numWorkGroupsAndMips[0];
 	constants.mips = numWorkGroupsAndMips[1];
 	constants.workGroupOffset[0] = workGroupOffset[0];
 	constants.workGroupOffset[1] = workGroupOffset[1];
-	memcpy(consts, &constants, sizeof(SpdConstants));
 
-	commandCtx->SetComputeRootSignature(RootSignature.DXSignature.Get());
+	auto spdConstantsCB = rgBuilder.AddGraphResource(
+		"SPDConstantsCB", ResourceCreateHelper::Buffer(sizeof(SpdConstants), ResourcePresetFlags::ConstantBuffer));
 
-	auto mipUavs = commandCtx.GPUHeapPages[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->Allocate(SPD_MAX_MIP_LEVELS + 5);
+	rghelpers::UploadConstantBufferData(rgBuilder, spdConstantsCB, constants);
 
-	for (int i = 0; i < SPD_MAX_MIP_LEVELS + 5; i++)
-	{
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
-		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		uavDesc.Format = texture.Info.Format;
-		uavDesc.Texture2D.MipSlice = constants.mips <= i ? constants.mips : i;
-		uavDesc.Texture2D.PlaneSlice = 0;
-		texture.CreatePlacedUAV(mipUavs.GetView(i), &uavDesc);
-	}
+	auto& pass = rgBuilder.AddPass("GenerateMips");
+	auto input = pass.AddInResourceSetOut("Texture", tex, RGResourceUsage(D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
 
-	// Bind Pipeline
-	//
-	commandCtx->SetPipelineState(PipelineState.DXPipelineState.Get());
+	auto mipUAVDescriptors = [&]() {
+		std::vector<GPUDescriptorDesc> mipUavDescs;
 
-	// set counter to 0
-	TransitionVec(GlobalCounterBuffer, D3D12_RESOURCE_STATE_COPY_DEST)
-		.Add(texture, D3D12_RESOURCE_STATE_COPY_DEST)
-		.Execute(commandCtx);
+		for (int i = 0; i < SPD_MAX_MIP_LEVELS + 5; i++)
+		{
+			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+			uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+			uavDesc.Format = desc.Format;
+			uavDesc.Texture2D.MipSlice = constants.mips <= i ? constants.mips : i;
+			uavDesc.Texture2D.PlaneSlice = 0;
+			mipUavDescs.push_back(UnorderedAccessViewDesc{uavDesc});
+		}
+		return input->AddDescriptor(mipUavDescs);
+	}();
 
-	D3D12_WRITEBUFFERIMMEDIATE_PARAMETER pParams[6];
-	for (int i = 0; i < 6; i++)
-		pParams[i] = {GlobalCounterBuffer.GPUAddress(sizeof(uint32_t) * i), 0};
-	commandCtx->WriteBufferImmediate(6, pParams, nullptr); // 6 counter per slice, each initialized to 0
+	auto rgGlobalCounterBuffer = rgBuilder.GetOrAddExternalResource(GlobalCounterBuffer->AsView());
 
-	TransitionVec()
-		.Add(GlobalCounterBuffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-		.Add(texture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-		.Execute(commandCtx);
+	rghelpers::UploadConstantBufferData(rgBuilder, rgGlobalCounterBuffer, GlobalCounterStruct{});
 
-	// Bind Descriptor the descriptor sets
-	//
-	int params = 0;
-	commandCtx->SetComputeRootConstantBufferView(params++, cb.GPUAddress());
-	commandCtx->SetComputeRootDescriptorTable(params++, GlobalCounterUAV.GetGPUHandle());
-	commandCtx->SetComputeRootDescriptorTable(params++, mipUavs.GetGPUHandle(6));
-	// bind UAVs
-	commandCtx->SetComputeRootDescriptorTable(params++, mipUavs.GetGPUHandle());
-	// Dispatch
-	//
-	commandCtx->Dispatch(dispatchX, dispatchY, dispatchZ);
-	TransitionVec(texture, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE).Execute(commandCtx);
+	uint32_t dispatchX = dispatchThreadGroupCountXY[0];
+	uint32_t dispatchY = dispatchThreadGroupCountXY[1];
+	// TODO: Cubemap
+	uint32_t dispatchZ = desc.DepthOrArraySize;
+
+	auto inGlobalCounter = pass.AddInput(
+		"GlobalCounter", rgGlobalCounterBuffer, RGResourceUsage::UnorderedAccessView(rgGlobalCounterBuffer));
+	auto inSpdConstants =
+		pass.AddInput("SPDConstants", spdConstantsCB, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	pass.Execute = [this,
+					dispatchX,
+					dispatchY,
+					dispatchZ,
+					spdConstantsCB = inSpdConstants->GetResourceView(),
+					globalCounter = inGlobalCounter->GetResourceView(),
+					mipUAVDescriptors](CommandContext& commandCtx) {
+		// downsample
+
+		commandCtx->SetComputeRootSignature(RootSignature.DXSignature.Get());
+		commandCtx->SetPipelineState(PipelineState.DXPipelineState.Get());
+
+		// Bind Descriptor the descriptor sets
+		//
+		int params = 0;
+		commandCtx->SetComputeRootConstantBufferView(params++,
+													 spdConstantsCB.GetResource()->DXRes->GetGPUVirtualAddress());
+
+		commandCtx->SetComputeRootDescriptorTable(
+			params++, globalCounter.AsGPUDescriptor<UnorderedAccessViewDesc>().GetGPUHandle());
+		auto& mipUavs = mipUAVDescriptors->Get().AsGPUDescriptor<UnorderedAccessViewDesc>();
+
+		commandCtx->SetComputeRootDescriptorTable(params++, mipUavs.GetGPUHandle(6));
+		// bind UAVs
+		commandCtx->SetComputeRootDescriptorTable(params++, mipUavs.GetGPUHandle());
+		// Dispatch
+		//
+		commandCtx->Dispatch(dispatchX, dispatchY, dispatchZ);
+	};
 }
 
 } // namespace rad

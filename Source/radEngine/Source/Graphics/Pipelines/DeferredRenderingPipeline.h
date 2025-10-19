@@ -5,107 +5,78 @@
 #include "Graphics/PipelineState.h"
 
 #include "Graphics/RendererCommon.h"
+#include "Graphics/RenderGraph.h"
+#include "Graphics/ResourcePool.h"
 
 namespace rad
 {
+
+struct PreRenderPassData
+{
+	RenderGraphBuilder& GraphBuilder;
+	const SceneRenderData& Frame;
+};
+
+struct ShadowMapPassData
+{
+	RenderGraphBuilder& GraphBuilder;
+	const SceneRenderData& Frame;
+	Ref<RGBOutputResource>& OutShadowMap;
+};
+
+struct DeferredPassData
+{
+	RenderGraphBuilder& GraphBuilder;
+	const SceneRenderData& Frame;
+	Ref<RGBOutputResource>& OutAlbedoBuffer;
+	Ref<RGBOutputResource>& OutNormalBuffer;
+	Ref<RGBOutputResource>& OutDepthBuffer;
+};
+
+struct WaterPassData
+{
+	RenderGraphBuilder& GraphBuilder;
+	const SceneRenderData& Frame;
+	Ref<RGBOutputResource>& OutReflectionRefraction;
+	Ref<RGBOutputResource>& OutDepthBuffer;
+	Ref<RGBOutputResource>& InViewTransform;
+};
+
+struct ForwardPassData
+{
+	RenderGraphBuilder& GraphBuilder;
+	const SceneRenderData& Frame;
+	Ref<RGBOutputResource>& InOutColor;
+	Ref<RGBOutputResource>& InOutSSDepth;
+	Ref<RGBOutputResource>& InViewTransform;
+	Ref<RGBOutputResource>& InOpaquaDepth;
+	Ref<RGBOutputResource>& InReflectionResult;
+	Ref<RGBOutputResource>& InRefractionResult;
+};
+
 struct DeferredRenderingPipeline
 {
 	DeferredRenderingPipeline(rad::Renderer& renderer) : Renderer(renderer) {}
 	bool Setup();
 	bool OnResize(uint32_t width, uint32_t height);
 
-	DXTexture& GetOutputBuffer()
-	{
-		return OutputBuffer;
-	}
-	DescriptorAllocationView GetOutputBufferSRV()
-	{
-		return OutputBufferSRV.GetView();
-	}
-	DXTexture& GetShadowMap()
-	{
-		return ShadowMap;
-	}
-	DescriptorAllocationView GetShadowMapSRV()
-	{
-		return ShadowMapSRV.GetView();
-	}
-	DXTexture& GetAlbedoBuffer()
-	{
-		return AlbedoBuffer;
-	}
-	DescriptorAllocationView GetAlbedoBufferSRV()
-	{
-		return GBuffersSRV.GetView();
-	}
-	DXTexture& GetNormalBuffer()
-	{
-		return NormalBuffer;
-	}
-	DescriptorAllocationView GetNormalBufferSRV()
-	{
-		return GBuffersSRV.GetView(1);
-	}
+	Ref<RGBOutputResource> BuildFrameRenderGraph(RenderGraphBuilder& graphBuilder, SceneRenderData& sceneData);
 
-	void BeginFrame(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-	void ShadowMapPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-	void DeferredRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-	void WaterRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-	void LightingPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-	void ForwardRenderPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
-	void ScreenSpaceRaymarchPass(CommandContext& cmdContext, RenderFrameRecord& frameRecord);
+	std::queue<std::move_only_function<void(PreRenderPassData&)>> EnqueuedPreRenderFuncs;
 
-  private:
-	bool SetupLightingPass();
-	bool SetupShadowMapPass();
-	bool SetupScreenSpaceRaymarchPass();
+	Event<PreRenderPassData&> OnPreRenderPass;
+	Event<ShadowMapPassData&> OnShadowMapPass;
+	Event<DeferredPassData&> OnDeferredPass;
+	Event<WaterPassData&> OnWaterPass;
+	Event<ForwardPassData&> OnForwardRenderPass;
 
+private:
 	Renderer& Renderer;
 
-	DXTexture DepthBuffer{};
-	DXTexture AlbedoBuffer{};
-	DXTexture NormalBuffer{};
-	// RG - Reflection Normal, BA - Refraction Normal
-	DXTexture SSReflectRefractBuffer{};
-	DXTexture SSDepthBuffer{};
-
-	DescriptorAllocation DepthBufferDSV{};
-	DescriptorAllocation AlbedoBufferRTV{};
-	DescriptorAllocation NormalBufferRTV{};
-	DescriptorAllocation SSReflectRefractBufferRTV{};
-	DescriptorAllocation SSDepthBufferDSV{};
-	DescriptorAllocation GBuffersSRV{};
-
-	DXTexture ShadowMap{};
-	DescriptorAllocation ShadowMapDSV{};
-	DescriptorAllocation ShadowMapSRV{};
-	DescriptorAllocation ShadowMapSampler{};
-
-	DXBuffer LightBuffer{};
-	DescriptorAllocation LightBufferCBV{};
-	DXTypedSingularBuffer<hlsl::ViewTransformBuffer> ViewTransformBuffer{};
-	DescriptorAllocation ViewTransformBufferCBV{};
-
 	ComputePipelineState<hlsl::ScreenSpaceRaymarchResources> ScreenSpaceRaymarchPipelineState{};
-	// RG - Reflection UV, A - Visibility
-	DXTexture ReflectionResultBuffer{};
-	DescriptorAllocation ReflectionResultBufferUAV{};
-	DescriptorAllocation ReflectionResultBufferSRV{};
-	// RG - Refraction UV, A - Visibility
-	DXTexture RefractionResultBuffer{};
-	DescriptorAllocation RefractionResultBufferUAV{};
-	DescriptorAllocation RefractionResultBufferSRV{};
-
 	GraphicsPipelineState<hlsl::LightingResources> LightingPipelineState{};
-	DXTexture LightingResultBuffer{};
-	DescriptorAllocation LightingResultBufferRTV{};
-	DescriptorAllocation LightingResultBufferSRV{};
-	DXTexture OutputBuffer{};
-	DescriptorAllocation OutputBufferRTV{};
-	DescriptorAllocation OutputBufferSRV{};
 
-
-
+	DescriptorAllocation ShadowMapSampler{};
 	D3D12_VIEWPORT ShadowMapViewport{};
 	D3D12_VIEWPORT Viewport{};
 	D3D12_RECT ScissorRect{};

@@ -1,64 +1,53 @@
 #pragma once
 
-#include "RadishCommon.h"
+#include "EngineCommon.h"
 #include "Graphics/DXResource.h"
 #include "Graphics/RendererCommon.h"
 #include "Graphics/Model.h"
 #include "Graphics/PipelineState.h"
 #include "Compute/Terrain/TerrainResources.hlsli"
 #include "InputManager.h"
-#include "Graphics/Renderer.h"
 #include "entt/entt.hpp"
+#include "Graphics/RenderGraph.h"
+#include "Graphics/ResourcePool.h"
 
 namespace rad::proc
 {
 
-struct RWTexture : public DXTexture
-{
-	RWTexture() = default;
-	RWTexture(DXTexture texture, int srvMipLevels = 1);
-	DescriptorAllocation UAV{};
-	DescriptorAllocation SRV{};
-};
-
 struct CTerrain
 {
-	std::shared_ptr<RWTexture> HeightMap{};
+	Ref<ResourcePool::OwnedResource> HeightMap;
+	Ref<ResourcePool::OwnedResource> WaterHeightMap;
 
-	std::shared_ptr<RWTexture> WaterHeightMap{};
-
-	std::shared_ptr<RWTexture> TempHeightMap{};
-	std::shared_ptr<RWTexture> SedimentMap{};
-	std::shared_ptr<RWTexture> TempSedimentMap{};
-	std::shared_ptr<RWTexture> WaterOutflux{};
-	std::shared_ptr<RWTexture> VelocityMap{};
-	std::shared_ptr<RWTexture> ThermalPipe1{};
-	std::shared_ptr<RWTexture> ThermalPipe2{};
-	std::shared_ptr<RWTexture> HardnessMap{};
+	Ref<ResourcePool::OwnedResource> SedimentMap;
+	Ref<ResourcePool::OwnedResource> WaterOutflux;
+	Ref<ResourcePool::OwnedResource> VelocityMap;
+	Ref<ResourcePool::OwnedResource> ThermalPipe1;
+	Ref<ResourcePool::OwnedResource> ThermalPipe2;
+	Ref<ResourcePool::OwnedResource> HardnessMap;
 	uint32_t IterationCount = 0;
 };
 
 struct CIndexedPlane
 {
 	uint32_t ResX = 256, ResY = 256;
-	std::shared_ptr<DXTypedBuffer<uint32_t>> Indices;
-	D3D12_INDEX_BUFFER_VIEW IndexBufferView{};
+	Ref<ResourcePool::OwnedResource> Indices;
 };
 
 struct CTerrainRenderable
 {
-	std::shared_ptr<RWTexture> HeightMap{};
-	std::shared_ptr<RWTexture> TerrainAlbedoTex{};
-	std::shared_ptr<RWTexture> TerrainNormalMap{};
+	PoolResourceView HeightMap;
+	Ref<ResourcePool::OwnedResource> TerrainAlbedoTex;
+	Ref<ResourcePool::OwnedResource> TerrainNormalMap;
 	float TotalLength = 1024.0f;
 };
 
 struct CWaterRenderable
 {
-	std::shared_ptr<RWTexture> HeightMap{};
-	std::shared_ptr<RWTexture> WaterHeightMap{};
-	std::shared_ptr<RWTexture> WaterAlbedoMap{};
-	std::shared_ptr<RWTexture> WaterNormalMap{};
+	PoolResourceView HeightMap;
+	PoolResourceView WaterHeightMap;
+	Ref<ResourcePool::OwnedResource> WaterAlbedoMap;
+	Ref<ResourcePool::OwnedResource> WaterNormalMap;
 	float TotalLength = 1024.0f;
 };
 
@@ -97,22 +86,31 @@ struct TerrainErosionSystem
 
 	std::vector<float> CreateDiamondSquareHeightMap(uint32_t width, float roughness);
 	CTerrain CreateTerrain(uint32_t heightMapWidth);
-	CIndexedPlane CreatePlane(CommandRecord& cmdRecord, uint32_t resX, uint32_t resY);
+	CIndexedPlane CreatePlane(RenderGraphBuilder& rgBuilder, uint32_t resX, uint32_t resY);
 	CTerrainRenderable CreateTerrainRenderable(CTerrain& terrain);
 	CWaterRenderable CreateWaterRenderable(CTerrain& terrain);
-	void GenerateBaseHeightMap(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
+	void GenerateBaseHeightMap(RenderGraphBuilder& rgBuilder,
+							   CTerrain& terrain,
+							   CErosionParameters const& parameters,
 							   OptionalRef<CTerrainRenderable> terrainRenderable,
 							   OptionalRef<CWaterRenderable> waterRenderable);
-	void ErodeTerrain(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
-					  OptionalRef<CTerrainRenderable> terrainRenderable, OptionalRef<CWaterRenderable> waterRenderable);
-	void GenerateTerrainMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
+	void ErodeTerrain(RenderGraphBuilder& rgBuilder,
+					  CTerrain& terrain,
+					  CErosionParameters const& parameters,
+					  OptionalRef<CTerrainRenderable> terrainRenderable,
+					  OptionalRef<CWaterRenderable> waterRenderable);
+	void GenerateTerrainMaterial(RenderGraphBuilder& rgBuilder,
+								 CTerrain& terrain,
+								 CErosionParameters const& parameters,
 								 CTerrainRenderable& terrainRenderable);
-	void GenerateWaterMaterial(CommandRecord& cmdRecord, CTerrain& terrain, CErosionParameters const& parameters,
+	void GenerateWaterMaterial(RenderGraphBuilder& rgBuilder,
+							   CTerrain& terrain,
+							   CErosionParameters const& parameters,
 							   CWaterRenderable& waterRenderable);
 
-	void Update(entt::registry& registry, InputManager& inputMan, RenderFrameRecord& frameRecord);
+	void Update(entt::registry& registry, InputManager& inputMan);
 
-  private:
+private:
 	Renderer& Renderer;
 	ComputePipelineState<hlsl::HeightToTerrainMaterialResources> HeightMapToTerrainMaterialPSO;
 	ComputePipelineState<hlsl::HeightToWaterMaterialResources> HeightMapToWaterMaterialPSO;
@@ -135,25 +133,34 @@ struct TerrainErosionSystem
 	{
 		glm::mat4 WorldMatrix;
 		uint32_t IndexCount;
-		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		PoolResourceView Indices;
+		PoolResourceView HeightMap;
+		PoolResourceView TerrainAlbedoTex;
+		PoolResourceView TerrainNormalMap;
 		hlsl::TerrainRenderResources Resources;
 	};
 
-	void TerrainDepthOnlyPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
-							  DepthOnlyPassData& passData);
-	void TerrainDeferredPass(std::span<TerrainRenderData> renderObjects, const RenderView& view,
-							 DeferredPassData& passData);
+	std::vector<TerrainRenderData> FrameTerrainRenderData;
+
+	void TerrainShadowMapPass(ShadowMapPassData& passData);
+	void TerrainDeferredPass(DeferredPassData& passData);
 
 	struct WaterRenderData
 	{
 		glm::mat4 WorldMatrix;
 		uint32_t IndexCount;
-		D3D12_INDEX_BUFFER_VIEW IndexBufferView;
+		PoolResourceView Indices;
+		PoolResourceView HeightMap;
+		PoolResourceView WaterHeightMap;
+		PoolResourceView WaterAlbedoMap;
+		PoolResourceView WaterNormalMap;
 		hlsl::WaterRenderResources Resources;
 	};
 
-	void WaterPrepass(std::span<WaterRenderData> renderObjects, const RenderView& view, WaterPassData& passData);
-	void WaterForwardPass(std::span<WaterRenderData> renderObjects, const RenderView& view, ForwardPassData& passData);
+	std::vector<WaterRenderData> FrameWaterRenderData;
+
+	void WaterPass(WaterPassData& passData);
+	void WaterForwardPass(ForwardPassData& passData);
 };
 
 } // namespace rad::proc
